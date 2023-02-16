@@ -1256,6 +1256,7 @@ sa_add_rules(struct sa_ctx *sa_ctx, const struct ipsec_sa entries[],
 	struct ipsec_sa *sa;
 	uint32_t i, idx;
 	uint16_t iv_length, aad_length;
+	uint16_t auth_iv_length = 0;
 	int inline_status;
 	int32_t rc;
 	struct rte_ipsec_session *ips;
@@ -1350,7 +1351,7 @@ sa_add_rules(struct sa_ctx *sa_ctx, const struct ipsec_sa entries[],
 
 			/* AES_GMAC uses salt like AEAD algorithms */
 			if (sa->auth_algo == RTE_CRYPTO_AUTH_AES_GMAC)
-				iv_length = 12;
+				auth_iv_length = 12;
 
 			if (inbound) {
 				sa_ctx->xf[idx].b.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
@@ -1374,7 +1375,7 @@ sa_add_rules(struct sa_ctx *sa_ctx, const struct ipsec_sa entries[],
 				sa_ctx->xf[idx].a.auth.op =
 					RTE_CRYPTO_AUTH_OP_VERIFY;
 				sa_ctx->xf[idx].a.auth.iv.offset = IV_OFFSET;
-				sa_ctx->xf[idx].a.auth.iv.length = iv_length;
+				sa_ctx->xf[idx].a.auth.iv.length = auth_iv_length;
 
 			} else { /* outbound */
 				sa_ctx->xf[idx].a.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
@@ -1398,7 +1399,7 @@ sa_add_rules(struct sa_ctx *sa_ctx, const struct ipsec_sa entries[],
 				sa_ctx->xf[idx].b.auth.op =
 					RTE_CRYPTO_AUTH_OP_GENERATE;
 				sa_ctx->xf[idx].b.auth.iv.offset = IV_OFFSET;
-				sa_ctx->xf[idx].b.auth.iv.length = iv_length;
+				sa_ctx->xf[idx].b.auth.iv.length = auth_iv_length;
 
 			}
 
