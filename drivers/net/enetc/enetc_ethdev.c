@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #include <stdbool.h>
@@ -72,7 +72,7 @@ enetc_dev_stop(struct rte_eth_dev *dev)
 	return 0;
 }
 
-static const uint32_t *
+const uint32_t *
 enetc_supported_ptypes_get(struct rte_eth_dev *dev __rte_unused)
 {
 	static const uint32_t ptypes[] = {
@@ -133,7 +133,7 @@ enetc_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused)
 	return rte_eth_linkstatus_set(dev, &link);
 }
 
-static void
+void
 print_ethaddr(const char *name, const struct rte_ether_addr *eth_addr)
 {
 	char buf[RTE_ETHER_ADDR_FMT_SIZE];
