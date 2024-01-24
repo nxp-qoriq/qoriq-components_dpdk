@@ -977,6 +977,7 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 		if (!dtb_entry) {
 			ENETQOS_PMD_ERR("malloc failed!!");
 			rt = -1;
+			fclose(file);
 			goto err;
 		}
 		cnt = fread(dtb_entry, sizeof(char), MAX_LINE_SIZE, file);
