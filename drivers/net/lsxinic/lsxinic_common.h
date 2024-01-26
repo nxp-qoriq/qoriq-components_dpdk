@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2024 NXP
  */
 
 #ifndef _LSXINIC_COMMON_H_
@@ -81,11 +81,6 @@ enum lsinic_port_type {
 #define MAX_U16 0xffff
 
 #define UNUSED(x) (void)(x)
-
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-#define LSINIC_PCIE_RAW_TEST_SRC_DATA 0x1
-#define LSINIC_PCIE_RAW_TEST_DST_DATA 0x2
-#endif
 
 static inline __attribute__((always_inline))
 void mem_cp128b_atomic(uint8_t *dst, const uint8_t *src)

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #include <stdio.h>
@@ -1061,12 +1061,6 @@ lxsnic_eth_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 		LXSNIC_RC_SELF_NONE_TEST))
 		return 0;
 
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	if (unlikely(tx_ring->adapter->e_raw_test &
-		LXSNIC_RC2EP_PCIE_RAW_TEST))
-		return 0;
-#endif
-
 	return _lxsnic_eth_xmit_pkts(tx_queue, tx_pkts, nb_pkts);
 }
 
@@ -1716,16 +1710,19 @@ skip_parse_bd:
 	return nb_rx;
 }
 
-static void lxsnic_eth_self_xmit_gen_pkt(uint8_t *payload)
+static void lxsnic_eth_self_xmit_gen_pkt(uint8_t *payload,
+	uint16_t len)
 {
 	struct rte_ether_hdr *eth_header;
 	struct rte_ipv4_hdr *ipv4_header;
 	uint64_t rand = rte_rand();
 
+	len -= sizeof(struct rte_ether_hdr);
 	memcpy(payload, s_self_test_xmit_data_base,
 		sizeof(s_self_test_xmit_data_base));
 	eth_header = (struct rte_ether_hdr *)payload;
 	ipv4_header = (struct rte_ipv4_hdr *)(eth_header + 1);
+	ipv4_header->total_length = rte_cpu_to_be_16(len);
 	ipv4_header->src_addr = (rte_be32_t)(rand & 0xffffffff);
 	ipv4_header->dst_addr = (rte_be32_t)((rand >> 32) & 0xffffffff);
 	ipv4_header->hdr_checksum = 0;
@@ -1884,7 +1881,8 @@ lxsnic_eth_self_test(struct lxsnic_ring *rxq,
 		pay_load = (uint8_t *)pkt->buf_addr + pkt->data_off;
 		if (0) {
 			/**In case pkts go to EP MAC.*/
-			lxsnic_eth_self_xmit_gen_pkt(pay_load);
+			lxsnic_eth_self_xmit_gen_pkt(pay_load,
+				adapter->self_test_len);
 		}
 		pkt->pkt_len = adapter->self_test_len;
 		pkt->data_len = adapter->self_test_len;
@@ -1977,11 +1975,6 @@ lxsnic_eth_recv_pkts(void *queue, struct rte_mbuf **rx_pkts,
 		}
 		s_perf_mode_set[rte_lcore_id()] = 1;
 	}
-
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	if (unlikely(adapter->e_raw_test & LXSNIC_EP2RC_PCIE_RAW_TEST))
-		return 0;
-#endif
 
 	if (unlikely(adapter->self_test != LXSNIC_RC_SELF_NONE_TEST))
 		return lxsnic_eth_self_test(rx_queue, rx_pkts, nb_pkts);

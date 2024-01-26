@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2024 NXP
  */
 
 #include <stdio.h>
@@ -192,29 +192,6 @@ static void lsinic_print_ep_status(void)
 	}
 }
 
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-static int
-lsinic_pcie_raw_test_print(struct rte_eth_dev *eth_dev)
-{
-	int i;
-	struct lsinic_queue *queue;
-
-	for (i = 0; i < eth_dev->data->nb_rx_queues; i++) {
-		queue = eth_dev->data->rx_queues[i];
-		if (queue && queue->status == LSINIC_QUEUE_RAW_TEST_RUNNING)
-			return 1;
-	}
-
-	for (i = 0; i < eth_dev->data->nb_tx_queues; i++) {
-		queue = eth_dev->data->tx_queues[i];
-		if (queue && queue->status == LSINIC_QUEUE_RAW_TEST_RUNNING)
-			return 1;
-	}
-
-	return 0;
-}
-#endif
-
 void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 {
 	struct rte_lsx_pciep_device *dev;
@@ -258,10 +235,6 @@ void *lsinic_poll_dev_cmd(void *arg __rte_unused)
 			}
 			reg = LSINIC_REG_OFFSET(adapter->hw_addr,
 					LSINIC_DEV_REG_OFFSET);
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-			if (lsinic_pcie_raw_test_print(dev->eth_dev))
-				print_status = 1;
-#endif
 
 			command = LSINIC_READ_REG(&reg->command);
 			if (command == PCIDEV_COMMAND_IDLE) {

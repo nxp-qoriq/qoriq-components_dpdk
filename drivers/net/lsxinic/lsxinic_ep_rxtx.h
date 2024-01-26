@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2024 NXP
  */
 
 #ifndef _LSXINIC_EP_RXTX_H_
@@ -90,27 +90,6 @@ enum queue_dma_bd_update {
 	(LSINIC_E2R_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
 #define LSINIC_BD_DMA_MAX_COUNT \
 	(LSINIC_R2E_BD_DMA_START + LSINIC_BD_ENTRY_COUNT)
-
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-enum lsinic_pcie_raw_test_mode {
-	LSINIC_PCIE_RAW_CPU_MODE = 1,
-	LSINIC_PCIE_RAW_SYNC_MODE = (1 << 1),
-	LSINIC_PCIE_RAW_CHECK_MODE = (1 << 2),
-	LSINIC_PCIE_RAW_MEM_MODE = (1 << 3)
-};
-
-struct lsinic_pcie_raw_test {
-	uint16_t burst_size;
-	enum lsinic_pcie_raw_test_mode mode;
-	int started;
-	const struct rte_memzone *local_mz;
-	const struct rte_memzone *mem_mz;
-	uint8_t **local_vaddr;
-	uint8_t *remote_vbase;
-	uint8_t **remote_vaddr;
-	struct rte_ring *jobs_ring;
-};
-#endif
 
 #define LSINIC_BD_DMA_START_FLAG MAX_U16
 struct lsinic_queue {
@@ -297,10 +276,6 @@ struct lsinic_queue {
 	uint64_t pkts_eq;
 	uint64_t bd_dq;
 	uint64_t bd_eq;
-
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	struct lsinic_pcie_raw_test pcie_raw_test;
-#endif
 
 	/* Pointer to Next instance used by q list */
 	TAILQ_ENTRY(lsinic_queue) next;

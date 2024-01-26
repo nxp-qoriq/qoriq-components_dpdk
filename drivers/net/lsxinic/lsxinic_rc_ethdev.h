@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #ifndef _LSXINIC_RC_ETHDEV_H_
@@ -175,11 +175,6 @@ struct lxsnic_ring {
 	rte_spinlock_t multi_core_lock;
 	uint32_t core_id;
 	pthread_t pid;
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	const struct rte_memzone *raw_mz;
-	uint32_t raw_count;
-	uint32_t raw_size;
-#endif
 	/*const struct lxsnic_queue_ops *ops; */  /**< queue ops */
 	uint16_t count;			  /* amount of bd descriptors */
 	uint32_t rdma;
@@ -327,14 +322,6 @@ struct lxsnic_hw_stats {
 	uint64_t tx_desc_err;
 };
 
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-enum lxsnic_pcie_raw_test {
-	LXSNIC_NONE_PCIE_RAW_TEST = 0,
-	LXSNIC_EP2RC_PCIE_RAW_TEST = (1 << 0),
-	LXSNIC_RC2EP_PCIE_RAW_TEST = (1 << 1)
-};
-#endif
-
 enum lxsnic_rc_self_test {
 	LXSNIC_RC_SELF_NONE_TEST = 0,
 	LXSNIC_RC_SELF_PMD_TEST,
@@ -389,12 +376,6 @@ struct lxsnic_adapter {
 	bool adapter_stopped;
 	enum lxsnic_rc_self_test self_test;
 	uint32_t self_test_len;
-
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	enum lxsnic_pcie_raw_test e_raw_test;
-	uint32_t raw_test_size;
-#endif
-
 	unsigned long link_check_timeout;
 	/* SR-IOV */
 	DECLARE_BITMAP(active_vfs, LXSNIC_MAX_VF_FUNCTIONS);

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #include <time.h>
@@ -255,149 +255,6 @@ static int lxsnic_wait_tx_lbd_ready(struct lxsnic_ring *tx_ring)
 	return 0;
 }
 
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-static int
-lxsnic_dev_tx_raw_test_fill(struct lxsnic_ring *tx_queue,
-	rte_iova_t dma_base, uint8_t *vaddr_base)
-{
-	rte_iova_t dma_addr;
-	struct lxsnic_adapter *adapter = tx_queue->adapter;
-	uint32_t len = adapter->raw_test_size, i;
-	uint8_t *vaddr;
-
-	if (tx_queue->ep_mem_bd_type != EP_MEM_LONG_BD)
-		return -EINVAL;
-
-	for (i = 0; i < tx_queue->raw_count; i++) {
-		dma_addr = dma_base + len * i;
-		tx_queue->ep_bd_desc[i].pkt_addr = dma_addr;
-		tx_queue->ep_bd_desc[i].len_cmd = len;
-		vaddr = vaddr_base + dma_addr - dma_base;
-		vaddr += len - 1;
-		*vaddr = LSINIC_PCIE_RAW_TEST_SRC_DATA;
-	}
-
-	return 0;
-}
-
-static int
-lxsnic_dev_tx_raw_test_start(struct lxsnic_adapter *adapter)
-{
-	int i, ret;
-	struct lxsnic_ring *tx_queue;
-	struct lsinic_bdr_reg *bdr_reg =
-		LSINIC_REG_OFFSET(adapter->ep_ring_virt_base,
-			LSINIC_RING_REG_OFFSET);
-	struct lsinic_ring_reg *tx_ring_reg;
-	char nm[RTE_MEMZONE_NAMESIZE];
-	uint32_t count, mz_len;
-	char *penv = getenv("LSINIC_RC2EP_PCIE_RAW_TEST_BD_NUM");
-
-	if (penv) {
-		count = atoi(penv);
-		if (count < LSINIC_PCIE_RAW_TEST_COUNT_MIN ||
-			count > LSINIC_PCIE_RAW_TEST_COUNT_MAX)
-			count = LSINIC_PCIE_RAW_TEST_COUNT_DEFAULT;
-	} else {
-		count = LSINIC_PCIE_RAW_TEST_COUNT_DEFAULT;
-	}
-
-	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
-		tx_queue = adapter->eth_dev->data->tx_queues[i];
-		sprintf(nm, "mz_%d_txq_%d",
-			adapter->eth_dev->data->port_id,
-			i);
-		mz_len = adapter->raw_test_size * count;
-		if (!rte_is_power_of_2(mz_len))
-			mz_len = rte_align32pow2(mz_len);
-
-		while (!tx_queue->raw_mz) {
-			tx_queue->raw_mz = rte_memzone_reserve_aligned(nm,
-				mz_len, SOCKET_ID_ANY,
-				RTE_MEMZONE_IOVA_CONTIG, mz_len);
-			if (!tx_queue->raw_mz) {
-				if (count < LSINIC_PCIE_RAW_TEST_COUNT_MIN)
-					break;
-				count = count / 2;
-				mz_len = mz_len / 2;
-			}
-		}
-		if (!tx_queue->raw_mz) {
-			LSXINIC_PMD_ERR("reserve %s failed", nm);
-			return -ENOMEM;
-		}
-		tx_queue->raw_count = count;
-		tx_queue->raw_size = mz_len;
-
-		tx_queue->ep_mem_bd_type = EP_MEM_LONG_BD;
-		tx_queue->rc_mem_bd_type = RC_MEM_LONG_BD;
-		tx_queue->ep_bd_desc = tx_queue->ep_bd_mapped_addr;
-		tx_queue->rc_bd_desc = tx_queue->rc_bd_shared_addr;
-		tx_ring_reg = &bdr_reg->tx_ring[i];
-		ret = lxsnic_dev_tx_raw_test_fill(tx_queue,
-			tx_queue->raw_mz->iova, tx_queue->raw_mz->addr);
-		if (ret)
-			return ret;
-
-		LSINIC_WRITE_REG(&tx_ring_reg->r_ep_mem_bd_type,
-			tx_queue->ep_mem_bd_type);
-		LSINIC_WRITE_REG(&tx_ring_reg->r_rc_mem_bd_type,
-			tx_queue->rc_mem_bd_type);
-
-		LSINIC_WRITE_REG(&tx_queue->ep_reg->r_raw_basel,
-			tx_queue->raw_mz->iova & DMA_BIT_MASK(32));
-		LSINIC_WRITE_REG(&tx_queue->ep_reg->r_raw_baseh,
-			tx_queue->raw_mz->iova >> 32);
-		LSINIC_WRITE_REG(&tx_queue->ep_reg->r_raw_size,
-			tx_queue->raw_size);
-		LSINIC_WRITE_REG(&tx_queue->ep_reg->r_raw_count,
-			tx_queue->raw_count);
-	}
-
-	return 0;
-}
-
-static int
-lxsnic_dev_rx_raw_test_start(struct lxsnic_adapter *adapter)
-{
-	int i;
-	struct lxsnic_ring *rx_queue;
-
-	for (i = 0; i < adapter->eth_dev->data->nb_rx_queues; i++) {
-		rx_queue = adapter->eth_dev->data->rx_queues[i];
-		LSINIC_WRITE_REG(&rx_queue->ep_reg->r_raw_basel,
-			rx_queue->raw_mz->iova & DMA_BIT_MASK(32));
-		LSINIC_WRITE_REG(&rx_queue->ep_reg->r_raw_baseh,
-			rx_queue->raw_mz->iova >> 32);
-		LSINIC_WRITE_REG(&rx_queue->ep_reg->r_raw_size,
-			rx_queue->raw_size);
-		LSINIC_WRITE_REG(&rx_queue->ep_reg->r_raw_count,
-			rx_queue->raw_count);
-	}
-
-	return 0;
-}
-
-static int
-lxsnic_rx_bd_raw_dma_test_init(struct lxsnic_ring *q,
-	uint16_t idx)
-{
-	struct lsinic_bd_desc *ep_rx_desc;
-	struct lxsnic_adapter *adapter = q->adapter;
-	uint32_t len = adapter->raw_test_size;
-	uint64_t dma_base = q->raw_mz->iova;
-
-	ep_rx_desc = &q->ep_bd_desc[idx];
-	ep_rx_desc->pkt_addr = dma_base + len * idx;
-	ep_rx_desc->len_cmd = len;
-	ep_rx_desc->bd_status =
-		(((uint32_t)idx) << LSINIC_BD_CTX_IDX_SHIFT) | RING_BD_READY;
-	LSINIC_WRITE_REG(&q->ep_reg->pir, 0);
-
-	return 0;
-}
-#endif
-
 static int
 lxsnic_configure_txq_bd_dma_read(struct lxsnic_ring *txq)
 {
@@ -519,15 +376,6 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 		return -EBUSY;
 	}
 
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	if (adapter->e_raw_test & LXSNIC_RC2EP_PCIE_RAW_TEST) {
-		ret = lxsnic_dev_tx_raw_test_start(adapter);
-		if (ret)
-			return ret;
-		goto skip_txq_bd_type_parse;
-	}
-#endif
-
 	if (LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) ==
 		RC_SET_ADDRL_TYPE ||
 		LSINIC_CAP_XFER_RC_XMIT_ADDR_TYPE_GET(cap) ==
@@ -598,24 +446,11 @@ lxsnic_dev_start(struct rte_eth_dev *dev)
 		}
 	}
 
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-skip_txq_bd_type_parse:
-	if (adapter->e_raw_test & LXSNIC_EP2RC_PCIE_RAW_TEST) {
-		ret = lxsnic_dev_rx_raw_test_start(adapter);
-		if (ret)
-			return ret;
-	}
-#endif
 	ret = lxsnic_set_netdev(adapter, PCIDEV_COMMAND_INIT);
 	if (ret != PCIDEV_RESULT_SUCCEED)
 		return -EIO;
 
 	lxsnic_up_complete(adapter);
-
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	if (adapter->e_raw_test != LXSNIC_NONE_PCIE_RAW_TEST)
-		return 0;
-#endif
 
 	for (i = 0; i < adapter->eth_dev->data->nb_tx_queues; i++) {
 		tx_queue = adapter->eth_dev->data->tx_queues[i];
@@ -761,67 +596,11 @@ lxsnic_configure_rx_ring(struct lxsnic_adapter *adapter,
 	/* enable receive descriptor ring */
 	rxdctl = LSINIC_CR_ENABLE | LSINIC_CR_BUSY;
 	LSINIC_WRITE_REG(&ring_reg->cr, rxdctl);
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	if (adapter->e_raw_test & LXSNIC_EP2RC_PCIE_RAW_TEST) {
-		char nm[RTE_MEMZONE_NAMESIZE];
-		uint32_t count = 0, mz_len = 0;
-		char *penv = getenv("LSINIC_EP2RC_PCIE_RAW_TEST_BD_NUM");
-
-		if (penv) {
-			count = atoi(penv);
-			if (count < LSINIC_PCIE_RAW_TEST_COUNT_MIN ||
-				count > LSINIC_PCIE_RAW_TEST_COUNT_MAX)
-				count = LSINIC_PCIE_RAW_TEST_COUNT_DEFAULT;
-		} else {
-			count = LSINIC_PCIE_RAW_TEST_COUNT_DEFAULT;
-		}
-
-		sprintf(nm, "mz_%d_rxq_%d",
-			adapter->eth_dev->data->port_id,
-			ring->queue_index);
-		mz_len = adapter->raw_test_size * count;
-		if (!rte_is_power_of_2(mz_len))
-			mz_len = rte_align32pow2(mz_len);
-
-		while (!ring->raw_mz) {
-			ring->raw_mz = rte_memzone_reserve_aligned(nm,
-				mz_len, SOCKET_ID_ANY,
-				RTE_MEMZONE_IOVA_CONTIG, mz_len);
-			if (!ring->raw_mz) {
-				if (count < LSINIC_PCIE_RAW_TEST_COUNT_MIN)
-					break;
-				count = count / 2;
-				mz_len = mz_len / 2;
-			}
-		}
-		if (!ring->raw_mz) {
-			LSXINIC_PMD_ERR("reserve %s (count=%d) failed",
-				nm, count);
-			return -ENOMEM;
-		}
-		ring->raw_count = count;
-		ring->raw_size = mz_len;
-
-		for (i = 0; i < ring->raw_count; i++) {
-			ret = lxsnic_rx_bd_raw_dma_test_init(ring, i);
-			if (ret) {
-				rte_memzone_free(ring->raw_mz);
-				ring->raw_mz = NULL;
-				ring->raw_count = 0;
-
-				return ret;
-			}
-		}
-	} else {
-#endif
-		for (i = 0; i < ring->count; i++) {
-			ret = lxsnic_rx_bd_init_buffer(ring, i);
-			if (ret)
-				return ret;
-		}
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
+	for (i = 0; i < ring->count; i++) {
+		ret = lxsnic_rx_bd_init_buffer(ring, i);
+		if (ret)
+			return ret;
 	}
-#endif
 	ring->rx_fill_start_idx = 0;
 	ring->rx_fill_len = 0;
 
@@ -981,13 +760,6 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		return -ENOMEM;
 	}
 
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	if (adapter->e_raw_test & LXSNIC_EP2RC_PCIE_RAW_TEST) {
-		rx_ring->ep_mem_bd_type = EP_MEM_LONG_BD;
-		rx_ring->rc_mem_bd_type = RC_MEM_LONG_BD;
-		goto skip_parse_cap;
-	}
-#endif
 	if (LSINIC_CAP_XFER_EP_XMIT_BD_TYPE_GET(adapter->cap) ==
 		EP_XMIT_SBD_TYPE) {
 		rx_ring->rc_mem_bd_type = RC_MEM_LEN_CMD;
@@ -1020,9 +792,6 @@ lxsnic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		if (adapter->pkt_addr_interval)
 			rx_ring->ep_mem_bd_type = EP_MEM_DST_ADDRX_BD;
 	}
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-skip_parse_cap:
-#endif
 
 	if (rx_ring->ep_mem_bd_type == EP_MEM_LONG_BD) {
 		rx_ring->ep_bd_desc = rx_ring->ep_bd_mapped_addr;
@@ -1100,12 +869,6 @@ lxsnic_dev_rx_queue_release(struct rte_eth_dev *dev,
 		rte_free(rx_ring->seg_mbufs);
 		rx_ring->seg_mbufs = NULL;
 	}
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	if (rx_ring->raw_mz) {
-		rte_memzone_free(rx_ring->raw_mz);
-		rx_ring->raw_mz = NULL;
-	}
-#endif
 }
 
 static void
@@ -1131,13 +894,6 @@ lxsnic_dev_tx_queue_release(struct rte_eth_dev *dev,
 		rte_free(tx_ring->seg_mbufs);
 		tx_ring->seg_mbufs = NULL;
 	}
-
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	if (tx_ring->raw_mz) {
-		rte_memzone_free(tx_ring->raw_mz);
-		tx_ring->raw_mz = NULL;
-	}
-#endif
 }
 
 static void
@@ -2040,31 +1796,6 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 
 	lxsnic_msix_disable_all(adapter);
 
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	adapter->e_raw_test = LXSNIC_NONE_PCIE_RAW_TEST;
-	penv = getenv("LSINIC_EP2RC_PCIE_RAW_TEST");
-	if (penv && atoi(penv))
-		adapter->e_raw_test |= LXSNIC_EP2RC_PCIE_RAW_TEST;
-
-	penv = getenv("LSINIC_RC2EP_PCIE_RAW_TEST");
-	if (penv && atoi(penv))
-		adapter->e_raw_test |= LXSNIC_RC2EP_PCIE_RAW_TEST;
-
-	penv = getenv("LSINIC_PCIE_RAW_TEST_SIZE");
-	if (penv)
-		adapter->raw_test_size = atoi(penv);
-	else
-		adapter->raw_test_size = LSINIC_PCIE_RAW_TEST_SIZE_DEFAULT;
-	if (adapter->e_raw_test &&
-		(adapter->raw_test_size > LSINIC_PCIE_RAW_TEST_SIZE_MAX ||
-		adapter->raw_test_size < LSINIC_PCIE_RAW_TEST_SIZE_MIN)) {
-		LSXINIC_PMD_WARN("Invalid raw test size(%d)",
-			adapter->raw_test_size);
-		adapter->raw_test_size = LSINIC_PCIE_RAW_TEST_SIZE_DEFAULT;
-		LSXINIC_PMD_WARN("Change raw test size to default(%d)",
-			adapter->raw_test_size);
-	}
-#endif
 	penv = getenv("LSINIC_SELF_XMIT_TEST");
 	if (penv) {
 		adapter->self_test = atoi(penv);

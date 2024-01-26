@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2024 NXP
  */
 
 #include <time.h>
@@ -1111,11 +1111,6 @@ lsinic_dev_configure(struct rte_eth_dev *eth_dev)
 		return err;
 
 	adapter->rbp_enable = rte_lsx_pciep_hw_rbp_get(adapter->pcie_idx);
-
-#ifdef RTE_LSINIC_PCIE_RAW_TEST_ENABLE
-	adapter->txq_raw_dma_id = -1;
-	adapter->rxq_raw_dma_id = -1;
-#endif
 
 	if (adapter->ep_cap & LSINIC_EP_CAP_TXQ_DMA_NO_RSP)
 		dma_silent = 1;
