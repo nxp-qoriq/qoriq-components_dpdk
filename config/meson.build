@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2017-2019 Intel Corporation
-# Copyright 2022-2023 NXP
+# Copyright 2022-2024 NXP
 
 # check the OS is supported, rather than going any further
 supported_exec_envs = ['freebsd', 'linux', 'windows']
@@ -304,7 +304,6 @@ endforeach
 dpdk_conf.set('RTE_MAX_ETHPORTS', get_option('max_ethports'))
 dpdk_conf.set('RTE_LIBEAL_USE_HPET', get_option('use_hpet'))
 dpdk_conf.set('RTE_ENABLE_TRACE_FP', get_option('enable_trace_fp'))
-dpdk_conf.set('RTE_LSINIC_PCIE_RAW_TEST_ENABLE', get_option('lsxinic_pcie_raw_test'))
 dpdk_conf.set('RTE_LSINIC_PKT_MERGE_ACROSS_PCIE', get_option('lsinic_pkt_merge_across_pcie'))
 # values which have defaults which may be overridden
 dpdk_conf.set('RTE_MAX_VFIO_GROUPS', 64)
