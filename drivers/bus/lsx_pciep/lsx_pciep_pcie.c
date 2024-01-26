@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2024 NXP
  */
 
 #include <unistd.h>
@@ -1883,7 +1883,7 @@ rte_lsx_pciep_rbp_ob_overlap(struct rte_lsx_pciep_device *ep_dev,
 
 static uint8_t *
 lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
-	uint64_t pci_addr, uint64_t size)
+	uint64_t pci_addr, uint64_t size, uint64_t *pphy)
 {
 	int pf = ep_dev->pf;
 	int vf = ep_dev->vf;
@@ -1936,6 +1936,8 @@ lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
 
 			return NULL;
 		}
+		if (pphy)
+			*pphy = iova;
 	} else {
 		LSX_PCIEP_BUS_ERR("MAP pa(%lx):size(%lx)",
 			ob_win->ob_phy_base, size);
@@ -1964,7 +1966,7 @@ lsx_pciep_set_ob_win_rbp(struct rte_lsx_pciep_device *ep_dev,
 
 static uint8_t *
 lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev,
-	uint64_t pci_map, uint64_t size)
+	uint64_t pci_map, uint64_t size, uint64_t *pphy)
 {
 	int pf = ep_dev->pf;
 	int is_vf = ep_dev->is_vf;
@@ -2058,6 +2060,8 @@ lsx_pciep_set_ob_win_norbp(struct rte_lsx_pciep_device *ep_dev,
 	}
 
 return_pcie_map_vir:
+	if (pphy)
+		*pphy = (ob_win->ob_phy_base + pci_map);
 	return ob_win->ob_virt_base + pci_map;
 }
 
@@ -2096,6 +2100,7 @@ rte_lsx_pciep_alloc_pci_ob(struct rte_lsx_pciep_device *ep_dev,
 
 			return NULL;
 		}
+		*phy_base = iova;
 	} else {
 		LSX_PCIEP_BUS_ERR("MAP pa(%lx):size(%lx)",
 			phy, size);
@@ -2109,14 +2114,12 @@ rte_lsx_pciep_alloc_pci_ob(struct rte_lsx_pciep_device *ep_dev,
 		LSX_PCIEP_BUS_INFO(OB_PF_INFO_DUMP_FORMAT(pcie_id,
 			pf, vaddr, phy, pci_addr, size));
 
-	*phy_base = phy;
-
 	return vaddr;
 }
 
 void *
 rte_lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
-	uint64_t pci_addr, uint64_t size)
+	uint64_t pci_addr, uint64_t size, uint64_t *pphy)
 {
 	int pcie_id = ep_dev->pcie_id;
 	uint8_t *vaddr;
@@ -2132,13 +2135,18 @@ rte_lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
 			return NULL;
 		ep_dev->ob_win[0].ob_phy_base = phy;
 		ep_dev->ob_win[0].ob_virt_base = vaddr;
+		if (pphy)
+			*pphy = phy;
 		return vaddr;
 	}
 
-	if (ctlhw->rbp)
-		vaddr = lsx_pciep_set_ob_win_rbp(ep_dev, pci_addr, size);
-	else
-		vaddr = lsx_pciep_set_ob_win_norbp(ep_dev, pci_addr, size);
+	if (ctlhw->rbp) {
+		vaddr = lsx_pciep_set_ob_win_rbp(ep_dev,
+			pci_addr, size, pphy);
+	} else {
+		vaddr = lsx_pciep_set_ob_win_norbp(ep_dev,
+			pci_addr, size, pphy);
+	}
 
 	return vaddr;
 }
@@ -2451,33 +2459,6 @@ rte_lsx_pciep_bus_ob_dma_size(struct rte_lsx_pciep_device *ep_dev)
 		return DMA_64BIT_MAX / 4;
 
 	return ep_dev->ob_win[0].ob_win_size * ep_dev->ob_win[0].ob_win_nb;
-}
-
-uint64_t
-rte_lsx_pciep_bus_this_ob_base(struct rte_lsx_pciep_device *ep_dev,
-	uint8_t win_idx)
-{
-	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[ep_dev->pcie_id];
-
-	if (win_idx < ep_dev->rbp_ob_win_nb)
-		return ep_dev->ob_win[win_idx].ob_phy_base;
-
-	if (ctlhw->rbp) {
-		if (ep_dev->rbp_ob_win_nb) {
-			win_idx = ep_dev->rbp_ob_win_nb - 1;
-			return ep_dev->ob_win[win_idx].ob_phy_base;
-		}
-
-		LSX_PCIEP_BUS_ERR("No Outbound RBP win configured");
-		return 0;
-	}
-
-	if (!ep_dev->ob_win[0].ob_phy_base) {
-		LSX_PCIEP_BUS_ERR("No Outbound NONE-RBP win configured");
-		return 0;
-	}
-
-	return ep_dev->ob_win[0].ob_phy_base;
 }
 
 uint64_t

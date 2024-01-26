@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2024 NXP
  */
 
 #ifndef _RTE_LSX_PCIEP_BUS_H_
@@ -180,7 +180,7 @@ rte_lsx_pciep_alloc_pci_ob(struct rte_lsx_pciep_device *ep_dev,
 
 void *
 rte_lsx_pciep_set_ob_win(struct rte_lsx_pciep_device *ep_dev,
-	uint64_t pci_addr, uint64_t size);
+	uint64_t pci_addr, uint64_t size, uint64_t *pphy);
 
 int
 rte_lsx_pciep_unset_ob_win(struct rte_lsx_pciep_device *ep_dev,
@@ -236,10 +236,6 @@ rte_lsx_pciep_bus_ob_mapped(struct rte_lsx_pciep_device *ep_dev,
 
 uint64_t
 rte_lsx_pciep_bus_ob_dma_size(struct rte_lsx_pciep_device *ep_dev);
-
-uint64_t
-rte_lsx_pciep_bus_this_ob_base(struct rte_lsx_pciep_device *ep_dev,
-	uint8_t win_idx);
 
 uint64_t
 rte_lsx_pciep_bus_win_mask(struct rte_lsx_pciep_device *ep_dev);

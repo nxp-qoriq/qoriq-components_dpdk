@@ -244,7 +244,7 @@ lsinic_init_bar_addr(struct rte_lsx_pciep_device *lsinic_dev)
 
 	if (!rbp && !sim) {
 		/* OB setting does NOT depend on RC for NORBP.*/
-		vir_ob = rte_lsx_pciep_set_ob_win(lsinic_dev, 0, 0);
+		vir_ob = rte_lsx_pciep_set_ob_win(lsinic_dev, 0, 0, NULL);
 		if (!vir_ob)
 			return -ENOMEM;
 	}
@@ -1371,7 +1371,7 @@ lsinic_dev_start(struct rte_eth_dev *eth_dev)
 static int
 lsinic_dma_config_fromlocal(struct lsinic_adapter *adapter)
 {
-	uint64_t rc_dma_addr = 0, phy_addr;
+	uint64_t rc_dma_addr = 0, phy_addr = RTE_BAD_IOVA;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 	uint32_t size, miss = 0;
 	const struct rte_memzone *local_mz;
@@ -1389,15 +1389,22 @@ lsinic_dma_config_fromlocal(struct lsinic_adapter *adapter)
 	}
 
 	local_vir = local_mz->addr;
-	rc_dma_addr = local_mz->iova;
+	rc_dma_addr = rte_mem_virt2phy(local_vir);
+	if (rc_dma_addr == RTE_BAD_IOVA) {
+		LSXINIC_PMD_ERR("VIR(%p)->PHY failed!",
+			local_vir);
+
+		return -EIO;
+	}
 	size = local_mz->len;
 	LSXINIC_PMD_INFO("Config from LOCAL DMA base:%lX, size:0x%08x",
 		rc_dma_addr, size);
 
-	pci_vir = rte_lsx_pciep_alloc_pci_ob(lsinic_dev,
+	pci_vir = rte_lsx_pciep_set_ob_win(lsinic_dev,
 			rc_dma_addr, size, &phy_addr);
-	if (!pci_vir) {
-		LSXINIC_PMD_ERR("PCI OB alloc failed");
+	if (!pci_vir || phy_addr == RTE_BAD_IOVA) {
+		LSXINIC_PMD_ERR("Set PCI OB with bus(0x%lx) failed",
+			rc_dma_addr);
 		return -EIO;
 	}
 
@@ -1644,7 +1651,7 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 		adapter->rc_ring_virt_base = vir_addr;
 		adapter->rc_ring_phy_base = rc_reg_addr;
 		vir_addr = rte_lsx_pciep_set_ob_win(lsinic_dev,
-			rc_reg_addr, size);
+			rc_reg_addr, size, NULL);
 		if (vir_addr != adapter->rc_ring_virt_base) {
 			LSXINIC_PMD_ERR("Simulator: vir mapped from RC(%p!=%p)",
 				vir_addr, adapter->rc_ring_virt_base);
@@ -1664,9 +1671,8 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 		}
 		adapter->rc_ring_virt_base =
 			rte_lsx_pciep_set_ob_win(lsinic_dev,
-				rc_reg_addr, size);
-		adapter->rc_ring_phy_base =
-			rte_lsx_pciep_bus_this_ob_base(lsinic_dev, 0xff);
+				rc_reg_addr, size,
+				&adapter->rc_ring_phy_base);
 	}
 
 	if (!adapter->rc_ring_virt_base)
@@ -1689,7 +1695,7 @@ lsinic_dev_map_rc_ring(struct lsinic_adapter *adapter,
 int
 lsinic_dma_config_fromrc(struct lsinic_adapter *adapter)
 {
-	uint64_t rc_dma_addr = 0, phy_addr;
+	uint64_t rc_dma_addr = 0, phy_addr = RTE_BAD_IOVA;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
@@ -1700,8 +1706,13 @@ lsinic_dma_config_fromrc(struct lsinic_adapter *adapter)
 	LSXINIC_PMD_INFO("Config from RC DMA base:%lX, size:0x%08x",
 		rc_dma_addr, size);
 
-	adapter->rc_dma_vir = rte_lsx_pciep_alloc_pci_ob(lsinic_dev,
+	adapter->rc_dma_vir = rte_lsx_pciep_set_ob_win(lsinic_dev,
 			rc_dma_addr, size, &phy_addr);
+	if (!adapter->rc_dma_vir || phy_addr == RTE_BAD_IOVA) {
+		LSXINIC_PMD_ERR("Set PCI OB with bus(0x%lx) failed",
+			rc_dma_addr);
+		return -EIO;
+	}
 
 	adapter->rc_dma_phy = phy_addr;
 	adapter->rc_dma_elt_size = size;

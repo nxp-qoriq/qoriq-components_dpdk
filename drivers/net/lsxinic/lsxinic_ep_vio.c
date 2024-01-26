@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2023 NXP  */
+/* Copyright 2020-2024 NXP  */
 
 #include <stdio.h>
 
@@ -162,8 +162,7 @@ lsxvio_vio_queue_desc_map(struct rte_lsx_pciep_device *dev,
 	size = desc_addr_max - desc_addr_min + LSXVIO_PER_RING_MEM_MAX_SIZE;
 	while (mask && (size & mask))
 		size++;
-	virt_base = rte_lsx_pciep_set_ob_win(dev, desc_addr_min, size);
-	*ob_base = rte_lsx_pciep_bus_this_ob_base(dev, 0xff);
+	virt_base = rte_lsx_pciep_set_ob_win(dev, desc_addr_min, size, ob_base);
 
 	for (i = 0; i < num; i++) {
 		if (desc_addr[i])

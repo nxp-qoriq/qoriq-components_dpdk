@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2023 NXP  */
+/* Copyright 2020-2024 NXP  */
 
 #include <sys/queue.h>
 
@@ -1243,7 +1243,7 @@ lsxvio_dump_remote_buf(struct lsxvio_adapter *adapter,
 			return;
 		}
 		virt = rte_lsx_pciep_set_ob_win(adapter->lsx_dev,
-			remote_addr, LSXVIO_PER_RING_MEM_MAX_SIZE);
+			remote_addr, LSXVIO_PER_RING_MEM_MAX_SIZE, NULL);
 	} else {
 		virt = DPAA2_IOVA_TO_VADDR_AND_CHECK(remote_addr,
 			LSXVIO_PER_RING_MEM_MAX_SIZE);

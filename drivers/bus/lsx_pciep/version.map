@@ -21,7 +21,6 @@ DPDK_23 {
 	rte_lsx_pciep_fun_config;
 	rte_lsx_pciep_rbp_ob_overlap;
 	rte_lsx_pciep_bus_ob_dma_size;
-	rte_lsx_pciep_bus_this_ob_base;
 	rte_lsx_pciep_bus_win_mask;
 	rte_lsx_pciep_driver_register;
 	rte_lsx_pciep_driver_unregister;
