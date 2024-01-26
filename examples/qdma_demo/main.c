@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 /* System headers */
@@ -1010,20 +1010,16 @@ qdma_demo_job_ring_init(uint32_t max_desc)
 				g_pci_phy);
 			return -ENOMEM;
 		}
-		if (g_pci_ep && g_pci_ep_rbp)
-			pci_iova = g_pci_bus;
-		else if (rte_eal_iova_mode() == RTE_IOVA_PA)
-			pci_iova = g_pci_phy;
-		else
-			pci_iova = (uint64_t)pci_vir;
-		if (pci_iova == RTE_BAD_IOVA) {
-			RTE_LOG(ERR, qdma_demo,
-				"PCIe iova unavailable for test path(%d)\n",
-				g_test_path);
-			return -EINVAL;
-		}
-		/* configure pci virtual address in SMMU via VFIO */
-		if (!g_pci_ep) {
+		if (g_pci_ep) {
+			if (g_pci_ep_rbp)
+				pci_iova = g_pci_bus;
+			else
+				pci_iova = g_pci_phy;
+		} else {
+			if (rte_eal_iova_mode() == RTE_IOVA_PA)
+				pci_iova = g_pci_phy;
+			else
+				pci_iova = (uint64_t)pci_vir;
 			ret = rte_fslmc_vfio_mem_dmamap((uint64_t)pci_vir,
 				pci_iova, g_pci_size);
 			if (ret) {
