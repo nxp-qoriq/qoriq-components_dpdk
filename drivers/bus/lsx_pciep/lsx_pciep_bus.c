@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2024 NXP
  */
 
 #include <unistd.h>
@@ -47,6 +47,8 @@
 #define LSX_PCIEP_BUS_NAME	lsx_pciep
 
 static struct rte_lsx_pciep_bus lsx_pciep_bus;
+
+static int s_lsx_pciep_disable;
 
 static int
 lsx_pciep_compare_devname(struct rte_lsx_pciep_device *dev1,
@@ -305,6 +307,13 @@ lsx_pciep_scan(void)
 {
 	uint8_t pcie_idx = 0;
 	int ret;
+	char *penv;
+
+	penv = getenv("LSX_PCIEP_BUS_DISABLE");
+	if ((penv && atoi(penv)) || s_lsx_pciep_disable) {
+		s_lsx_pciep_disable = 1;
+		return -ENODEV;
+	}
 
 	if (rte_eal_process_type() == RTE_PROC_SECONDARY)
 		return 0;
@@ -369,6 +378,9 @@ lsx_pciep_probe(void)
 	int ret = 0, i, added;
 	struct rte_lsx_pciep_device *dev;
 	struct rte_lsx_pciep_driver *drv;
+
+	if (s_lsx_pciep_disable)
+		return 0;
 
 	ret = lsx_pciep_share_info_init();
 	if (ret) {
