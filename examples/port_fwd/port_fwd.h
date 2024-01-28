@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2022 NXP
+ * Copyright 2019-2022, 2024 NXP
  * Code was mostly borrowed from examples/l3fwd/l3fwd.h
  * See examples/l3fwd/l3fwd.h for additional Copyrights.
  */
@@ -56,6 +56,7 @@ struct lcore_conf {
 	struct lcore_statistic tx_statistic[RTE_MAX_ETHPORTS];
 	struct lcore_statistic rx_statistic[RTE_MAX_ETHPORTS];
 	uint32_t tx_ip[RTE_MAX_ETHPORTS];
+	char *dump_buf;
 } __rte_cache_aligned;
 
 #endif  /* __PORT_FWD_H__ */

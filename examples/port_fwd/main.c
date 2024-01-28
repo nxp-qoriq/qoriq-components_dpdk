@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2024 NXP
  * Code was mostly borrowed from examples/l3fwd/main.c
  * See examples/l3fwd/main.c for additional Copyrights.
  */
@@ -52,6 +52,8 @@
 #include <rte_pdump.h>
 
 #include "port_fwd.h"
+
+#define RTE_LOGTYPE_port_fwd RTE_LOGTYPE_USER1
 
 /*
  * Configurable number of RX/TX ring descriptors
@@ -146,6 +148,16 @@ static uint64_t max_mbuf_addr;
 static uint64_t min_mbuf_addr = (~((uint64_t)0));
 
 static int s_dump_mbuf;
+static int s_inject;
+static uint16_t s_inject_pkt_size = 64;
+
+static uint8_t s_inject_pkt_base[] = {
+	0x00, 0xE0, 0x0C, 0x00, 0x01, 0x00, 0x00, 0x10,
+	0x94, 0x00, 0x00, 0x01, 0x08, 0x00, 0x45, 0x00,
+	0x00, 0x14, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFD,
+	0xED, 0x40, 0xC0, 0xA8, 0x0B, 0x02, 0x01, 0x01,
+	0x01, 0x01
+};
 
 struct loop_mode {
 	int (*parse_fwd_dst)(int portid);
@@ -171,11 +183,13 @@ static int parse_port_fwd_dst(int portid)
 		fwd_dst_port[portid] = atoi(penv);
 
 	if (fwd_dst_port[portid] < 0) {
-		printf("Drop packets from port %d\r\n", portid);
+		RTE_LOG(WARNING, port_fwd,
+			"Drop packets from port %d\r\n", portid);
 		return 0;
 	}
 
-	printf("port forwarding from port %d to port %d\r\n",
+	RTE_LOG(INFO, port_fwd,
+		"Forward traffic from port %d to port %d\r\n",
 		portid, fwd_dst_port[portid]);
 
 	return 0;
@@ -191,9 +205,11 @@ static int parse_seg_rx_port(int portid)
 	if (penv)
 		rx_seg_port[portid] = atoi(penv);
 
-	if (rx_seg_port[portid])
-		printf("Gather rx frames from port%d\r\n",
+	if (rx_seg_port[portid]) {
+		RTE_LOG(INFO, port_fwd,
+			"Gather rx frames from port%d\r\n",
 			portid);
+	}
 
 	return 0;
 }
@@ -222,14 +238,9 @@ main_injection_test_loop(void)
 	int dstportid;
 	uint8_t queueid;
 	struct lcore_conf *qconf;
-	char *penv = getenv("PORT_FWD_INJECTION_PKT_SIZE");
-	uint16_t inject_size = 64, burst_size = MAX_PKT_BURST;
-
-	if (penv) {
-		inject_size = atoi(penv);
-		if (inject_size < 60 || inject_size > 1514)
-			inject_size = 64;
-	}
+	char *penv;
+	uint16_t burst_size = MAX_PKT_BURST;
+	uint16_t inject_size = s_inject_pkt_size - PKTGEN_ETH_FCS_SIZE;
 
 	penv = getenv("PORT_FWD_INJECTION_BURST_SIZE");
 	if (penv) {
@@ -237,24 +248,27 @@ main_injection_test_loop(void)
 		if (burst_size < 1 || burst_size > MAX_PKT_BURST)
 			burst_size = MAX_PKT_BURST;
 	}
-	RTE_LOG(INFO, PMD, "Inject pkt size is %d and burst size is %d\n",
-		inject_size, burst_size);
+	RTE_LOG(INFO, port_fwd,
+		"Inject pkt size is %d and burst size is %d\n",
+		s_inject_pkt_size, burst_size);
 
 	lcore_id = rte_lcore_id();
 	qconf = &s_lcore_conf[lcore_id];
 
 	if (qconf->n_rx_queue == 0) {
-		RTE_LOG(INFO, PMD, "lcore %u has nothing to do\n", lcore_id);
+		RTE_LOG(INFO, port_fwd,
+			"lcore %u has nothing to do\n", lcore_id);
 		return 0;
 	}
 
-	RTE_LOG(INFO, PMD, "entering injection test loop on lcore %u\n",
+	RTE_LOG(INFO, port_fwd,
+		"entering injection test loop on lcore %u\n",
 		lcore_id);
 
 	for (i = 0; i < qconf->n_rx_queue; i++) {
 		portid = qconf->rx_queue_list[i].port_id;
 		queueid = qconf->rx_queue_list[i].queue_id;
-		RTE_LOG(INFO, PMD,
+		RTE_LOG(INFO, port_fwd,
 			" -- lcoreid=%u portid=%u rxqueueid=%hhu\n",
 			lcore_id, portid, queueid);
 	}
@@ -262,7 +276,7 @@ main_injection_test_loop(void)
 	while (!force_quit) {
 		/* Read packet from RX queues
 		 */
-		for (i = 0; i < qconf->n_rx_queue; ++i) {
+		for (i = 0; i < qconf->n_rx_queue; i++) {
 			portid = qconf->rx_queue_list[i].port_id;
 			queueid = qconf->rx_queue_list[i].queue_id;
 
@@ -272,6 +286,13 @@ main_injection_test_loop(void)
 				MAX_PKT_BURST);
 
 			for (j = 0; j < nb_rx; j++) {
+				if (unlikely(inject_size !=
+					pkts_burst[j]->pkt_len)) {
+					RTE_LOG(WARNING, port_fwd,
+						"PKT len(%d) received is not expected(%d)\n",
+						pkts_burst[j]->pkt_len,
+						inject_size);
+				}
 				qconf->rx_statistic[portid].bytes +=
 					pkts_burst[j]->pkt_len;
 				qconf->rx_statistic[portid].bytes_fcs +=
@@ -289,11 +310,11 @@ main_injection_test_loop(void)
 				continue;
 			nb_tx = burst_size;
 
-			for (i = 0; i < nb_tx; i++) {
-				pkts_burst[i]->data_off = RTE_PKTMBUF_HEADROOM;
-				pkts_burst[i]->pkt_len = inject_size;
-				pkts_burst[i]->data_len = inject_size;
-				tx_len[i] = inject_size;
+			for (j = 0; j < nb_tx; j++) {
+				pkts_burst[j]->data_off = RTE_PKTMBUF_HEADROOM;
+				pkts_burst[j]->pkt_len = inject_size;
+				pkts_burst[j]->data_len = inject_size;
+				tx_len[j] = inject_size;
 			}
 
 			sent = rte_eth_tx_burst(dstportid,
@@ -317,29 +338,43 @@ main_injection_test_loop(void)
 		}
 	}
 
+	if (qconf->dump_buf) {
+		rte_free(qconf->dump_buf);
+		qconf->dump_buf = NULL;
+	}
+
 	return 0;
 }
 
 static inline void
 dump_mbuf_data(struct rte_mbuf *pkt, int tx_rx,
-	uint16_t portid)
+	uint16_t portid, struct lcore_conf *qconf)
 {
-	uint32_t i;
+	uint32_t i, off = 0;
 	uint8_t *data = (uint8_t *)pkt->buf_addr +
 		pkt->data_off;
 
 	if (likely(!s_dump_mbuf))
 		return;
 
-	printf("%s %d pkt len:%d\r\n", tx_rx ?
+	if (!qconf->dump_buf)
+		qconf->dump_buf = rte_malloc(NULL, 4096, 0);
+
+	RTE_LOG(INFO, port_fwd,
+		"%s %d pkt len:%d\r\n", tx_rx ?
 		"Send to" : "Recv from",
 		portid, pkt->pkt_len);
+	if (!qconf->dump_buf)
+		return;
 	for (i = 0; i < pkt->pkt_len; i++) {
-		printf("%02x ", data[i]);
+		off += sprintf(&qconf->dump_buf[off],
+			"%02x ", data[i]);
 		if ((i + 1) % 16 == 0)
-			printf("\r\n");
+			off += sprintf(&qconf->dump_buf[off], "\r\n");
 	}
-	printf("\r\n");
+
+	RTE_LOG(INFO, port_fwd,
+		"%s\r\n", qconf->dump_buf);
 }
 
 static uint16_t
@@ -462,7 +497,8 @@ port_fwd_handle_seg_rx(struct rte_mbuf **pkts_rx,
 		nb_tx_expected = j;
 		if (unlikely(s_dump_mbuf)) {
 			for (j = 0; j < nb_tx_expected; j++)
-				dump_mbuf_data(pkts_tx[j], 1, dstportid);
+				dump_mbuf_data(pkts_tx[j], 1, dstportid,
+					qconf);
 		}
 		if (dstportid < 0)
 			continue;
@@ -499,7 +535,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	int dstportid;
 	uint8_t queueid;
 	struct lcore_conf *qconf;
-	char *penv = getenv("PORT_FWD_INJECTION_TEST");
+	char *penv;
 	uint64_t bytes_overhead[MAX_PKT_BURST];
 	uint64_t bytes_fcs[MAX_PKT_BURST];
 	uint64_t bytes[MAX_PKT_BURST];
@@ -507,7 +543,7 @@ main_loop(__attribute__((unused)) void *dummy)
 	uint8_t sents[MAX_PKT_BURST];
 	int re_send_max = 0;
 
-	if (penv && atoi(penv)) {
+	if (s_inject) {
 		main_injection_test_loop();
 		return 0;
 	}
@@ -529,16 +565,18 @@ main_loop(__attribute__((unused)) void *dummy)
 	qconf = &s_lcore_conf[lcore_id];
 
 	if (qconf->n_rx_queue == 0) {
-		RTE_LOG(INFO, PMD, "lcore %u has nothing to do\n", lcore_id);
+		RTE_LOG(INFO, port_fwd,
+			"lcore %u has nothing to do\n", lcore_id);
 		return 0;
 	}
 
-	RTE_LOG(INFO, PMD, "entering main loop on lcore %u\n", lcore_id);
+	RTE_LOG(INFO, port_fwd,
+		"entering main loop on lcore %u\n", lcore_id);
 
 	for (i = 0; i < qconf->n_rx_queue; i++) {
 		portid = qconf->rx_queue_list[i].port_id;
 		queueid = qconf->rx_queue_list[i].queue_id;
-		RTE_LOG(INFO, PMD,
+		RTE_LOG(INFO, port_fwd,
 			" -- lcoreid=%u portid=%u rxqueueid=%hhu\n",
 			lcore_id, portid, queueid);
 	}
@@ -644,7 +682,8 @@ port_forwarding:
 					bytes_fcs[j];
 				qconf->rx_statistic[portid].bytes_overhead +=
 					bytes_overhead[j];
-				dump_mbuf_data(tx_burst[j], 0, portid);
+				dump_mbuf_data(tx_burst[j], 0, portid,
+					qconf);
 			}
 			qconf->rx_statistic[portid].packets += rx_left;
 
@@ -671,6 +710,11 @@ port_forwarding:
 		}
 	}
 
+	if (qconf->dump_buf) {
+		rte_free(qconf->dump_buf);
+		qconf->dump_buf = NULL;
+	}
+
 	return 0;
 }
 
@@ -688,13 +732,15 @@ check_lcore_params(void)
 	for (i = 0; i < nb_lcore_params; ++i) {
 		queue = s_lcore_params[i].queue_id;
 		if (queue >= MAX_RX_QUEUE_PER_PORT) {
-			printf("invalid queue number: %hhu\n", queue);
-			return -1;
+			RTE_LOG(ERR, port_fwd,
+				"invalid queue number: %hhu\n", queue);
+			return -EINVAL;
 		}
 		lcore = s_lcore_params[i].lcore_id;
 		if (!rte_lcore_is_enabled(lcore)) {
-			printf("error: lcore %hhu is not enabled\n", lcore);
-			return -1;
+			RTE_LOG(ERR, port_fwd,
+				"lcore %hhu is not enabled\n", lcore);
+			return -EINVAL;
 		}
 	}
 	return 0;
@@ -709,12 +755,16 @@ check_port_config(void)
 	for (i = 0; i < nb_lcore_params; ++i) {
 		portid = s_lcore_params[i].port_id;
 		if ((enabled_port_mask & (1 << portid)) == 0) {
-			printf("port %u is not enabled in port mask\n", portid);
-			return -1;
+			RTE_LOG(ERR, port_fwd,
+				"port %u is not enabled in port mask\n",
+				portid);
+			return -EINVAL;
 		}
 		if (!rte_eth_dev_is_valid_port(portid)) {
-			printf("port %u is not present on the board\n", portid);
-			return -1;
+			RTE_LOG(ERR, port_fwd,
+				"port %u is not present on the board\n",
+				portid);
+			return -EINVAL;
 		}
 	}
 	return 0;
@@ -747,9 +797,19 @@ port_fwd_port_queue_mapping(uint16_t port_id, uint16_t queue_id,
 	int i, j;
 	uint16_t pidx = 0, qidx = 0;
 
-	if (port_id >= RTE_MAX_ETHPORTS ||
-		queue_id >= RTE_MAX_QUEUES)
-		return -1;
+	if (port_id >= RTE_MAX_ETHPORTS) {
+		RTE_LOG(ERR, port_fwd,
+			"Too large port ID(%d) >= %d\n",
+			port_id, RTE_MAX_ETHPORTS);
+		return -EINVAL;
+	}
+
+	if (queue_id >= RTE_MAX_QUEUES) {
+		RTE_LOG(ERR, port_fwd,
+			"Too large queue ID(%d) >= %d\n",
+			queue_id, RTE_MAX_QUEUES);
+		return -EINVAL;
+	}
 
 	if (s_pq_map[port_id][queue_id]) {
 		for (i = 0; i <= port_id; i++) {
@@ -772,7 +832,7 @@ port_fwd_port_queue_mapping(uint16_t port_id, uint16_t queue_id,
 		return 0;
 	}
 
-	return -1;
+	return -EINVAL;
 }
 
 static int
@@ -785,7 +845,7 @@ init_lcore_rxq_ring(struct lcore_rx_queue *rx_queue)
 	uint16_t port_idx, queue_idx;
 
 	if (s_proc_type == proc_standalone_secondary)
-		return -1;
+		return -EINVAL;
 
 	err = port_fwd_port_queue_mapping(rx_queue->port_id,
 		rx_queue->queue_id, &port_idx, &queue_idx);
@@ -806,17 +866,20 @@ init_lcore_rxq_ring(struct lcore_rx_queue *rx_queue)
 		rx_queue->send_q = send_q;
 		rx_queue->recv_q = recv_q;
 		if (!send_q) {
-			printf("send_q(%s) created failed\n",
+			RTE_LOG(ERR, port_fwd,
+				"send_q(%s) created failed\n",
 				send_name);
 			goto clear_proxy_q;
 		}
 		if (!recv_q) {
-			printf("recv_q(%s) created failed\n",
+			RTE_LOG(ERR, port_fwd,
+				"recv_q(%s) created failed\n",
 				recv_name);
 			goto clear_proxy_q;
 		}
-		printf("send_q(%s):%p, recv_q(%s):%p created\r\n",
-				send_name, send_q, recv_name, recv_q);
+		RTE_LOG(INFO, port_fwd,
+			"send_q(%s):%p, recv_q(%s):%p created\r\n",
+			send_name, send_q, recv_name, recv_q);
 	} else if (s_proc_type == proc_attach_secondary) {
 		snprintf(recv_name, sizeof(recv_name), PRI_2_SEC,
 			port_idx, queue_idx);
@@ -827,16 +890,19 @@ init_lcore_rxq_ring(struct lcore_rx_queue *rx_queue)
 		rx_queue->send_q = send_q;
 		rx_queue->recv_q = recv_q;
 		if (!send_q) {
-			printf("send_q(%s) lookup failed\n",
+			RTE_LOG(ERR, port_fwd,
+				"send_q(%s) lookup failed\n",
 				send_name);
 			goto clear_proxy_q;
 		}
 		if (!recv_q) {
-			printf("recv_q(%s) lookup failed\n",
+			RTE_LOG(ERR, port_fwd,
+				"recv_q(%s) lookup failed\n",
 				recv_name);
 			goto clear_proxy_q;
 		}
-		printf("send_q(%s):%p, recv_q(%s):%p detected\r\n",
+		RTE_LOG(INFO, port_fwd,
+			"send_q(%s):%p, recv_q(%s):%p detected\r\n",
 			send_name, send_q, recv_name, recv_q);
 	}
 
@@ -854,7 +920,7 @@ clear_proxy_q:
 	else
 		rte_exit(0, "port(%d)queue(%d) ring lookup failed\n",
 			port_idx, queue_idx);
-	return -1;
+	return -EINVAL;
 }
 
 static int
@@ -867,9 +933,10 @@ init_lcore_rx_queues(void)
 		lcore = s_lcore_params[i].lcore_id;
 		nb_rx_queue = s_lcore_conf[lcore].n_rx_queue;
 		if (nb_rx_queue >= MAX_RX_QUEUE_PER_LCORE) {
-			printf("error: too many queues (%u) for lcore: %u\n",
+			RTE_LOG(ERR, port_fwd,
+				"too many queues (%u) for lcore: %u\n",
 				nb_rx_queue + 1, lcore);
-			return -1;
+			return -EINVAL;
 		}
 
 		s_lcore_conf[lcore].rx_queue_list[nb_rx_queue].port_id =
@@ -891,10 +958,10 @@ parse_portmask(const char *portmask)
 	/* parse hexadecimal string */
 	pm = strtoul(portmask, &end, 16);
 	if ((portmask[0] == '\0') || (end == NULL) || (*end != '\0'))
-		return -1;
+		return -EINVAL;
 
 	if (pm == 0)
-		return -1;
+		return -EINVAL;
 
 	return pm;
 }
@@ -923,26 +990,27 @@ parse_config(const char *q_arg)
 		++p;
 		p0 = strchr(p, ')');
 		if (!p0)
-			return -1;
+			return -EINVAL;
 
 		size = p0 - p;
 		if (size >= sizeof(s))
-			return -1;
+			return -EINVAL;
 
 		snprintf(s, sizeof(s), "%.*s", size, p);
 		if (rte_strsplit(s, sizeof(s), str_fld,
 			_NUM_FLD, ',') != _NUM_FLD)
-			return -1;
+			return -EINVAL;
 		for (i = 0; i < _NUM_FLD; i++) {
 			errno = 0;
 			int_fld[i] = strtoul(str_fld[i], &end, 0);
 			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
-				return -1;
+				return -EINVAL;
 		}
 		if (nb_lcore_params >= MAX_LCORE_PARAMS) {
-			printf("exceeded max number of lcore params: %hu\n",
+			RTE_LOG(ERR, port_fwd,
+				"exceeded max number of lcore params: %hu\n",
 				nb_lcore_params);
-			return -1;
+			return -EINVAL;
 		}
 		lcore_params_array[nb_lcore_params].port_id =
 			(uint8_t)int_fld[FLD_PORT];
@@ -1006,7 +1074,7 @@ parse_args(int argc, char **argv)
 			enabled_port_mask = parse_portmask(optarg);
 			if (enabled_port_mask == 0) {
 				fprintf(stderr, "Invalid portmask\n");
-				return -1;
+				return -EINVAL;
 			}
 			break;
 
@@ -1014,12 +1082,14 @@ parse_args(int argc, char **argv)
 		case 'b':
 			burst_size = (unsigned int)atoi(optarg);
 			if (burst_size > max_pkt_burst) {
-				printf("invalid burst size\n");
-				return -1;
+				RTE_LOG(ERR, port_fwd,
+					"invalid burst size(%d) > %d\n",
+					burst_size, max_pkt_burst);
+				return -EINVAL;
 			}
 			max_pkt_burst = burst_size;
 			max_rx_burst = max_pkt_burst;
-			max_tx_burst = max_rx_burst/2;
+			max_tx_burst = max_rx_burst / 2;
 			break;
 
 		/* long options */
@@ -1027,12 +1097,12 @@ parse_args(int argc, char **argv)
 			ret = parse_config(optarg);
 			if (ret) {
 				fprintf(stderr, "Invalid config\n");
-				return -1;
+				return -EINVAL;
 			}
 			break;
 
 		default:
-			return -1;
+			return -EINVAL;
 		}
 	}
 
@@ -1042,6 +1112,30 @@ parse_args(int argc, char **argv)
 	ret = optind - 1;
 	optind = 1; /* reset getopt lib */
 	return ret;
+}
+
+static void
+port_fwd_inject_gen_pkt(struct rte_mbuf *mbuf)
+{
+	struct rte_ether_hdr *eth_header;
+	struct rte_ipv4_hdr *ipv4_header;
+	uint64_t rand = rte_rand();
+	uint8_t *payload = rte_pktmbuf_mtod(mbuf, void *);
+	const uint16_t len = s_inject_pkt_size -
+		sizeof(struct rte_ether_hdr) - PKTGEN_ETH_FCS_SIZE;
+
+	rte_memcpy(payload, s_inject_pkt_base,
+		sizeof(s_inject_pkt_base));
+	eth_header = (struct rte_ether_hdr *)payload;
+	ipv4_header = (struct rte_ipv4_hdr *)(eth_header + 1);
+	ipv4_header->total_length = rte_cpu_to_be_16(len);
+	ipv4_header->src_addr = (rte_be32_t)(rand & 0xffffffff);
+	ipv4_header->dst_addr = (rte_be32_t)((rand >> 32) & 0xffffffff);
+	ipv4_header->hdr_checksum = 0;
+	ipv4_header->hdr_checksum = rte_ipv4_cksum(ipv4_header);
+
+	mbuf->pkt_len = s_inject_pkt_size - PKTGEN_ETH_FCS_SIZE;
+	mbuf->data_len = s_inject_pkt_size - PKTGEN_ETH_FCS_SIZE;
 }
 
 static void
@@ -1061,7 +1155,8 @@ port_fwd_mp_max_min_addr(struct rte_mempool *mp)
 		ret = rte_pktmbuf_alloc_bulk(mp,
 			&mbuf_arry[alloced], bulk_size);
 		if (ret) {
-			printf("Drain %d bufs from %s failed\r\n",
+			RTE_LOG(ERR, port_fwd,
+				"Drain %d bufs from %s failed\r\n",
 				num, mp->name);
 			if (alloced)
 				rte_pktmbuf_free_bulk(mbuf_arry, alloced);
@@ -1077,6 +1172,8 @@ port_fwd_mp_max_min_addr(struct rte_mempool *mp)
 			max_mbuf_addr = mbuf_arry[i]->buf_iova;
 		if (mbuf_arry[i]->buf_iova < min_mbuf_addr)
 			min_mbuf_addr = mbuf_arry[i]->buf_iova;
+		if (s_inject)
+			port_fwd_inject_gen_pkt(mbuf_arry[i]);
 	}
 	rte_pktmbuf_free_bulk(mbuf_arry, mp->size);
 	free(mbuf_arry);
@@ -1105,7 +1202,8 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 					s);
 			}
 		}
-		printf("mbuf pool(%s)(count=%d) lookup success\n",
+		RTE_LOG(INFO, port_fwd,
+			"mbuf pool(%s)(count=%d) lookup success\n",
 			pktmbuf_pool->name, pktmbuf_pool->size);
 	} else if (s_proc_type == proc_standalone_secondary) {
 		pktmbuf_pool =
@@ -1115,7 +1213,8 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 				buf_size, 0,
 				RTE_MBUF_DEFAULT_MEMPOOL_OPS);
 		if (pktmbuf_pool) {
-			printf("mbuf pool(%s)(count=%d) created\n",
+			RTE_LOG(INFO, port_fwd,
+				"mbuf pool(%s)(count=%d) created\n",
 				s_2nd, nb_mbuf);
 		}
 	} else {
@@ -1125,7 +1224,8 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 				MEMPOOL_CACHE_SIZE, 0,
 				buf_size, 0);
 		if (pktmbuf_pool) {
-			printf("mbuf pool(%s)(count=%d) created\n",
+			RTE_LOG(INFO, port_fwd,
+				"mbuf pool(%s)(count=%d) created\n",
 				s, nb_mbuf);
 		}
 
@@ -1137,7 +1237,8 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 					MEMPOOL_CACHE_SIZE, 0,
 					buf_size, 0);
 			if (pktmbuf_pool_for_2nd) {
-				printf("mbuf pool(%s)(count=%d) created\n",
+				RTE_LOG(INFO, port_fwd,
+					"mbuf pool(%s)(count=%d) created\n",
 					s_2nd, atoi(penv));
 			}
 		}
@@ -1150,75 +1251,13 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 	return 0;
 }
 
-/* Check the link status of all ports in up to 9s, and print them finally */
-static void
-check_all_ports_link_status(uint32_t port_mask)
-{
-#define CHECK_INTERVAL 100 /* 100ms */
-#define MAX_CHECK_TIME 10 /* 1s (10 * 100ms) in total */
-	uint16_t portid;
-	uint8_t count, all_ports_up, print_flag = 0;
-	struct rte_eth_link link;
-	int ret;
-
-	printf("\nChecking link status\r\n");
-	for (count = 0; count <= MAX_CHECK_TIME; count++) {
-		if (force_quit)
-			return;
-		all_ports_up = 1;
-		RTE_ETH_FOREACH_DEV(portid) {
-			if (force_quit)
-				return;
-			if ((port_mask & (1 << portid)) == 0)
-				continue;
-			memset(&link, 0, sizeof(link));
-			ret = rte_eth_link_get_nowait(portid, &link);
-			if (ret < 0) {
-				all_ports_up = 0;
-				if (print_flag == 1)
-					printf("Port %u link get failed: %s\n",
-						portid, rte_strerror(-ret));
-				continue;
-			}
-			/* print link status if flag set */
-			if (print_flag == 1) {
-				if (link.link_status)
-					printf(
-					"Port%d Link Up. Speed %u Mbps -%s\n",
-						portid, link.link_speed,
-				(link.link_duplex == RTE_ETH_LINK_FULL_DUPLEX) ?
-					("full-duplex") : ("half-duplex"));
-				else
-					printf("Port %d Link Down\n", portid);
-				continue;
-			}
-			/* clear all_ports_up flag if any link down */
-			if (link.link_status == RTE_ETH_LINK_DOWN) {
-				all_ports_up = 0;
-				break;
-			}
-		}
-		/* after finally printing all link status, get out */
-		if (print_flag == 1)
-			break;
-
-		if (all_ports_up == 0)
-			rte_delay_ms(CHECK_INTERVAL);
-
-		/* set the print_flag if all ports up or timeout */
-		if (all_ports_up == 1 || count == (MAX_CHECK_TIME - 1)) {
-			print_flag = 1;
-			printf("done\n");
-		}
-	}
-}
-
 static void
 signal_handler(int signum)
 {
 	if (signum == SIGINT || signum == SIGTERM) {
-		printf("\n\nSignal %d received, preparing to exit...\n",
-				signum);
+		RTE_LOG(INFO, port_fwd,
+			"\n\nSignal %d received, preparing to exit...\n",
+			signum);
 		force_quit = true;
 	}
 }
@@ -1241,12 +1280,14 @@ parse_dst_port(uint16_t portid)
 static inline void
 port_fwd_dump_port_status(struct rte_eth_stats *stats)
 {
-	printf("Input: %ld bytes, %ld packets, %ld missed, %ld error\n",
+	RTE_LOG(INFO, port_fwd,
+		"Input: %ld bytes, %ld packets, %ld missed, %ld error\n",
 		(unsigned long)stats->ibytes,
 		(unsigned long)stats->ipackets,
 		(unsigned long)stats->imissed,
 		(unsigned long)stats->ierrors);
-	printf("Output: %ld bytes, %ld packets, %ld error\n",
+	RTE_LOG(INFO, port_fwd,
+		"Output: %ld bytes, %ld packets, %ld error\n",
 		(unsigned long)stats->obytes,
 		(unsigned long)stats->opackets,
 		(unsigned long)stats->oerrors);
@@ -1274,7 +1315,8 @@ static void *perf_statistics(void *arg)
 	CPU_SET(0, &cpuset);
 	ret = pthread_setaffinity_np(pthread_self(),
 			sizeof(cpu_set_t), &cpuset);
-	printf("affinity statistics thread to cpu 0 %s\r\n",
+	RTE_LOG(INFO, port_fwd,
+		"affinity statistics thread to cpu 0 %s\r\n",
 		ret ? "failed" : "success");
 
 loop:
@@ -1317,7 +1359,8 @@ loop:
 			struct rte_eth_stats stats;
 			int get_st_ret;
 
-			printf("PORT%d:\r\n", port_id);
+			RTE_LOG(INFO, port_fwd,
+				"PORT%d:\r\n", port_id);
 			get_st_ret = rte_eth_stats_get(port_id, &stats);
 			if (get_st_ret)
 				goto skip_print_hw_status;
@@ -1325,13 +1368,15 @@ loop:
 			port_fwd_dump_port_status(&stats);
 
 skip_print_hw_status:
-			printf("TX: %lld pkts, %lld bits, %fGbps\r\n",
+			RTE_LOG(INFO, port_fwd,
+				"TX: %lld pkts, %lld bits, %fGbps\r\n",
 				(unsigned long long)tx_pkts[port_id],
 				(unsigned long long)tx_bytes_fcs[port_id] * 8,
 				(double)(tx_bytes_oh[port_id] -
 				tx_bytes_oh_old[port_id]) * 8 /
 				(PKTGEN_STATISTICS_INTERVAL * G_BITS_SIZE));
-			printf("RX: %lld pkts, %lld bits, %fGbps\r\n\r\n",
+			RTE_LOG(INFO, port_fwd,
+				"RX: %lld pkts, %lld bits, %fGbps\r\n\r\n",
 				(unsigned long long)rx_pkts[port_id],
 				(unsigned long long)rx_bytes_fcs[port_id] * 8,
 				(double)(rx_bytes_oh[port_id] -
@@ -1345,6 +1390,60 @@ skip_print_hw_status:
 	}
 
 	goto loop;
+
+	return arg;
+}
+
+#define CHECK_INTERVAL 1 /* 1s */
+
+static void *
+port_fwd_check_link_stat(void *arg)
+{
+	uint16_t portid;
+	struct rte_eth_link link[32], link_get;
+	int ret;
+
+	memset(link, 0, sizeof(link));
+
+loop:
+	if (force_quit)
+		goto quit;
+
+	RTE_ETH_FOREACH_DEV(portid) {
+		if (force_quit)
+			goto quit;
+		if (!(enabled_port_mask & (1 << portid)))
+			continue;
+		ret = rte_eth_link_get_nowait(portid, &link_get);
+		if (ret < 0) {
+			RTE_LOG(WARNING, port_fwd,
+				"Port %u link get failed: %s\n",
+				portid, rte_strerror(-ret));
+			continue;
+		}
+		if (memcmp(&link_get, &link[portid],
+			sizeof(struct rte_eth_link))) {
+			if (link_get.link_status) {
+				RTE_LOG(INFO, port_fwd,
+					"Port%d Link Up. Speed %u Mbps -%s\n",
+					portid, link_get.link_speed,
+					(link_get.link_duplex ==
+					RTE_ETH_LINK_FULL_DUPLEX) ?
+					("full-duplex") :
+					("half-duplex"));
+			} else {
+				RTE_LOG(WARNING, port_fwd,
+					"Port %d Link Down\n", portid);
+			}
+		}
+		rte_memcpy(&link[portid], &link_get,
+			sizeof(struct rte_eth_link));
+	}
+
+	sleep(CHECK_INTERVAL);
+	goto loop;
+
+quit:
 
 	return arg;
 }
@@ -1370,6 +1469,7 @@ main(int argc, char **argv)
 	uint16_t data_room_size = RTE_MBUF_DEFAULT_DATAROOM;
 	char *penv;
 	struct lcore_rx_queue *rx_queue;
+	pthread_t pid;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -1413,6 +1513,20 @@ main(int argc, char **argv)
 	penv = getenv("PORT_FWD_DUMP_MBUF");
 	if (penv)
 		s_dump_mbuf = atoi(penv);
+
+	penv = getenv("PORT_FWD_INJECTION_TEST");
+	if (penv) {
+		s_inject = atoi(penv);
+		if (s_inject) {
+			penv = getenv("PORT_FWD_INJECTION_PKT_SIZE");
+			if (penv) {
+				s_inject_pkt_size = atoi(penv);
+				if (s_inject_pkt_size < 64 ||
+					s_inject_pkt_size > 1518)
+					s_inject_pkt_size = 64;
+			}
+		}
+	}
 
 	ret = init_lcore_rx_queues();
 	if (ret < 0)
@@ -1472,7 +1586,8 @@ main(int argc, char **argv)
 
 		/* skip ports that are not enabled */
 		if ((enabled_port_mask & (1 << portid)) == 0) {
-			printf("\nSkipping disabled port %d\n", portid);
+			RTE_LOG(INFO, port_fwd,
+				"\nSkipping disabled port %d\n", portid);
 			continue;
 		}
 		enabled_port_num++;
@@ -1534,7 +1649,8 @@ main(int argc, char **argv)
 
 			socketid = (uint8_t)rte_lcore_to_socket_id(lcore_id);
 
-			printf("rxq/txq=%d,%d,%d\r\n",
+			RTE_LOG(INFO, port_fwd,
+				"rxq/txq=%d,%d,%d\r\n",
 				portid, queueid, socketid);
 
 			ret = rte_eth_dev_info_get(portid, &dev_info);
@@ -1615,31 +1731,43 @@ main(int argc, char **argv)
 		}
 	}
 
-	check_all_ports_link_status(enabled_port_mask);
-
-	ret = 0;
+	ret = pthread_create(&pid, NULL,
+			port_fwd_check_link_stat, NULL);
+	if (ret) {
+		rte_exit(EXIT_FAILURE,
+			"check link thread create failed(%d)\n", ret);
+	}
 
 	if (getenv("PORT_FWD_PERF_STATISTICS")) {
-		pthread_t pid;
-
-		pthread_create(&pid, NULL, perf_statistics, NULL);
+		ret = pthread_create(&pid, NULL, perf_statistics,
+				NULL);
+		if (ret) {
+			rte_exit(EXIT_FAILURE,
+				"perf statistics thread create failed(%d)\n",
+				ret);
+		}
 	}
 
 	/* launch per-lcore init on every lcore */
-	rte_eal_mp_remote_launch(port_fwd_demo.main_loop, NULL, CALL_MAIN);
+	ret = rte_eal_mp_remote_launch(port_fwd_demo.main_loop,
+			NULL, CALL_MAIN);
+	if (ret) {
+		rte_exit(EXIT_FAILURE,
+			"remote launch thread failed!(%d)\n", ret);
+	}
 
 	/* stop ports */
 	RTE_ETH_FOREACH_DEV(portid) {
-		if ((enabled_port_mask & (1 << portid)) == 0)
+		if (!(enabled_port_mask & (1 << portid)))
 			continue;
-		printf("Closing port %d...", portid);
+		RTE_LOG(INFO, port_fwd, "Closing port %d...", portid);
 		rte_eth_dev_stop(portid);
 		rte_eth_dev_close(portid);
-		printf(" Done\n");
+		RTE_LOG(INFO, port_fwd, " Done\n");
 	}
 
 	rte_eal_cleanup();
-	printf("Bye...\n");
+	RTE_LOG(INFO, port_fwd, "Bye...\n");
 
 	return ret;
 }
