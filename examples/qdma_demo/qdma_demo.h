@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 #ifndef __QDMA_DEMO_H__
 #define __QDMA_DEMO_H__
@@ -20,26 +20,34 @@ struct qdma_test_case {
 	int id;
 };
 
+struct qdma_test_mode {
+	const char *name;
+	int id;
+};
+
 struct dma_job {
 	/** Source Address from where DMA is (to be) performed */
 	uint64_t src;
-	uint64_t vsrc;
+	uint8_t *vdmasrc;
+	uint8_t *vcpusrc;
 	/** Destination Address where DMA is (to be) done */
 	uint64_t dest;
-	uint64_t vdst;
+	uint8_t *vdmadst;
+	uint8_t *vcpudst;
 	/** Length of the DMA operation in bytes. */
-	uint32_t len;
+	uint32_t dma_len;
+	uint32_t cpu_len;
 	uint32_t idx;
 	/** Flags corresponding to an DMA operation */
 	uint32_t flags;
 };
 
-#define TEST_CASE_NAME_SIZE 30
+#define TEST_ARG_NAME_SIZE 30
 #define ARG_PCI_ADDR (1 << 0)
 #define ARG_SIZE (1 << 1)
 #define ARG_TEST_ID (1 << 2)
 #define ARG_LATENCY (1 << 3)
-#define ARG_MEMCPY (1 << 4)
+#define ARG_TEST_MODE (1 << 4)
 #define ARG_SCATTER_GATHER (1 << 5)
 #define ARG_BURST (1 << 6)
 #define ARG_NUM (1 << 7)
@@ -50,5 +58,6 @@ struct dma_job {
 #define ARG_PCI_EP_RBP (1 << 12)
 #define ARG_SILENT (1 << 13)
 #define ARG_DMA_LATENCY (1 << 14)
+#define ARG_CPU_SIZE (1 << 15)
 
 #endif

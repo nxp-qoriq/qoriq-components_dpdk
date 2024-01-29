@@ -81,6 +81,11 @@ static int g_vqid[RTE_MAX_LCORE];
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #endif
 
+enum qdma_demo_test_mode {
+	QDMA_DEMO_DMA_MODE = (1 << 0),
+	QDMA_DEMO_CPU_MODE = (1 << 1),
+};
+
 struct qdma_demo_latency {
 	double min;
 	double max;
@@ -89,7 +94,7 @@ struct qdma_demo_latency {
 };
 static struct qdma_demo_latency latency_data[RTE_MAX_LCORE];
 
-static struct qdma_test_case test_case[] = {
+static struct qdma_test_case s_test_case[] = {
 	{"mem_to_mem", "Host mem to Host mem done, pci_addr not needed",
 		 MEM_TO_MEM},
 	{"mem_to_pci", "Host mem to EP mem done from host", MEM_TO_PCI},
@@ -97,19 +102,27 @@ static struct qdma_test_case test_case[] = {
 	{"pci_to_pci", "EP mem to EP mem done from host", PCI_TO_PCI},
 };
 
+static struct qdma_test_mode s_test_mode[] = {
+	{"dma_mode", QDMA_DEMO_DMA_MODE},
+	{"cpu_mode", QDMA_DEMO_CPU_MODE},
+	{"mix_mode", QDMA_DEMO_DMA_MODE | QDMA_DEMO_CPU_MODE},
+};
+
 /*Configurable options*/
 static int g_test_path = MEM_TO_PCI;
 static uint32_t g_arg_mask;
 static uint32_t g_burst = BURST_NB_MAX;
 static uint64_t g_pci_phy = RTE_BAD_IOVA;
-static uint64_t g_packet_size = 1024;
+static uint64_t g_packet_dma_size = 1024;
+static uint64_t g_packet_cpu_size = 64;
+static uint64_t g_packet_elem_size = 1024;
 static uint64_t g_pci_size = 0x1000000;
 static uint64_t g_pci_bus;
 static void *g_pci_vir;
 
 static uint32_t g_packet_num = (1 * 1024);
 static int g_latency;
-static int g_memcpy;
+static int g_test_mode = QDMA_DEMO_DMA_MODE;
 static int g_validate;
 static int g_seg_iova;
 static int g_scatter_gather;
@@ -136,8 +149,8 @@ static int TEST_DMA_INIT_FLAG;
 #define LATENCY_TEST_SRC_DATA 1
 #define LATENCY_TEST_DST_DATA 0
 
-#define START_ADDR(base, num) \
-	((uint64_t)base + g_packet_size * num)
+#define START_ADDR(base, num, type) \
+	((type)((uint64_t)base + g_packet_elem_size * num))
 
 struct qdma_demo_pci_bar {
 	uint64_t phy_start[PCI_MAX_RESOURCE];
@@ -148,6 +161,22 @@ struct qdma_demo_pci_bar {
 static struct qdma_demo_pci_bar g_pci_bar[QDMA_DEMO_MAX_PCI_DEV];
 
 static int s_flags_cntx;
+
+static inline unsigned int
+log2above(uint32_t v)
+{
+	uint32_t l, r;
+
+	for (l = 0, r = 0; (v >> 1); ++l, v >>= 1)
+		r |= (v & 1);
+	return l + r;
+}
+
+static inline uint64_t
+qdma_demo_roundup_pow_of_two(uint64_t n)
+{
+	return n == 1 ? 1 : 1ULL << log2above(n);
+}
 
 static int
 test_dma_init(struct rte_dma_info *dma_info)
@@ -429,10 +458,20 @@ calculate_latency(unsigned int lcore_id,
 	core_latency->count++;
 
 	for (i = 0; i < pkt_cnt; i++) {
-		RTE_LOG(INFO, qdma_demo,
-			"job[%d]: src(%lx)->size(%d)->dst(%lx)\n",
-			i, job[i]->src, job[i]->len, job[i]->dest);
-		burst_size += job[i]->len;
+		if (job[i]->dma_len > 0) {
+			RTE_LOG(INFO, qdma_demo,
+				"DMA job[%d]: src(%lx)->size(%d)->dst(%lx)\n",
+				i, job[i]->src, job[i]->dma_len, job[i]->dest);
+			burst_size += job[i]->dma_len;
+		}
+		if (job[i]->cpu_len > 0) {
+			RTE_LOG(INFO, qdma_demo,
+				"CPU job[%d]: src(%lx)->size(%d)->dst(%lx)\n",
+				i, job[i]->src + job[i]->dma_len,
+				job[i]->cpu_len,
+				job[i]->dest + job[i]->dma_len);
+			burst_size += job[i]->cpu_len;
+		}
 	}
 	RTE_LOG(INFO, qdma_demo,
 		"cpu=%d burst size %ld, miss_time %d\n",
@@ -453,15 +492,34 @@ qdma_demo_validate_set(struct dma_job *job)
 	if (!g_validate)
 		return;
 
+	if (!job->dma_len)
+		goto cpu_validate_set;
+
 	r_num = rand();
-	for (i = 0; i < job->len / 4; i++) {
-		*((int *)(job->vsrc) + i) = r_num;
-		*((int *)(job->vdst) + i) = 0;
+	for (i = 0; i < job->dma_len / 4; i++) {
+		*((int *)(job->vdmasrc) + i) = r_num;
+		*((int *)(job->vdmadst) + i) = 0;
 	}
 	j = 0;
-	while ((i * 4 + j) < job->len) {
-		*(uint8_t *)(job->vsrc + i * 4 + j) = r_num;
-		*(uint8_t *)(job->vdst + i * 4 + j) = 0;
+	while ((i * 4 + j) < job->dma_len) {
+		*(job->vdmasrc + i * 4 + j) = r_num;
+		*(job->vdmadst + i * 4 + j) = 0;
+		j++;
+	}
+
+cpu_validate_set:
+	if (!job->cpu_len)
+		return;
+
+	r_num = rand();
+	for (i = 0; i < job->cpu_len / 4; i++) {
+		*((int *)(job->vcpusrc) + i) = r_num;
+		*((int *)(job->vcpudst) + i) = 0;
+	}
+	j = 0;
+	while ((i * 4 + j) < job->cpu_len) {
+		*(job->vcpusrc + i * 4 + j) = r_num;
+		*(job->vcpudst + i * 4 + j) = 0;
 		j++;
 	}
 }
@@ -477,23 +535,57 @@ qdma_demo_validate_check(struct dma_job *job[],
 		return 0;
 
 	for (i = 0; i < job_num; i++) {
-		for (j = 0; j < job[i]->len / 4; j++) {
-			cmp_src = *((int *)(job[i]->vsrc) + j);
-			cmp_dst = *((int *)(job[i]->vdst) + j);
+		if (!job[i]->dma_len)
+			goto cpu_validate;
+
+		for (j = 0; j < job[i]->dma_len / 4; j++) {
+			cmp_src = *((int *)(job[i]->vdmasrc) + j);
+			cmp_dst = *((int *)(job[i]->vdmadst) + j);
 			if (cmp_src != cmp_dst) {
 				RTE_LOG(ERR, qdma_demo,
-					"cmp_src(%lx)(0x%08x) != cmp_dst(%lx)(0x%08x)\n",
-					job[i]->vsrc + j, cmp_src,
-					job[i]->vdst + j, cmp_dst);
+					"cmp_src(%p)(0x%08x) != cmp_dst(%p)(0x%08x)\n",
+					job[i]->vdmasrc + j, cmp_src,
+					job[i]->vdmadst + j, cmp_dst);
 
 				rte_exit(EXIT_FAILURE, "Validate failed\n");
 				return -EINVAL;
 			}
 		}
 		k = 0;
-		while ((j * 4 + k) < job[i]->len) {
-			cmp_src = *(uint8_t *)(job[i]->vsrc + j * 4 + k);
-			cmp_dst = *(uint8_t *)(job[i]->vdst + j * 4 + k);
+		while ((j * 4 + k) < job[i]->dma_len) {
+			cmp_src = *(job[i]->vdmasrc + j * 4 + k);
+			cmp_dst = *(job[i]->vdmadst + j * 4 + k);
+			if (cmp_src != cmp_dst) {
+				RTE_LOG(ERR, qdma_demo,
+					"cmp_src(0x%08x) != cmp_dst(0x%08x)\n",
+					cmp_src, cmp_dst);
+				rte_exit(EXIT_FAILURE, "Validate failed\n");
+				return -EINVAL;
+			}
+			k++;
+		}
+
+cpu_validate:
+		if (!job[i]->cpu_len)
+			continue;
+
+		for (j = 0; j < job[i]->cpu_len / 4; j++) {
+			cmp_src = *((int *)(job[i]->vcpusrc) + j);
+			cmp_dst = *((int *)(job[i]->vcpudst) + j);
+			if (cmp_src != cmp_dst) {
+				RTE_LOG(ERR, qdma_demo,
+					"cmp_src(%p)(0x%08x) != cmp_dst(%p)(0x%08x)\n",
+					job[i]->vcpusrc + j, cmp_src,
+					job[i]->vcpudst + j, cmp_dst);
+
+				rte_exit(EXIT_FAILURE, "Validate failed\n");
+				return -EINVAL;
+			}
+		}
+		k = 0;
+		while ((j * 4 + k) < job[i]->cpu_len) {
+			cmp_src = *(job[i]->vcpusrc + j * 4 + k);
+			cmp_dst = *(job[i]->vcpudst + j * 4 + k);
 			if (cmp_src != cmp_dst) {
 				RTE_LOG(ERR, qdma_demo,
 					"cmp_src(0x%08x) != cmp_dst(0x%08x)\n",
@@ -524,8 +616,8 @@ qdma_demo_memcpy_process(struct dma_job *job[],
 
 	cycle1 = rte_get_timer_cycles();
 	for (i = 0; i < job_num; i++) {
-		rte_memcpy((void *)job[i]->vdst,
-			(void *)job[i]->vsrc, job[i]->len);
+		rte_memcpy(job[i]->vcpudst,
+			job[i]->vcpusrc, job[i]->cpu_len);
 	}
 	cycle2 = rte_get_timer_cycles();
 	if (g_latency)
@@ -562,7 +654,7 @@ lcore_qdma_iova_seg_to_continue(void)
 		return -ENOMEM;
 	}
 
-	seg_size = g_packet_size;
+	seg_size = g_packet_dma_size;
 
 	if (seg_size < page_size)
 		seg_size = page_size;
@@ -570,10 +662,10 @@ lcore_qdma_iova_seg_to_continue(void)
 	while (seg_size & ~page_size)
 		seg_size--;
 
-	if (g_packet_size != seg_size) {
+	if (g_packet_dma_size != seg_size) {
 		RTE_LOG(WARNING, qdma_demo,
 			"Adjust segment size(%lx) to (%x)\n",
-			g_packet_size, seg_size);
+			g_packet_dma_size, seg_size);
 	}
 
 	seg_num = g_burst;
@@ -711,14 +803,14 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 		struct dma_job *job[burst_nb];
 		struct rte_dma_sge src_sge[burst_nb];
 		struct rte_dma_sge dst_sge[burst_nb];
-		uint32_t i, job_num;
+		uint32_t i, j, job_num;
 		uint64_t flags;
 		bool error = false;
 		uint16_t dq_idx[burst_nb];
 
 		job_num = rte_ring_dequeue_bulk(g_job_ring[lcore_id],
 			(void **)job, burst_nb, NULL);
-		if (g_memcpy) {
+		if (g_test_mode == QDMA_DEMO_CPU_MODE) {
 			ret = qdma_demo_memcpy_process(job, job_num);
 			if (ret)
 				return ret;
@@ -732,10 +824,10 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 				if (s_flags_cntx)
 					g_dma_idx[lcore_id][i] = job[i]->idx;
 				src_sge[i].addr = job[i]->src;
-				src_sge[i].length = job[i]->len;
+				src_sge[i].length = job[i]->dma_len;
 
 				dst_sge[i].addr = job[i]->dest;
-				dst_sge[i].length = job[i]->len;
+				dst_sge[i].length = job[i]->dma_len;
 				continue;
 			}
 
@@ -754,7 +846,15 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 			ret = rte_dma_copy(qdma_dev_id,
 					g_vqid[lcore_id],
 					job[i]->src, job[i]->dest,
-					job[i]->len, flags);
+					job[i]->dma_len, flags);
+			if ((flags & RTE_DMA_OP_FLAG_SUBMIT) &&
+				(g_test_mode & QDMA_DEMO_CPU_MODE)) {
+				for (j = 0; j < i; j++) {
+					rte_memcpy(job[j]->vcpudst,
+						job[j]->vcpusrc,
+						job[j]->cpu_len);
+				}
+			}
 			if (unlikely(ret < 0) && i > 0) {
 				ret = rte_dma_submit(qdma_dev_id,
 						g_vqid[lcore_id]);
@@ -763,6 +863,14 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 						"DMA submit error(%d)\n", ret);
 					rte_exit(EXIT_FAILURE,
 						"Job submit failed\n");
+				}
+				if ((flags & RTE_DMA_OP_FLAG_SUBMIT) &&
+					(g_test_mode & QDMA_DEMO_CPU_MODE)) {
+					for (j = 0; j < i; j++) {
+						rte_memcpy(job[j]->vcpudst,
+							job[j]->vcpusrc,
+							job[j]->cpu_len);
+					}
 				}
 				goto dequeue;
 			}
@@ -791,6 +899,14 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 				job_num, ret);
 			rte_exit(EXIT_FAILURE,
 				"Job submit failed\n");
+		}
+		if ((flags & RTE_DMA_OP_FLAG_SUBMIT) &&
+			(g_test_mode & QDMA_DEMO_CPU_MODE)) {
+			for (j = 0; j < job_num; j++) {
+				rte_memcpy(job[j]->vcpudst,
+					job[j]->vcpusrc,
+					job[j]->cpu_len);
+			}
 		}
 dequeue:
 		if (g_latency)
@@ -824,8 +940,26 @@ skip_dq:
 			if (g_latency)
 				cycle3 = rte_get_timer_cycles();
 			for (i = 0; i < dq_num; i++) {
-				vsrc = (void *)(job[i]->vsrc + job[i]->len - 1);
-				vdst = (void *)(job[i]->vdst + job[i]->len - 1);
+				if (!job[i]->dma_len)
+					goto cpu_check;
+
+				vsrc = job[i]->vdmasrc + job[i]->dma_len - 1;
+				vdst = job[i]->vdmadst + job[i]->dma_len - 1;
+				while ((*vsrc) != (*vdst)) {
+#ifdef RTE_ARCH_ARM64
+					dccivac(vdst);
+#endif
+					miss_time++;
+					if (quit_signal)
+						break;
+				}
+
+cpu_check:
+				if (!job[i]->cpu_len)
+					continue;
+
+				vsrc = job[i]->vcpusrc + job[i]->cpu_len - 1;
+				vdst = job[i]->vcpudst + job[i]->cpu_len - 1;
 				while ((*vsrc) != (*vdst)) {
 #ifdef RTE_ARCH_ARM64
 					dccivac(vdst);
@@ -846,8 +980,18 @@ skip_dq:
 				"DMA prepare:%ld, check:%ld\n",
 				cycle2 - cycle1, cycle4 - cycle3);
 			for (i = 0; i < dq_num; i++) {
-				vsrc = (void *)(job[i]->vsrc + job[i]->len - 1);
-				vdst = (void *)(job[i]->vdst + job[i]->len - 1);
+				if (!job[i]->dma_len)
+					goto cpu_set;
+				vsrc = job[i]->vdmasrc + job[i]->dma_len - 1;
+				vdst = job[i]->vdmadst + job[i]->dma_len - 1;
+				(*vsrc) = LATENCY_TEST_SRC_DATA;
+				(*vdst) = LATENCY_TEST_DST_DATA;
+
+cpu_set:
+				if (!job[i]->cpu_len)
+					continue;
+				vsrc = job[i]->vcpusrc + job[i]->cpu_len - 1;
+				vdst = job[i]->vcpudst + job[i]->cpu_len - 1;
 				(*vsrc) = LATENCY_TEST_SRC_DATA;
 				(*vdst) = LATENCY_TEST_DST_DATA;
 			}
@@ -875,13 +1019,13 @@ qdma_demo_jobs_init(struct dma_job *jobs,
 	uint32_t lcore_id, uint64_t pci_src_iova,
 	uint64_t pci_dst_iova, void *pci_src_vir,
 	void *pci_dst_vir, uint64_t total_size,
-	uint32_t num, uint32_t len)
+	uint32_t num, uint32_t dma_len, uint32_t cpu_len)
 {
 	char nm[RTE_MEMZONE_NAMESIZE];
 	uint32_t i;
 	uint64_t src_iova, dst_iova;
 	void *src_va, *dst_va;
-	uint8_t *src_last, *dst_last;
+	uint8_t *dmasrc_last, *dmadst_last, *cpusrc_last, *cpudst_last;
 	int ret = 0;
 
 	if (pci_src_iova == RTE_BAD_IOVA) {
@@ -934,19 +1078,39 @@ qdma_demo_jobs_init(struct dma_job *jobs,
 	}
 
 	for (i = 0; i < num; i++) {
-		jobs[i].src = START_ADDR(src_iova, i);
-		jobs[i].vsrc = START_ADDR(src_va, i);
+		dmasrc_last = NULL;
+		dmadst_last = NULL;
+		cpusrc_last = NULL;
+		cpudst_last = NULL;
+		jobs[i].src = START_ADDR(src_iova, i, uint64_t);
+		jobs[i].dest = START_ADDR(dst_iova, i, uint64_t);
+		if (dma_len > 0) {
+			jobs[i].vdmasrc = START_ADDR(src_va, i, uint8_t *);
+			jobs[i].vdmadst = START_ADDR(dst_va, i, uint8_t *);
+			dmasrc_last = jobs[i].vdmasrc + dma_len - 1;
+			dmadst_last = jobs[i].vdmadst + dma_len - 1;
+		}
+		if (cpu_len > 0) {
+			jobs[i].vcpusrc = START_ADDR(src_va, i, uint8_t *) +
+				dma_len;
+			jobs[i].vcpudst = START_ADDR(dst_va, i, uint8_t *) +
+				dma_len;
+			cpusrc_last = jobs[i].vcpusrc + cpu_len - 1;
+			cpudst_last = jobs[i].vcpudst + cpu_len - 1;
+		}
 
-		jobs[i].dest = START_ADDR(dst_iova, i);
-		jobs[i].vdst = START_ADDR(dst_va, i);
-
-		jobs[i].len = len;
+		jobs[i].dma_len = dma_len;
+		jobs[i].cpu_len = cpu_len;
 		jobs[i].idx = i;
 		if (g_latency || g_silent) {
-			src_last = (void *)(jobs[i].vsrc + jobs[i].len - 1);
-			dst_last = (void *)(jobs[i].vdst + jobs[i].len - 1);
-			*src_last = LATENCY_TEST_SRC_DATA;
-			*dst_last = LATENCY_TEST_DST_DATA;
+			if (dmasrc_last && dmadst_last) {
+				*dmasrc_last = LATENCY_TEST_SRC_DATA;
+				*dmadst_last = LATENCY_TEST_DST_DATA;
+			}
+			if (cpusrc_last && cpudst_last) {
+				*cpusrc_last = LATENCY_TEST_SRC_DATA;
+				*cpudst_last = LATENCY_TEST_DST_DATA;
+			}
 			rte_wmb();
 			rte_rmb();
 		}
@@ -977,7 +1141,7 @@ qdma_demo_job_ring_init(uint32_t max_desc)
 	char nm[RTE_MEMZONE_NAMESIZE];
 	struct dma_job *job;
 	int ret;
-	uint64_t core_size = g_packet_num * g_packet_size;
+	uint64_t core_size = g_packet_num * g_packet_elem_size;
 	uint64_t pci_iova = RTE_BAD_IOVA;
 	uint64_t pci_src_iova = RTE_BAD_IOVA, pci_dst_iova = RTE_BAD_IOVA;
 	char *pci_vir = NULL;
@@ -1034,19 +1198,19 @@ qdma_demo_job_ring_init(uint32_t max_desc)
 		pci_dst_iova = pci_iova;
 		pci_dst_vir = pci_vir;
 		core_size = g_pci_size / (core_count - 1);
-		g_packet_num = core_size / g_packet_size;
+		g_packet_num = core_size / g_packet_elem_size;
 		if (g_packet_num > max_desc) {
 			g_packet_num = max_desc;
-			core_size = g_packet_num * g_packet_size;
+			core_size = g_packet_num * g_packet_elem_size;
 		}
 	} else if (g_test_path == PCI_TO_MEM) {
 		pci_src_iova = pci_iova;
 		pci_src_vir = pci_vir;
 		core_size = g_pci_size / (core_count - 1);
-		g_packet_num = core_size / g_packet_size;
+		g_packet_num = core_size / g_packet_elem_size;
 		if (g_packet_num > max_desc) {
 			g_packet_num = max_desc;
-			core_size = g_packet_num * g_packet_size;
+			core_size = g_packet_num * g_packet_elem_size;
 		}
 	} else if (g_test_path == PCI_TO_PCI) {
 		pci_src_iova = pci_iova;
@@ -1054,15 +1218,15 @@ qdma_demo_job_ring_init(uint32_t max_desc)
 		pci_dst_iova = pci_src_iova + g_pci_size / 2;
 		pci_dst_vir = pci_src_vir + g_pci_size / 2;
 		core_size = g_pci_size / 2 / (core_count - 1);
-		g_packet_num = core_size / g_packet_size;
+		g_packet_num = core_size / g_packet_elem_size;
 		if (g_packet_num > max_desc) {
 			g_packet_num = max_desc;
-			core_size = g_packet_num * g_packet_size;
+			core_size = g_packet_num * g_packet_elem_size;
 		}
 	} else {
 		if (g_packet_num > max_desc)
 			g_packet_num = max_desc;
-		core_size = g_packet_num * g_packet_size;
+		core_size = g_packet_num * g_packet_elem_size;
 	}
 
 	if (g_packet_num < g_burst)
@@ -1102,7 +1266,8 @@ qdma_demo_job_ring_init(uint32_t max_desc)
 			NULL : pci_src_vir + idx * core_size,
 			pci_dst_vir == NULL ?
 			NULL : pci_dst_vir + idx * core_size,
-			core_size, g_packet_num, g_packet_size);
+			core_size, g_packet_num,
+			g_packet_dma_size, g_packet_cpu_size);
 		if (ret)
 			return ret;
 
@@ -1141,7 +1306,7 @@ lcore_qdma_control_loop(void)
 
 	/* wait synchro for slaves */
 	memset(&info, 0, sizeof(struct rte_dma_info));
-	if (!g_memcpy) {
+	if (g_test_mode & QDMA_DEMO_DMA_MODE) {
 		ret = test_dma_init(&info);
 		if (ret)
 			return ret;
@@ -1261,9 +1426,6 @@ lcore_qdma_control_loop(void)
 			diff += g_dq_num[i] - g_dq_num_last[i];
 			g_dq_num_last[i] = g_dq_num[i];
 		}
-		speed = (float)diff /
-			(s_ns_per_cyc * cycle_diff / NS_PER_S);
-		speed = speed * g_packet_size;
 
 		offset = 0;
 
@@ -1276,11 +1438,29 @@ lcore_qdma_control_loop(void)
 			diff);
 		offset += log_len;
 
-		log_len = sprintf(&perf_buf[offset],
-			"Rate: %.3f Mbps OR %.3f Kpps\n",
-			8 * speed / NS_PER_MS,
-			speed / (g_packet_size * 1000));
-		offset += log_len;
+		if (g_packet_dma_size > 0) {
+			speed = (float)diff /
+				(s_ns_per_cyc * cycle_diff / NS_PER_S);
+			speed = speed * g_packet_dma_size;
+
+			log_len = sprintf(&perf_buf[offset],
+				"DMA Rate: %.3f Mbps OR %.3f Kpps\n",
+				8 * speed / NS_PER_MS,
+				speed / (g_packet_dma_size * 1000));
+			offset += log_len;
+		}
+
+		if (g_packet_cpu_size > 0) {
+			speed = (float)diff /
+				(s_ns_per_cyc * cycle_diff / NS_PER_S);
+			speed = speed * g_packet_cpu_size;
+
+			log_len = sprintf(&perf_buf[offset],
+				"CPU Rate: %.3f Mbps OR %.3f Kpps\n",
+				8 * speed / NS_PER_MS,
+				speed / (g_packet_cpu_size * 1000));
+			offset += log_len;
+		}
 
 		RTE_LCORE_FOREACH_WORKER(lcore_id) {
 			log_len = sprintf(&perf_buf[offset],
@@ -1400,14 +1580,12 @@ static void qdma_demo_usage(void)
 	pos += j;
 	j = sprintf(&buf[pos], ": --test_case=<test_case_name>\n");
 	pos += j;
-	for (i = 0; i < ARRAY_SIZE(test_case); i++) {
+	for (i = 0; i < ARRAY_SIZE(s_test_case); i++) {
 		j = sprintf(&buf[pos], "	%s - %s\n",
-			test_case[i].name, test_case[i].help);
+			s_test_case[i].name, s_test_case[i].help);
 		pos += j;
 	}
 	j = sprintf(&buf[pos], ": --latency_test\n");
-	pos += j;
-	j = sprintf(&buf[pos], ": --memcpy\n");
 	pos += j;
 	j = sprintf(&buf[pos], ": --sg\n");
 	pos += j;
@@ -1426,6 +1604,16 @@ static void qdma_demo_usage(void)
 	j = sprintf(&buf[pos], ": --silent\n");
 	pos += j;
 	j = sprintf(&buf[pos], ": --dma_latency\n");
+	pos += j;
+	j = sprintf(&buf[pos], ": --test_mode=<test_mode_name>\n");
+	pos += j;
+	for (i = 0; i < ARRAY_SIZE(s_test_mode); i++) {
+		j = sprintf(&buf[pos], "	%s\n",
+			s_test_mode[i].name);
+		pos += j;
+	}
+	pos += j;
+	j = sprintf(&buf[pos], ": --cpu_packet_size=<bytes>\n");
 
 	RTE_LOG(WARNING, qdma_demo, "%s", buf);
 }
@@ -1470,31 +1658,43 @@ qdma_parse_long_arg(char *optarg, struct option *lopt)
 		RTE_LOG(INFO, qdma_demo, "PCI size %ld\n", g_pci_size);
 		break;
 	case ARG_SIZE:
-		ret = sscanf(optarg, "%ld", &g_packet_size);
+		ret = sscanf(optarg, "%ld", &g_packet_dma_size);
 		if (ret != 1) {
-			RTE_LOG(ERR, qdma_demo, "Invalid Packet size\n");
+			RTE_LOG(ERR, qdma_demo, "Invalid DMA Packet size\n");
 			ret = -EINVAL;
 			goto out;
 		}
 		ret = 0;
-		RTE_LOG(INFO, qdma_demo, "Pkt size %ld\n", g_packet_size);
+		RTE_LOG(INFO, qdma_demo, "DMA Pkt size %ld\n",
+			g_packet_dma_size);
+		break;
+	case ARG_CPU_SIZE:
+		ret = sscanf(optarg, "%ld", &g_packet_cpu_size);
+		if (ret != 1) {
+			RTE_LOG(ERR, qdma_demo, "Invalid SW Packet size\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = 0;
+		RTE_LOG(INFO, qdma_demo, "SW Pkt size %ld, elem size %ld\n",
+			g_packet_cpu_size, g_packet_elem_size);
 		break;
 	case ARG_TEST_ID:
-		for (i = 0; i < ARRAY_SIZE(test_case); i++) {
-			ret = strncmp(test_case[i].name, optarg,
-				TEST_CASE_NAME_SIZE);
+		for (i = 0; i < ARRAY_SIZE(s_test_case); i++) {
+			ret = strncmp(s_test_case[i].name, optarg,
+				TEST_ARG_NAME_SIZE);
 			if (!ret) {
-				g_test_path = test_case[i].id;
+				g_test_path = s_test_case[i].id;
 				break;
 			}
 		}
-		if (i == ARRAY_SIZE(test_case)) {
+		if (i == ARRAY_SIZE(s_test_case)) {
 			RTE_LOG(ERR, qdma_demo, "Invalid test case\n");
 			ret = -EINVAL;
 			goto out;
 		}
 		ret = 0;
-		RTE_LOG(INFO, qdma_demo, "test case %s\n", test_case[i].name);
+		RTE_LOG(INFO, qdma_demo, "test case %s\n", s_test_case[i].name);
 		break;
 	case ARG_LATENCY:
 		g_latency = 1;
@@ -1504,9 +1704,22 @@ qdma_parse_long_arg(char *optarg, struct option *lopt)
 		g_dma_prep_latency = 1;
 		RTE_LOG(INFO, qdma_demo, "DMA prepare latency included\n");
 		break;
-	case ARG_MEMCPY:
-		g_memcpy = 1;
-		RTE_LOG(INFO, qdma_demo, "CPU/SW copy mode\n");
+	case ARG_TEST_MODE:
+		for (i = 0; i < ARRAY_SIZE(s_test_mode); i++) {
+			ret = strncmp(s_test_mode[i].name, optarg,
+				TEST_ARG_NAME_SIZE);
+			if (!ret) {
+				g_test_mode = s_test_mode[i].id;
+				break;
+			}
+		}
+		if (i == ARRAY_SIZE(s_test_mode)) {
+			RTE_LOG(ERR, qdma_demo, "Invalid test mode\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		ret = 0;
+		RTE_LOG(INFO, qdma_demo, "test mode %s\n", s_test_mode[i].name);
 		break;
 	case ARG_SCATTER_GATHER:
 		g_scatter_gather = 1;
@@ -1563,10 +1776,11 @@ qdma_demo_parse_args(int argc, char **argv)
 		{"pci_addr", optional_argument, &flg, ARG_PCI_ADDR},
 		{"pci_size", optional_argument, &flg, ARG_PCI_SIZE},
 		{"packet_size", optional_argument, &flg, ARG_SIZE},
+		{"cpu_packet_size", optional_argument, &flg, ARG_CPU_SIZE},
 		{"test_case", required_argument, &flg, ARG_TEST_ID},
 		{"latency_test", optional_argument, &flg, ARG_LATENCY},
 		{"dma_latency", optional_argument, &flg, ARG_DMA_LATENCY},
-		{"memcpy", optional_argument, &flg, ARG_MEMCPY},
+		{"test_mode", optional_argument, &flg, ARG_TEST_MODE},
 		{"sg", optional_argument, &flg, ARG_SCATTER_GATHER},
 		{"burst", optional_argument, &flg, ARG_BURST},
 		{"packet_num", optional_argument, &flg, ARG_NUM},
@@ -1607,6 +1821,7 @@ qdma_demo_parse_args(int argc, char **argv)
 static int qdma_demo_validate_args(void)
 {
 	int valid = 1;
+	uint64_t size = 0;
 
 	if (g_test_path != MEM_TO_MEM && !g_pci_ep)
 		valid = !!(g_arg_mask & ARG_PCI_ADDR);
@@ -1614,7 +1829,7 @@ static int qdma_demo_validate_args(void)
 	if (!(g_arg_mask & ARG_SIZE)) {
 		RTE_LOG(WARNING, qdma_demo,
 			"Using Default packet size %ld bytes\n",
-			g_packet_size);
+			g_packet_dma_size);
 	}
 
 	core_count = rte_lcore_count();
@@ -1624,6 +1839,20 @@ static int qdma_demo_validate_args(void)
 		valid = 0;
 		goto out;
 	}
+
+	if (!(g_test_mode & QDMA_DEMO_DMA_MODE))
+		g_packet_dma_size = 0;
+	if (!(g_test_mode & QDMA_DEMO_CPU_MODE))
+		g_packet_cpu_size = 0;
+
+	if (g_test_mode & QDMA_DEMO_DMA_MODE)
+		size += g_packet_dma_size;
+	if (g_test_mode & QDMA_DEMO_CPU_MODE)
+		size += g_packet_cpu_size;
+
+	g_packet_elem_size = qdma_demo_roundup_pow_of_two(size);
+	RTE_LOG(INFO, qdma_demo, "Pkt element size %ld\n",
+		g_packet_elem_size);
 
 	RTE_LOG(INFO, qdma_demo, "Stats core id - %d\n",
 		rte_get_main_lcore());
