@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2015 Cavium, Inc
  * Copyright(c) 2020 Arm Limited
+ * Copyright 2024 NXP
  */
 
 #ifndef _RTE_CYCLES_ARM64_H_
@@ -27,8 +28,26 @@ static __rte_always_inline uint64_t
 __rte_arm64_cntvct(void)
 {
 	uint64_t tsc;
+#ifdef RTE_ARM64_GENERIC_COUNTER_CHECK
+	uint64_t tsc_old;
 
+	/**In general, the counters read twice equal or the latter is
+	 * just one greater than former because CPU is much
+	 * faster than counter freq which is 25MHz on dpaa platform.
+	 * Otherwise, the counter is incorrect and need read again.
+	 */
+read_again:
+	asm volatile("mrs %0, cntvct_el0" : "=r" (tsc_old));
 	asm volatile("mrs %0, cntvct_el0" : "=r" (tsc));
+	if (unlikely(tsc_old != tsc && (tsc_old + 1) != tsc)) {
+		RTE_LOG(DEBUG, PMD, "former:%ld, latter:%ld\n",
+			tsc_old, tsc);
+		goto read_again;
+	}
+#else
+	asm volatile("mrs %0, cntvct_el0" : "=r" (tsc));
+#endif
+
 	return tsc;
 }
 

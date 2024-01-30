@@ -2,7 +2,7 @@
 # Copyright(c) 2017 Intel Corporation.
 # Copyright(c) 2017 Cavium, Inc
 # Copyright(c) 2021 PANTHEON.tech s.r.o.
-# Copyright 2022-2023 NXP
+# Copyright 2022-2024 NXP
 
 # common flags to all aarch64 builds, with lowest priority
 flags_common = [
@@ -370,6 +370,7 @@ soc_dpaa = {
 	# Flag is applicable only when RTE_LA12XX_SOCKET is enabled.
 	['RTE_LA12XX_SOCKET_MAX_SEG', 1],
 	['RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022', 1],
+	['RTE_ARM64_GENERIC_COUNTER_CHECK', false],
 
     ],
     'numa': false,
