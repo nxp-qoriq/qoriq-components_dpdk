@@ -1,10 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2023 NXP
+ * Copyright 2023-2024 NXP
  */
 
 #ifndef _RTE_DPAA2_MUX_DEMO_H
 #define _RTE_DPAA2_MUX_DEMO_H
-#include <ethdev_driver.h>
 #include <rte_pmd_dpaa2.h>
 
 enum {
