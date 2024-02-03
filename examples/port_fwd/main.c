@@ -52,6 +52,7 @@
 #include <rte_pdump.h>
 
 #include "port_fwd.h"
+#include "nxp/rte_remote_direct_flow.h"
 
 #define RTE_LOGTYPE_port_fwd RTE_LOGTYPE_USER1
 
@@ -81,6 +82,7 @@ enum port_fwd_proc_type {
 };
 static uint8_t s_proc_type = proc_primary;
 static uint8_t s_ring_fwd;
+static enum rte_remote_dir_cfg s_remote_dir;
 
 static uint32_t s_data_room_size;
 
@@ -95,28 +97,14 @@ static bool force_quit;
 static uint32_t enabled_port_mask;
 static uint16_t enabled_port_num;
 
-struct lcore_params {
-	uint16_t port_id;
-	uint8_t queue_id;
-	uint8_t lcore_id;
+struct port_queue_lcore_param {
+	int port_id;
+	int queue_id;
+	int lcore_id;
 } __rte_cache_aligned;
 
-static struct lcore_params lcore_params_array[MAX_LCORE_PARAMS];
-static struct lcore_params lcore_params_array_default[] = {
-	{0, 0, 2},
-	{0, 1, 2},
-	{0, 2, 2},
-	{1, 0, 2},
-	{1, 1, 2},
-	{1, 2, 2},
-	{2, 0, 2},
-	{3, 0, 3},
-	{3, 1, 3},
-};
-
-static struct lcore_params *s_lcore_params = lcore_params_array_default;
-static uint16_t nb_lcore_params = sizeof(lcore_params_array_default) /
-				sizeof(lcore_params_array_default[0]);
+static struct port_queue_lcore_param s_pqc[MAX_LCORE_PARAMS];
+static uint16_t s_pqc_num;
 
 static struct rte_eth_conf port_conf = {
 	.rxmode = {
@@ -726,17 +714,13 @@ static struct loop_mode port_fwd_demo = {
 static int
 check_lcore_params(void)
 {
-	uint8_t queue, lcore;
+	int lcore;
 	uint16_t i;
 
-	for (i = 0; i < nb_lcore_params; ++i) {
-		queue = s_lcore_params[i].queue_id;
-		if (queue >= MAX_RX_QUEUE_PER_PORT) {
-			RTE_LOG(ERR, port_fwd,
-				"invalid queue number: %hhu\n", queue);
-			return -EINVAL;
-		}
-		lcore = s_lcore_params[i].lcore_id;
+	for (i = 0; i < s_pqc_num; ++i) {
+		lcore = s_pqc[i].lcore_id;
+		if (lcore < 0)
+			continue;
 		if (!rte_lcore_is_enabled(lcore)) {
 			RTE_LOG(ERR, port_fwd,
 				"lcore %hhu is not enabled\n", lcore);
@@ -752,8 +736,8 @@ check_port_config(void)
 	uint16_t portid;
 	uint16_t i;
 
-	for (i = 0; i < nb_lcore_params; ++i) {
-		portid = s_lcore_params[i].port_id;
+	for (i = 0; i < s_pqc_num; ++i) {
+		portid = s_pqc[i].port_id;
 		if ((enabled_port_mask & (1 << portid)) == 0) {
 			RTE_LOG(ERR, port_fwd,
 				"port %u is not enabled in port mask\n",
@@ -770,24 +754,28 @@ check_port_config(void)
 	return 0;
 }
 
-static uint8_t
-get_port_n_rx_queues(const uint16_t port)
+static uint16_t
+get_port_n_rx_queues(const uint16_t port,
+	uint16_t queue[])
 {
-	int queue = -1;
-	uint16_t i;
+	uint16_t queue_num = 0, i, j;
 
-	for (i = 0; i < nb_lcore_params; ++i) {
-		if (s_lcore_params[i].port_id == port) {
-			if (s_lcore_params[i].queue_id == (queue + 1)) {
-				queue = s_lcore_params[i].queue_id;
-			} else {
-				rte_exit(EXIT_FAILURE,
-					"core[%d].rxqid(%d) != queue(%d) + 1\n",
-					i, s_lcore_params[i].queue_id, queue);
+	for (i = 0; i < s_pqc_num; ++i) {
+		if (s_pqc[i].port_id == port) {
+			queue[queue_num] = s_pqc[i].queue_id;
+			for (j = 0; j < queue_num; j++) {
+				if (queue[j] == s_pqc[i].queue_id) {
+					rte_exit(EXIT_FAILURE,
+						"duplicated rxq(%d) on port%d\n",
+						queue[j], port);
+					return 0;
+				}
 			}
+			queue_num++;
 		}
 	}
-	return (uint8_t)(++queue);
+
+	return queue_num;
 }
 
 static int
@@ -929,8 +917,12 @@ init_lcore_rx_queues(void)
 	uint16_t i, nb_rx_queue;
 	uint8_t lcore;
 
-	for (i = 0; i < nb_lcore_params; ++i) {
-		lcore = s_lcore_params[i].lcore_id;
+	for (i = 0; i < s_pqc_num; ++i) {
+		if (s_pqc[i].lcore_id < 0) {
+			/**Don't handle this queue by core.*/
+			continue;
+		}
+		lcore = s_pqc[i].lcore_id;
 		nb_rx_queue = s_lcore_conf[lcore].n_rx_queue;
 		if (nb_rx_queue >= MAX_RX_QUEUE_PER_LCORE) {
 			RTE_LOG(ERR, port_fwd,
@@ -940,9 +932,9 @@ init_lcore_rx_queues(void)
 		}
 
 		s_lcore_conf[lcore].rx_queue_list[nb_rx_queue].port_id =
-				s_lcore_params[i].port_id;
+				s_pqc[i].port_id;
 		s_lcore_conf[lcore].rx_queue_list[nb_rx_queue].queue_id =
-				s_lcore_params[i].queue_id;
+				s_pqc[i].queue_id;
 		s_lcore_conf[lcore].n_rx_queue++;
 	}
 
@@ -978,12 +970,20 @@ parse_config(const char *q_arg)
 		FLD_LCORE,
 		_NUM_FLD
 	};
-	unsigned long int_fld[_NUM_FLD];
+	int int_fld[_NUM_FLD];
 	char *str_fld[_NUM_FLD];
-	int i, port_id, queue_id;
+	int i, num;
 	unsigned int size;
+	struct port_queue_lcore_param *param;
 
-	nb_lcore_params = 0;
+	s_pqc_num = 0;
+
+	for (i = 0; i < MAX_LCORE_PARAMS; i++) {
+		s_pqc[i].port_id = -1;
+		s_pqc[i].queue_id = -1;
+		s_pqc[i].lcore_id = -1;
+	}
+	param = s_pqc;
 
 	p = strchr(p0, '(');
 	while (p) {
@@ -997,34 +997,36 @@ parse_config(const char *q_arg)
 			return -EINVAL;
 
 		snprintf(s, sizeof(s), "%.*s", size, p);
-		if (rte_strsplit(s, sizeof(s), str_fld,
-			_NUM_FLD, ',') != _NUM_FLD)
+		num = rte_strsplit(s, sizeof(s), str_fld,
+			_NUM_FLD, ',');
+		if (num > _NUM_FLD || num <= 0)
 			return -EINVAL;
-		for (i = 0; i < _NUM_FLD; i++) {
+		for (i = 0; i < num; i++) {
 			errno = 0;
 			int_fld[i] = strtoul(str_fld[i], &end, 0);
-			if (errno != 0 || end == str_fld[i] || int_fld[i] > 255)
+			if (errno || end == str_fld[i])
 				return -EINVAL;
 		}
-		if (nb_lcore_params >= MAX_LCORE_PARAMS) {
+		if (s_pqc_num >= MAX_LCORE_PARAMS) {
 			RTE_LOG(ERR, port_fwd,
-				"exceeded max number of lcore params: %hu\n",
-				nb_lcore_params);
+				"exceeded max number port/queue/core params: %hu\n",
+				s_pqc_num);
 			return -EINVAL;
 		}
-		lcore_params_array[nb_lcore_params].port_id =
-			(uint8_t)int_fld[FLD_PORT];
-		lcore_params_array[nb_lcore_params].queue_id =
-			(uint8_t)int_fld[FLD_QUEUE];
-		lcore_params_array[nb_lcore_params].lcore_id =
-			(uint8_t)int_fld[FLD_LCORE];
-		port_id = (uint8_t)int_fld[FLD_PORT];
-		queue_id = (uint8_t)int_fld[FLD_QUEUE];
-		s_pq_map[port_id][queue_id] = 1;
-		++nb_lcore_params;
+		if (num > FLD_PORT)
+			param->port_id = int_fld[FLD_PORT];
+		if (num > FLD_QUEUE)
+			param->queue_id = int_fld[FLD_QUEUE];
+		if (num > FLD_LCORE)
+			param->lcore_id = int_fld[FLD_LCORE];
+		if (param->port_id >= 0 && param->queue_id >= 0)
+			s_pq_map[param->port_id][param->queue_id] = 1;
+
+		s_pqc_num++;
+		param++;
 		p = strchr(p0, '(');
 	}
-	s_lcore_params = lcore_params_array;
+
 	return 0;
 }
 
@@ -1036,6 +1038,10 @@ static const char short_options[] =
 	;
 
 #define CMD_LINE_OPT_CONFIG "config"
+#define CMD_LINE_OPT_DIRECT_RSP_CONFIG "direct-rsp"
+#define CMD_LINE_OPT_DIRECT_REMOTE_CONFIG "direct-remote"
+#define CMD_LINE_OPT_DIRECT_DEF_CONFIG "direct-def"
+
 #define CMD_LINE_OPT_PER_PORT_POOL "enable-per-port-pool"
 enum {
 	/* long options mapped to a short option */
@@ -1045,10 +1051,20 @@ enum {
 	 */
 	CMD_LINE_OPT_MIN_NUM = 256,
 	CMD_LINE_OPT_CONFIG_NUM,
+	CMD_LINE_OPT_DIRECT_RSP_CONFIG_NUM,
+	CMD_LINE_OPT_DIRECT_REMOTE_CONFIG_NUM,
+	CMD_LINE_OPT_DIRECT_DEF_CONFIG_NUM,
 };
 
 static const struct option lgopts[] = {
-	{CMD_LINE_OPT_CONFIG, 1, 0, CMD_LINE_OPT_CONFIG_NUM},
+	{CMD_LINE_OPT_CONFIG, 1, 0,
+		CMD_LINE_OPT_CONFIG_NUM},
+	{CMD_LINE_OPT_DIRECT_RSP_CONFIG, 0, 0,
+		CMD_LINE_OPT_DIRECT_RSP_CONFIG_NUM},
+	{CMD_LINE_OPT_DIRECT_REMOTE_CONFIG, 1, 0,
+		CMD_LINE_OPT_DIRECT_REMOTE_CONFIG_NUM},
+	{CMD_LINE_OPT_DIRECT_DEF_CONFIG, 1, 0,
+		CMD_LINE_OPT_DIRECT_DEF_CONFIG_NUM},
 	{NULL, 0, 0, 0}
 };
 
@@ -1073,7 +1089,7 @@ parse_args(int argc, char **argv)
 		case 'p':
 			enabled_port_mask = parse_portmask(optarg);
 			if (enabled_port_mask == 0) {
-				fprintf(stderr, "Invalid portmask\n");
+				RTE_LOG(ERR, port_fwd, "Invalid portmask\n");
 				return -EINVAL;
 			}
 			break;
@@ -1096,8 +1112,28 @@ parse_args(int argc, char **argv)
 		case CMD_LINE_OPT_CONFIG_NUM:
 			ret = parse_config(optarg);
 			if (ret) {
-				fprintf(stderr, "Invalid config\n");
-				return -EINVAL;
+				RTE_LOG(ERR, port_fwd, "Invalid config\n");
+				return ret;
+			}
+			break;
+		case CMD_LINE_OPT_DIRECT_RSP_CONFIG_NUM:
+			s_remote_dir |= RTE_REMOTE_DIR_RSP;
+			break;
+		case CMD_LINE_OPT_DIRECT_REMOTE_CONFIG_NUM:
+			ret = rte_remote_direct_parse_config(optarg, 1);
+			if (ret) {
+				RTE_LOG(ERR, port_fwd,
+					"Invalid direct config\n");
+				return ret;
+			}
+			s_remote_dir |= RTE_REMOTE_DIR_REQ;
+			break;
+		case CMD_LINE_OPT_DIRECT_DEF_CONFIG_NUM:
+			ret = rte_remote_direct_parse_config(optarg, 0);
+			if (ret) {
+				RTE_LOG(ERR, port_fwd,
+					"Invalid default direct config\n");
+				return ret;
 			}
 			break;
 
@@ -1459,10 +1495,13 @@ main(int argc, char **argv)
 	uint16_t queueid, portid;
 	uint32_t lcore_id;
 	uint32_t nb_lcores;
-	uint8_t queue, socketid;
+	uint8_t queue;
 	struct rte_ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 	uint16_t nb_rx_queue[RTE_MAX_ETHPORTS];
 	uint16_t nb_tx_queue[RTE_MAX_ETHPORTS];
+	uint32_t socketid[RTE_MAX_ETHPORTS][MAX_LCORE_PARAMS];
+	uint16_t rx_queues[RTE_MAX_ETHPORTS][MAX_LCORE_PARAMS];
+	uint16_t tx_queues[RTE_MAX_ETHPORTS][MAX_LCORE_PARAMS];
 	uint32_t total_tx_queues = 0, total_rx_queues = 0;
 	uint32_t nb_mbuf;
 	struct rte_eth_conf local_port_conf[RTE_MAX_ETHPORTS];
@@ -1553,8 +1592,11 @@ main(int argc, char **argv)
 		if ((enabled_port_mask & (1 << portid)) == 0)
 			continue;
 
-		nb_rx_queue[portid] = get_port_n_rx_queues(portid);
+		nb_rx_queue[portid] = get_port_n_rx_queues(portid,
+			rx_queues[portid]);
 		nb_tx_queue[portid] = nb_rx_queue[portid];
+		rte_memcpy(tx_queues[portid], rx_queues[portid],
+			nb_tx_queue[portid] * sizeof(uint16_t));
 		total_rx_queues += nb_rx_queue[portid];
 		total_tx_queues += nb_tx_queue[portid];
 	}
@@ -1571,9 +1613,35 @@ main(int argc, char **argv)
 			"global mem pool(count=%d) init failed\n",
 			nb_mbuf);
 
+	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+		if (rte_lcore_is_enabled(lcore_id) == 0)
+			continue;
+
+		qconf = &s_lcore_conf[lcore_id];
+		/* init RX queues */
+		for (queue = 0; queue < qconf->n_rx_queue; ++queue) {
+			portid = qconf->rx_queue_list[queue].port_id;
+			queueid = qconf->rx_queue_list[queue].queue_id;
+
+			socketid[portid][queueid] =
+				rte_lcore_to_socket_id(lcore_id);
+
+			RTE_LOG(INFO, port_fwd,
+				"rxq/txq=%d,%d,%d\r\n",
+				portid, queueid, socketid[portid][queueid]);
+
+			qconf->tx_queue_id[portid] = queueid;
+
+			qconf->tx_port_id[qconf->n_tx_port] = portid;
+			qconf->n_tx_port++;
+		}
+	}
+
 	/* initialize all ports */
 	RTE_ETH_FOREACH_DEV(portid) {
 		char env_name[64];
+		struct rte_eth_rxconf rxq_conf;
+		uint16_t q_nb;
 
 		memcpy(&local_port_conf[portid], &port_conf,
 			sizeof(struct rte_eth_conf));
@@ -1633,60 +1701,41 @@ main(int argc, char **argv)
 				"Err(%d) get MAC address of port%d\n",
 				ret, portid);
 		}
-	}
-
-	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
-		if (rte_lcore_is_enabled(lcore_id) == 0)
-			continue;
-
-		qconf = &s_lcore_conf[lcore_id];
-		/* init RX queues */
-		for (queue = 0; queue < qconf->n_rx_queue; ++queue) {
-			struct rte_eth_rxconf rxq_conf;
-
-			portid = qconf->rx_queue_list[queue].port_id;
-			queueid = qconf->rx_queue_list[queue].queue_id;
-
-			socketid = (uint8_t)rte_lcore_to_socket_id(lcore_id);
-
-			RTE_LOG(INFO, port_fwd,
-				"rxq/txq=%d,%d,%d\r\n",
-				portid, queueid, socketid);
-
-			ret = rte_eth_dev_info_get(portid, &dev_info);
-			if (ret != 0)
-				rte_exit(EXIT_FAILURE,
-					"Error during getting device (port %u) info: %s\n",
-					portid, strerror(-ret));
-
-			rxq_conf = dev_info.default_rxconf;
-			rxq_conf.offloads = port_conf.rxmode.offloads;
-			rxq_conf.reserved_64s[0] = min_mbuf_addr;
-			rxq_conf.reserved_64s[1] = max_mbuf_addr;
-			ret = rte_eth_rx_queue_setup(portid, queueid,
-					nb_rxd, socketid,
-					&rxq_conf,
-					pktmbuf_pool);
+		ret = rte_eth_dev_info_get(portid, &dev_info);
+		if (ret != 0) {
+			rte_exit(EXIT_FAILURE,
+				"Error during getting device (port %u) info: %s\n",
+				portid, strerror(-ret));
+		}
+		rxq_conf = dev_info.default_rxconf;
+		rxq_conf.offloads = port_conf.rxmode.offloads;
+		rxq_conf.reserved_64s[0] = min_mbuf_addr;
+		rxq_conf.reserved_64s[1] = max_mbuf_addr;
+		for (q_nb = 0; q_nb < nb_rx_queue[portid]; q_nb++) {
+			ret = rte_eth_rx_queue_setup(portid,
+				rx_queues[portid][q_nb],
+				nb_rxd, socketid[portid][q_nb],
+				&rxq_conf,
+				pktmbuf_pool);
 			if (ret < 0) {
 				rte_exit(EXIT_FAILURE,
 					"port%d rxq%d setup failed(%d)\n",
-					portid, queueid, ret);
+					portid, rx_queues[portid][q_nb], ret);
 			}
-			txconf = &dev_info.default_txconf;
-			txconf->offloads =
+		}
+		txconf = &dev_info.default_txconf;
+		txconf->offloads =
 				local_port_conf[portid].txmode.offloads;
-			ret = rte_eth_tx_queue_setup(portid, queueid, nb_txd,
-					socketid, txconf);
+		for (q_nb = 0; q_nb < nb_tx_queue[portid]; q_nb++) {
+			ret = rte_eth_tx_queue_setup(portid,
+				tx_queues[portid][q_nb], nb_txd,
+					socketid[portid][q_nb],
+					txconf);
 			if (ret < 0) {
 				rte_exit(EXIT_FAILURE,
-					"port%d txq%d setup failed(%d)\n",
-					portid, queueid, ret);
+					"port%d rxq%d setup failed(%d)\n",
+					portid, rx_queues[portid][q_nb], ret);
 			}
-			qconf = &s_lcore_conf[lcore_id];
-			qconf->tx_queue_id[portid] = queueid;
-
-			qconf->tx_port_id[qconf->n_tx_port] = portid;
-			qconf->n_tx_port++;
 		}
 	}
 
@@ -1746,6 +1795,12 @@ main(int argc, char **argv)
 				"perf statistics thread create failed(%d)\n",
 				ret);
 		}
+	}
+
+	ret = rte_remote_direct_traffic(s_remote_dir);
+	if (ret) {
+		rte_exit(EXIT_FAILURE,
+			"direct traffic failed!(%d)\n", ret);
 	}
 
 	/* launch per-lcore init on every lcore */
