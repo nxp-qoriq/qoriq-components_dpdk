@@ -469,7 +469,7 @@ lsinic_dev_id_to_dpaa2_dev(int eth_id)
 	struct rte_device *rdev;
 
 	if (eth_id >= 0 && eth_id < RTE_MAX_ETHPORTS &&
-		rte_pmd_dpaa2_dev_is_dpaa2(&rte_eth_devices[eth_id])) {
+		rte_pmd_dpaa2_dev_is_dpaa2(eth_id)) {
 		rdev = rte_eth_devices[eth_id].device;
 		dpaa2_dev = container_of(rdev,
 			struct rte_dpaa2_device, device);

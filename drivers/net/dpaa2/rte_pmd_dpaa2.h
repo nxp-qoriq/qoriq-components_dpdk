@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #ifndef _RTE_PMD_DPAA2_H
@@ -130,8 +130,8 @@ int
 rte_pmd_dpaa2_set_opr(uint16_t port_id, uint16_t rx_queue_id);
 
 int
-rte_pmd_dpaa2_dev_is_dpaa2(void *_dev);
+rte_pmd_dpaa2_dev_is_dpaa2(uint32_t eth_id);
 const char*
-rte_pmd_dpaa2_ep_name(void *_dev);
+rte_pmd_dpaa2_ep_name(uint32_t eth_id);
 
 #endif /* _RTE_PMD_DPAA2_H */

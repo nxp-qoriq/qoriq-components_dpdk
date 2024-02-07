@@ -3005,19 +3005,37 @@ init_err:
 }
 
 int
-rte_pmd_dpaa2_dev_is_dpaa2(void *_dev)
+rte_pmd_dpaa2_dev_is_dpaa2(uint32_t eth_id)
 {
-	struct rte_eth_dev *dev = _dev;
+	struct rte_eth_dev *dev;
+
+	if (eth_id >= RTE_MAX_ETHPORTS)
+		return false;
+
+	dev = &rte_eth_devices[eth_id];
+	if (!dev->device)
+		return false;
+
 	return dev->device->driver == &rte_dpaa2_pmd.driver;
 }
 
 const char*
-rte_pmd_dpaa2_ep_name(void *_dev)
+rte_pmd_dpaa2_ep_name(uint32_t eth_id)
 {
-	struct rte_eth_dev *dev = _dev;
+	struct rte_eth_dev *dev;
 	struct dpaa2_dev_priv *priv;
 
-	if (!rte_pmd_dpaa2_dev_is_dpaa2(dev))
+	if (eth_id >= RTE_MAX_ETHPORTS)
+		return NULL;
+
+	if (!rte_pmd_dpaa2_dev_is_dpaa2(eth_id))
+		return NULL;
+
+	dev = &rte_eth_devices[eth_id];
+	if (!dev->data)
+		return NULL;
+
+	if (!dev->data->dev_private)
 		return NULL;
 
 	priv = dev->data->dev_private;
