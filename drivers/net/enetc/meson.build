@@ -9,6 +9,7 @@ endif
 deps += ['common_dpaax']
 sources = files(
 	'enetc4_ethdev.c',
+	'enetc4_vf.c',
         'enetc_ethdev.c',
         'enetc_rxtx.c',
 )

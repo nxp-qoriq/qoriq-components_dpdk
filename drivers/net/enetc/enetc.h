@@ -88,6 +88,34 @@ struct enetc_eth_adapter {
 	(&((struct enetc_eth_adapter *)adapter)->intr)
 
 /*
+ * ENETC4 function prototypes
+ */
+int enetc4_pci_remove(struct rte_pci_device *pci_dev);
+int enetc4_dev_configure(struct rte_eth_dev *dev);
+int enetc4_dev_close(struct rte_eth_dev *dev);
+int enetc4_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused);
+int enetc4_dev_infos_get(struct rte_eth_dev *dev __rte_unused,
+			 struct rte_eth_dev_info *dev_info);
+int enetc4_rx_queue_setup(struct rte_eth_dev *dev, uint16_t rx_queue_id,
+			  uint16_t nb_rx_desc, unsigned int socket_id __rte_unused,
+			  const struct rte_eth_rxconf *rx_conf,
+			  struct rte_mempool *mb_pool);
+int enetc4_rx_queue_start(struct rte_eth_dev *dev, uint16_t qidx);
+int enetc4_rx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx);
+void enetc4_rx_queue_release(struct rte_eth_dev *dev, uint16_t qid);
+int enetc4_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
+			  uint16_t nb_desc, unsigned int socket_id __rte_unused,
+			  const struct rte_eth_txconf *tx_conf);
+int enetc4_tx_queue_start(struct rte_eth_dev *dev, uint16_t qidx);
+int enetc4_tx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx);
+void enetc4_tx_queue_release(struct rte_eth_dev *dev, uint16_t qid);
+
+/*
+ * enetc4_vf function prototype
+ */
+int enetc4_vf_dev_stop(struct rte_eth_dev *dev);
+
+/*
  * RX/TX ENETC function prototypes
  */
 uint16_t enetc_xmit_pkts(void *txq, struct rte_mbuf **tx_pkts,

@@ -65,7 +65,7 @@ enetc4_dev_stop(struct rte_eth_dev *dev)
 }
 
 /* return 0 means link status changed, -1 means not changed */
-static int
+int
 enetc4_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused)
 {
 	struct enetc_eth_hw *hw =
@@ -164,7 +164,7 @@ enetc4_mac_init(struct enetc_eth_hw *hw, struct rte_eth_dev *eth_dev)
 	return 0;
 }
 
-static int
+int
 enetc4_dev_infos_get(struct rte_eth_dev *dev __rte_unused,
 		    struct rte_eth_dev_info *dev_info)
 {
@@ -307,7 +307,7 @@ enetc4_setup_txbdr(struct enetc_hw *hw, struct enetc_bdr *tx_ring)
 			 ENETC_BDR(TX, idx, ENETC_TBCISR));
 }
 
-static int
+int
 enetc4_tx_queue_setup(struct rte_eth_dev *dev,
 		     uint16_t queue_idx,
 		     uint16_t nb_desc,
@@ -357,7 +357,7 @@ fail:
 	return err;
 }
 
-static void
+void
 enetc4_tx_queue_release(struct rte_eth_dev *dev, uint16_t qid)
 {
 	void *txq = dev->data->tx_queues[qid];
@@ -453,7 +453,7 @@ enetc4_setup_rxbdr(struct enetc_hw *hw, struct enetc_bdr *rx_ring,
 	enetc4_rxbdr_wr(hw, idx, ENETC_RBPIR, 0);
 }
 
-static int
+int
 enetc4_rx_queue_setup(struct rte_eth_dev *dev,
 		     uint16_t rx_queue_id,
 		     uint16_t nb_rx_desc,
@@ -508,7 +508,7 @@ fail:
 	return err;
 }
 
-static void
+void
 enetc4_rx_queue_release(struct rte_eth_dev *dev, uint16_t qid)
 {
 	void *rxq = dev->data->rx_queues[qid];
@@ -588,9 +588,10 @@ enetc4_stats_reset(struct rte_eth_dev *dev)
 	return 0;
 }
 
-static int
+int
 enetc4_dev_close(struct rte_eth_dev *dev)
 {
+	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
 	uint16_t i;
 	int ret;
 
@@ -598,7 +599,10 @@ enetc4_dev_close(struct rte_eth_dev *dev)
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
 		return 0;
 
-	ret = enetc4_dev_stop(dev);
+	if (hw->device_id == ENETC4_DEV_ID_VF)
+		ret = enetc4_vf_dev_stop(dev);
+	else
+		ret = enetc4_dev_stop(dev);
 
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
 		enetc4_rx_queue_release(dev, i);
@@ -656,7 +660,7 @@ enetc4_promiscuous_disable(struct rte_eth_dev *dev)
 	return 0;
 }
 
-static int
+int
 enetc4_dev_configure(struct rte_eth_dev *dev)
 {
 	struct enetc_eth_hw *hw =
@@ -688,7 +692,7 @@ enetc4_dev_configure(struct rte_eth_dev *dev)
 	return 0;
 }
 
-static int
+int
 enetc4_rx_queue_start(struct rte_eth_dev *dev, uint16_t qidx)
 {
 	struct enetc_eth_adapter *priv =
@@ -709,7 +713,7 @@ enetc4_rx_queue_start(struct rte_eth_dev *dev, uint16_t qidx)
 	return 0;
 }
 
-static int
+int
 enetc4_rx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx)
 {
 	struct enetc_eth_adapter *priv =
@@ -730,7 +734,7 @@ enetc4_rx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx)
 	return 0;
 }
 
-static int
+int
 enetc4_tx_queue_start(struct rte_eth_dev *dev, uint16_t qidx)
 {
 	struct enetc_eth_adapter *priv =
@@ -751,7 +755,7 @@ enetc4_tx_queue_start(struct rte_eth_dev *dev, uint16_t qidx)
 	return 0;
 }
 
-static int
+int
 enetc4_tx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx)
 {
 	struct enetc_eth_adapter *priv =
@@ -890,7 +894,7 @@ enetc4_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 					     enetc4_dev_init);
 }
 
-static int
+int
 enetc4_pci_remove(struct rte_pci_device *pci_dev)
 {
 	return rte_eth_dev_pci_generic_remove(pci_dev, enetc4_dev_uninit);

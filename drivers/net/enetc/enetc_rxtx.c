@@ -397,7 +397,7 @@ enetc_clean_rx_ring(struct enetc_bdr *rx_ring,
 		enetc_dev_rx_parse(rx_swbd->buffer_addr,
 				   rxbd->r.parse_summary);
 
-		if (hw->device_id == ENETC4_DEV_ID) {
+		if (hw->device_id == ENETC4_DEV_ID || hw->device_id == ENETC4_DEV_ID_VF) {
 			data = rte_pktmbuf_mtod(rx_swbd->buffer_addr, void *);
 			for (j = 0; j <= rx_swbd->buffer_addr->pkt_len; j += RTE_CACHE_LINE_SIZE)
 				dccivac(data + j);
