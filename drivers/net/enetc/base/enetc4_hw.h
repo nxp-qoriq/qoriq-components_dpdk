@@ -14,6 +14,14 @@
 #define ENETC4_DEV_ID_VF	0xef00
 #define PCI_VENDOR_ID_NXP	0x1131
 
+#define ENETC_MAX_NUM_VFS    2
+
+struct enetc_msg_swbd {
+	void *vaddr;
+	uint64_t dma;
+	int size;
+};
+
 /***************************ENETC port registers**************************/
 #define ENETC4_PMR		0x10
 #define ENETC4_PMR_EN		(BIT(16) | BIT(17) | BIT(18))
@@ -99,6 +107,19 @@
 #define ENETC4_LINK_SPEED_10M            0x0ULL
 #define ENETC4_LINK_SPEED_100M           0x0000000000020000ULL
 #define ENETC4_LINK_SPEED_1G             0x0000000000040000ULL
+
+#define ENETC4_DEF_VSI_WAIT_TIMEOUT_UPDATE     100
+#define ENETC4_DEF_VSI_WAIT_DELAY_UPDATE       2000 /* us */
+
+/* VSI Registers */
+#define ENETC4_VSIMSGSR  0x204   /* RO */
+#define ENETC4_VSIMSGSR_MB       BIT(0)
+#define ENETC4_VSIMSGSR_MS       BIT(1)
+#define ENETC4_VSIMSGSNDAR0      0x210
+#define ENETC4_VSIMSGSNDAR1      0x214
+
+#define ENETC_SIMSGSR_SET_MC(val) ((val) << 16)
+#define ENETC_SIMSGSR_GET_MC(val) ((val) >> 16)
 
 /* general register accessors */
 #define enetc4_rd_reg(reg)	rte_read32((void *)(reg))

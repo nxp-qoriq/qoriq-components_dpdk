@@ -237,6 +237,8 @@ struct enetc_eth_hw {
 	uint16_t vendor_id;
 	uint8_t revision_id;
 	struct enetc_eth_mac_info mac;
+	bool uc_promisc;
+	bool mc_promisc;
 };
 
 /* Transmit Descriptor */

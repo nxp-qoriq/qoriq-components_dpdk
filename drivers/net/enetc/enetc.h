@@ -9,6 +9,7 @@
 #include "compat.h"
 #include "base/enetc_hw.h"
 #include "enetc_logs.h"
+#include <linux/types.h>
 
 #define PCI_VENDOR_ID_FREESCALE 0x1957
 
@@ -35,7 +36,9 @@
 		RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN)
 
 /* eth name size */
-#define ETH_NAMESIZE	20
+#define	ENETC_ETH_NAMESIZE	20
+
+#define ENETC_DEFAULT_MSG_SIZE  1024    /* max size */
 
 /* size for marking hugepage non-cacheable */
 #define SIZE_2MB	0x200000
@@ -86,6 +89,51 @@ struct enetc_eth_adapter {
 
 #define ENETC_DEV_PRIVATE_TO_INTR(adapter) \
 	(&((struct enetc_eth_adapter *)adapter)->intr)
+
+/* Command completion status */
+enum enetc_msg_cmd_status {
+	ENETC_MSG_CMD_STATUS_OK,
+	ENETC_MSG_CMD_STATUS_FAIL,
+	ENETC_MSG_CMD_NOT_SUPPORT
+};
+
+/* VSI-PSI command message types */
+enum enetc_msg_cmd_type {
+	ENETC_MSG_CMD_MNG_MAC = 1, /* manage MAC address */
+	ENETC_MSG_CMD_MNG_RX_MAC_FILTER,/* manage RX MAC table */
+	ENETC_MSG_CMD_MNG_RX_VLAN_FILTER /* manage RX VLAN table */
+};
+
+/* VSI-PSI command action types */
+enum enetc_msg_cmd_action_type {
+	ENETC_MSG_CMD_MNG_ADD = 1,
+	ENETC_MSG_CMD_MNG_REMOVE
+};
+
+/* PSI-VSI command header format */
+struct enetc_msg_cmd_header {
+	uint16_t type;       /* command class type */
+	uint16_t id;         /* denotes the specific required action */
+};
+
+/* VF-PF set primary MAC address message format */
+struct enetc_msg_cmd_set_primary_mac {
+	struct enetc_msg_cmd_header header;
+	struct sockaddr mac;
+};
+
+/* VSI-to-PSI Messaging: set MAC filter message format */
+struct enetc_msg_config_mac_filter {
+        struct enetc_msg_cmd_header header;
+        uint8_t uc_promisc;
+        uint8_t mc_promisc;
+};
+
+/* msg size encoding: default and max msg value of 1024B encoded as 0 */
+static inline uint32_t enetc_vsi_set_msize(uint32_t size)
+{
+	return size < ENETC_DEFAULT_MSG_SIZE ? size >> 5 : 0;
+}
 
 /*
  * ENETC4 function prototypes

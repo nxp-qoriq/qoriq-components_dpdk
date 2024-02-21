@@ -114,7 +114,7 @@ enetc4_mac_init(struct enetc_eth_hw *hw, struct rte_eth_dev *eth_dev)
 	struct enetc_hw *enetc_hw = &hw->hw;
 	uint32_t high_mac = 0;
 	uint16_t low_mac = 0;
-	char eth_name[ETH_NAMESIZE];
+	char eth_name[ENETC_ETH_NAMESIZE];
 
 	PMD_INIT_FUNC_TRACE();
 

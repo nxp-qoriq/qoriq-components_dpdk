@@ -23,6 +23,245 @@ enetc4_vf_dev_start(struct rte_eth_dev *dev __rte_unused)
 	return 0;
 }
 
+/* Messaging */
+static void
+enetc4_msg_vsi_write_msg(struct enetc_hw *hw,
+		struct enetc_msg_swbd *msg)
+{
+	uint32_t val;
+
+	val = enetc_vsi_set_msize(msg->size) | lower_32_bits(msg->dma);
+	enetc_wr(hw, ENETC4_VSIMSGSNDAR1, upper_32_bits(msg->dma));
+	enetc_wr(hw, ENETC4_VSIMSGSNDAR0, val);
+}
+
+static int
+enetc4_msg_vsi_send(struct enetc_hw *enetc_hw, struct enetc_msg_swbd *msg)
+{
+	int timeout = ENETC4_DEF_VSI_WAIT_TIMEOUT_UPDATE;
+	int delay_us = ENETC4_DEF_VSI_WAIT_DELAY_UPDATE;
+	int vsimsgsr;
+
+	enetc4_msg_vsi_write_msg(enetc_hw, msg);
+
+	if (getenv("ENETC4_VSI_WAIT_TIMEOUT_UPDATE"))
+		timeout = atoi(getenv("ENETC4_VSI_WAIT_TIMEOUT_UPDATE"));
+
+	if (getenv("ENETC4_VSI_WAIT_DELAY_UPDATE"))
+		delay_us = atoi(getenv("ENETC4_VSI_WAIT_DELAY_UPDATE"));
+
+	do {
+		vsimsgsr = enetc_rd(enetc_hw, ENETC4_VSIMSGSR);
+		if (!(vsimsgsr & ENETC4_VSIMSGSR_MB)){
+			break;
+		}
+		rte_delay_us(delay_us);
+	} while (--timeout);
+
+	if (!timeout)
+		return -ETIMEDOUT;
+
+	/* check for message delivery error */
+	if (vsimsgsr & ENETC4_VSIMSGSR_MS) {
+		ENETC_PMD_ERR("Transfer error when copying the data.\n");
+		return -EIO;
+	}
+
+	/* Check the user-defined completion status. */
+	if (ENETC_SIMSGSR_GET_MC(vsimsgsr)) {
+		ENETC_PMD_ERR("VSI command execute error %d\n",ENETC_SIMSGSR_GET_MC(vsimsgsr));
+
+		if (ENETC_SIMSGSR_GET_MC(vsimsgsr) == ENETC_MSG_CMD_NOT_SUPPORT) {
+			ENETC_PMD_ERR("VSI command not supported");
+			return -EOPNOTSUPP;
+		}
+		else
+			return -EIO;
+	}
+
+	return 0;
+}
+
+static int
+enetc4_vf_set_mac_addr(struct rte_eth_dev *dev, struct rte_ether_addr *addr)
+{
+	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct enetc_hw *enetc_hw = &hw->hw;
+	struct enetc_msg_cmd_set_primary_mac *cmd;
+	struct enetc_msg_swbd *msg;
+	int msg_size;
+	int err = 0;
+
+	/* meaning no VF */
+	if (hw->device_id != ENETC4_DEV_ID_VF) {
+		ENETC_PMD_ERR("No VFs");
+		return -1;
+	}
+
+	msg = rte_zmalloc(NULL, sizeof(*msg), RTE_CACHE_LINE_SIZE);
+	if (!msg) {
+		ENETC_PMD_ERR("Failed to alloc msg");
+		err = -ENOMEM;
+		return err;
+        }
+
+	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_cmd_set_primary_mac), RTE_CACHE_LINE_SIZE);
+	msg->vaddr = rte_zmalloc(NULL, msg_size, 0);
+	if (!msg->vaddr) {
+		ENETC_PMD_ERR("Failed to alloc memory for msg");
+		rte_free(msg);
+		return -ENOMEM;
+	}
+
+	msg->dma = rte_mem_virt2iova((const void *) msg->vaddr);
+	msg->size = msg_size;
+
+	cmd = (struct enetc_msg_cmd_set_primary_mac *)msg->vaddr;
+	cmd->header.type = ENETC_MSG_CMD_MNG_MAC;
+	cmd->header.id = ENETC_MSG_CMD_MNG_ADD;
+	memcpy(&cmd->mac.sa_data, addr, sizeof(struct rte_ether_addr));
+
+	dcbf(cmd);
+	/* send the command and wait */
+	err = enetc4_msg_vsi_send(enetc_hw, msg);
+	if (err){
+		ENETC_PMD_ERR("VSI message send error");
+		goto end;
+	}
+
+	rte_ether_addr_copy((struct rte_ether_addr *) &cmd->mac.sa_data,
+			&dev->data->mac_addrs[0]);
+
+end:
+	/* free memory no longer required */
+	rte_free(msg->vaddr);
+	rte_free(msg);
+	return err;
+}
+
+static int
+enetc4_vf_promisc_send_message(struct rte_eth_dev *dev, bool uc_promisc, bool mc_promisc)
+{
+	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct enetc_hw *enetc_hw = &hw->hw;
+	struct enetc_msg_config_mac_filter *cmd;
+	struct enetc_msg_swbd *msg;
+	int msg_size;
+	int err = 0;
+
+	msg = rte_zmalloc(NULL, sizeof(*msg), RTE_CACHE_LINE_SIZE);
+	if (!msg) {
+		ENETC_PMD_ERR("Failed to alloc msg");
+		err = -ENOMEM;
+		return err;
+	}
+
+	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_config_mac_filter), RTE_CACHE_LINE_SIZE);
+	msg->vaddr = rte_zmalloc(NULL, msg_size, 0);
+	if (!msg->vaddr) {
+		ENETC_PMD_ERR("Failed to alloc memory for msg");
+		rte_free(msg);
+		return -ENOMEM;
+	}
+
+	msg->dma = rte_mem_virt2iova((const void *) msg->vaddr);
+	msg->size = msg_size;
+
+	cmd = (struct enetc_msg_config_mac_filter *)msg->vaddr;
+	memset(cmd, 0, sizeof(*cmd));
+	cmd->header.type = ENETC_MSG_CMD_MNG_RX_MAC_FILTER;
+	cmd->header.id = ENETC_MSG_CMD_MNG_ADD;
+	cmd->uc_promisc = uc_promisc;
+	cmd->mc_promisc = mc_promisc;
+
+	dcbf(cmd);
+	/* send the command and wait */
+	err = enetc4_msg_vsi_send(enetc_hw, msg);
+	if(err){
+		ENETC_PMD_ERR("VSI message send error");
+		goto end;
+	}
+
+end:
+	/* free memory no longer required */
+	rte_free(msg->vaddr);
+	rte_free(msg);
+	return err;
+}
+
+static int
+enetc4_vf_multicast_enable(struct rte_eth_dev *dev)
+{
+	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	bool mc_promisc = true;
+	int err;
+
+	err = enetc4_vf_promisc_send_message(dev, hw->uc_promisc, mc_promisc);
+	if(err) {
+		ENETC_PMD_ERR("Failed to enable multicast promiscuous mode");
+		return err;
+	}
+
+	hw->mc_promisc = true;
+
+	return 0;
+}
+
+static int
+enetc4_vf_multicast_disable(struct rte_eth_dev *dev)
+{
+	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	bool mc_promisc = false;
+	int err;
+
+	err = enetc4_vf_promisc_send_message(dev, hw->uc_promisc, mc_promisc);
+	if(err) {
+		ENETC_PMD_ERR("Failed to disable multicast promiscuous mode");
+		return err;
+	}
+
+	hw->mc_promisc = false;
+
+	return 0;
+}
+
+static int
+enetc4_vf_promisc_enable(struct rte_eth_dev *dev)
+{
+	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	bool uc_promisc = true;
+	int err;
+
+	err = enetc4_vf_promisc_send_message(dev, uc_promisc, hw->mc_promisc);
+	if(err) {
+		ENETC_PMD_ERR("Failed to enable promiscuous mode");
+		return err;
+	}
+
+	hw->uc_promisc = true;
+
+	return 0;
+}
+
+static int
+enetc4_vf_promisc_disable(struct rte_eth_dev *dev)
+{
+	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	bool uc_promisc = false;
+	int err;
+
+	err = enetc4_vf_promisc_send_message(dev, uc_promisc, hw->mc_promisc);
+	if(err) {
+		ENETC_PMD_ERR("Failed to disable promiscuous mode");
+		return err;
+	}
+
+	hw->uc_promisc = false;
+
+	return 0;
+}
+
+
 /*
  * The set of PCI devices this driver supports
  */
@@ -39,6 +278,11 @@ static const struct eth_dev_ops enetc4_vf_ops = {
 .dev_close            = enetc4_dev_close,
 .link_update          = enetc4_link_update,
 .dev_infos_get        = enetc4_dev_infos_get,
+.mac_addr_set         = enetc4_vf_set_mac_addr,
+.promiscuous_enable   = enetc4_vf_promisc_enable,
+.promiscuous_disable  = enetc4_vf_promisc_disable,
+.allmulticast_enable  = enetc4_vf_multicast_enable,
+.allmulticast_disable = enetc4_vf_multicast_disable,
 .rx_queue_setup       = enetc4_rx_queue_setup,
 .rx_queue_start       = enetc4_rx_queue_start,
 .rx_queue_stop        = enetc4_rx_queue_stop,
@@ -56,7 +300,7 @@ enetc4_vf_mac_init(struct enetc_eth_hw *hw, struct rte_eth_dev *eth_dev)
 	struct enetc_hw *enetc_hw = &hw->hw;
 	uint32_t high_mac = 0;
 	uint16_t low_mac = 0;
-	char vf_eth_name[ETH_NAMESIZE];
+	char vf_eth_name[ENETC_ETH_NAMESIZE];
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -113,6 +357,8 @@ enetc4_vf_dev_init(struct rte_eth_dev *eth_dev)
 
 	PMD_INIT_FUNC_TRACE();
 	eth_dev->dev_ops = &enetc4_vf_ops;
+	hw->uc_promisc = false;
+	hw->mc_promisc = false;
 	enetc4_dev_hw_init(eth_dev);
 
 	error = enetc4_vf_mac_init(hw, eth_dev);
