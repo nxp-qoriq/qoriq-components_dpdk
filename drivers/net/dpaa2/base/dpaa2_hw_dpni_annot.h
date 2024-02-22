@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016,2019,2022 NXP
+ *   Copyright 2016,2019,2022,2024 NXP
  *
  */
 
@@ -274,6 +274,10 @@ struct dpaa2_faead {
 #define DPAA2_ANNOT_FAEAD_EBDD		0x00000020
 /*UPD (Update prepended data)*/
 #define DPAA2_ANNOT_FAEAD_UPD		0x00000010
+
+#define DPAA2_TX_CONFIRM_ENABLE \
+	(DPAA2_ANNOT_FAEAD_A4V | DPAA2_ANNOT_FAEAD_EBDD | \
+	DPAA2_ANNOT_FAEAD_EBDDV)
 
 /* Debug frame, otherwise supposed to be discarded */
 #define DPAA2_ETH_FAS_DISC	      0x80000000

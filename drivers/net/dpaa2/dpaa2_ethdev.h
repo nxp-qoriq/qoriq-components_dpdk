@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2015-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2023 NXP
+ *   Copyright 2016-2024 NXP
  *
  */
 
@@ -93,6 +93,13 @@
 /* Tx confirmation enabled */
 #define DPAA2_TX_CONF_ENABLE	BIT(8)
 
+/* Tx dynamic confirmation enabled,
+ * only valid with Tx confirmation enabled.
+ */
+#define DPAA2_TX_DYNAMIC_CONF_ENABLE	BIT(9)
+
+#define DPAA2_TX_PREFETCH_DYNAMIC_CONF	BIT(10)
+
 /* DPDMUX index for DPMAC */
 #define DPAA2_DPDMUX_DPMAC_IDX 0
 
@@ -172,6 +179,8 @@ extern const struct rte_tm_ops dpaa2_tm_ops;
 extern bool dpaa2_enable_err_queue;
 
 extern bool dpaa2_print_parser_result;
+
+extern int dpaa2_tx_cnf_fd_overflow;
 
 /* 00 00 00 - last 6 bit represent data, annotation,
  * context stashing setting 01 01 00 (0x14)
@@ -537,7 +546,13 @@ void dpaa2_dev_process_ordered_event(struct qbman_swp *swp,
 				     const struct qbman_result *dq,
 				     struct dpaa2_queue *rxq,
 				     struct rte_event *ev);
-uint16_t dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts);
+uint16_t
+dpaa2_dev_tx(void *queue,
+	struct rte_mbuf **bufs, uint16_t nb_pkts);
+uint16_t
+dpaa2_dev_tx_with_dynamic_cnf(void *queue,
+	struct rte_mbuf **bufs, uint16_t nb_pkts);
+
 uint16_t dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs,
 			      uint16_t nb_pkts);
 __rte_internal
@@ -546,7 +561,8 @@ uint16_t dpaa2_dev_tx_multi_txq_ordered(void **queue,
 
 void dpaa2_dev_free_eqresp_buf(uint16_t eqresp_ci, struct dpaa2_queue *dpaa2_q);
 void dpaa2_flow_clean(struct rte_eth_dev *dev);
-uint16_t dpaa2_dev_tx_conf(void *queue)  __rte_unused;
+uint16_t dpaa2_dev_tx_conf(void *queue);
+uint16_t dpaa2_dev_tx_conf_dynamic(void *queue);
 
 int dpaa2_timesync_enable(struct rte_eth_dev *dev);
 int dpaa2_timesync_disable(struct rte_eth_dev *dev);

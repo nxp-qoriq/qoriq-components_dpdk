@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019, 2023 NXP
+ * Copyright 2019, 2023-2024 NXP
  */
 
 #include <sys/queue.h>
@@ -110,12 +110,18 @@ int dpaa2_timesync_read_tx_timestamp(struct rte_eth_dev *dev,
 						struct timespec *timestamp)
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	void *queue = priv->next_tx_conf_queue;
 
-	if (priv->next_tx_conf_queue) {
-		while (!priv->tx_timestamp)
-			dpaa2_dev_tx_conf(priv->next_tx_conf_queue);
+	if (queue) {
+		if (priv->flags & DPAA2_TX_DYNAMIC_CONF_ENABLE) {
+			while (!priv->tx_timestamp)
+				dpaa2_dev_tx_conf_dynamic(queue);
+		} else {
+			while (!priv->tx_timestamp)
+				dpaa2_dev_tx_conf(queue);
+		}
 	} else {
-		return -1;
+		return -EINVAL;
 	}
 	*timestamp = rte_ns_to_timespec(priv->tx_timestamp);
 

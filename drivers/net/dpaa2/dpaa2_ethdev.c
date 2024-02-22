@@ -78,6 +78,8 @@ bool dpaa2_enable_err_queue;
 
 bool dpaa2_print_parser_result;
 
+int dpaa2_tx_cnf_fd_overflow = 65535;
+
 #define MAX_NB_RX_DESC		11264
 int total_nb_rx_desc;
 
@@ -399,10 +401,9 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 			goto fail;
 		}
 		for (j = 0; j < RTE_MAX_LCORE; j++) {
-			dpaa2_q->per_core_q_storage[j] =
-				rte_malloc("per_core_dq_storage",
-					sizeof(struct queue_storage_info_t),
-					RTE_CACHE_LINE_SIZE);
+			dpaa2_q->per_core_q_storage[j] = rte_malloc(NULL,
+				sizeof(struct queue_storage_info_t),
+				RTE_CACHE_LINE_SIZE);
 			if (!dpaa2_q->per_core_q_storage[j]) {
 				ret = -ENOBUFS;
 				goto fail;
@@ -481,12 +482,33 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 				ret = -ENOBUFS;
 				goto fail_tx_conf;
 			}
+			for (j = 0; j < RTE_MAX_LCORE; j++) {
+				dpaa2_q->per_core_q_storage[j] =
+					rte_malloc(NULL,
+					sizeof(struct queue_storage_info_t),
+					RTE_CACHE_LINE_SIZE);
+				if (!dpaa2_q->per_core_q_storage[j]) {
+					ret = -ENOBUFS;
+					goto fail_tx_conf;
+				}
+			}
 
 			memset(dpaa2_q->q_storage, 0,
 				sizeof(struct queue_storage_info_t));
+			for (j = 0; j < RTE_MAX_LCORE; j++) {
+				memset(dpaa2_q->per_core_q_storage[j], 0,
+					sizeof(struct queue_storage_info_t));
+			}
 			ret = dpaa2_alloc_dq_storage(dpaa2_q->q_storage);
 			if (ret)
 				goto fail_tx_conf;
+
+			for (j = 0; j < RTE_MAX_LCORE; j++) {
+				per_cqst = dpaa2_q->per_core_q_storage[j];
+				ret = dpaa2_alloc_dq_storage(per_cqst);
+				if (ret)
+					goto fail_tx_conf;
+			}
 		}
 	}
 
@@ -589,18 +611,14 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 
 	/* Rx offloads which are enabled by default */
 	if (dev_rx_offloads_nodis & ~rx_offloads) {
-		DPAA2_PMD_INFO(
-		"Some of rx offloads enabled by default - requested 0x%" PRIx64
-		" fixed are 0x%" PRIx64,
-		rx_offloads, dev_rx_offloads_nodis);
+		DPAA2_PMD_DEBUG("RX offloads requested/fixed: 0x%lx/0x%lx",
+			rx_offloads, dev_rx_offloads_nodis);
 	}
 
 	/* Tx offloads which are enabled by default */
 	if (dev_tx_offloads_nodis & ~tx_offloads) {
-		DPAA2_PMD_INFO(
-		"Some of tx offloads enabled by default - requested 0x%" PRIx64
-		" fixed are 0x%" PRIx64,
-		tx_offloads, dev_tx_offloads_nodis);
+		DPAA2_PMD_DEBUG("TX offloads requested/fixed: 0x%lx/0x%lx",
+			tx_offloads, dev_tx_offloads_nodis);
 	}
 
 	max_rx_pktlen = eth_conf->rxmode.mtu + RTE_ETHER_HDR_LEN +
@@ -612,7 +630,7 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 			DPAA2_PMD_ERR("Unable to set mtu. check config");
 			return ret;
 		}
-		DPAA2_PMD_INFO("MTU configured for the device: %d",
+		DPAA2_PMD_DEBUG("MTU configured for the device: %d",
 				dev->data->mtu);
 	} else {
 		return -1;
@@ -955,7 +973,8 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 			ceetm_ch_idx <= (priv->num_channels - 1);
 			ceetm_ch_idx++) {
 			/*Set tx-conf and error configuration*/
-			if (priv->flags & DPAA2_TX_CONF_ENABLE) {
+			if (priv->flags & DPAA2_TX_CONF_ENABLE &&
+				!(priv->flags & DPAA2_TX_DYNAMIC_CONF_ENABLE)) {
 				ret = dpni_set_tx_confirmation_mode(dpni,
 						CMD_PRI_LOW, priv->token,
 						ceetm_ch_idx,
@@ -1436,7 +1455,7 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 	if (priv->extract.qos_extract_param)
 		rte_free(priv->extract.qos_extract_param);
 
-	DPAA2_PMD_INFO("%s: netdev deleted", dev->data->name);
+	DPAA2_PMD_DEBUG("%s: netdev deleted", dev->data->name);
 	return 0;
 }
 
@@ -2028,8 +2047,13 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 	/** For recycle device, don't set TX callback
 	 * if it has been set by rte_pmd_dpaa2_dev_recycle_qp_setup.
 	 */
-	if (!dev->tx_pkt_burst || dev->tx_pkt_burst == rte_eth_pkt_burst_dummy)
-		dev->tx_pkt_burst = dpaa2_dev_tx;
+	if (!dev->tx_pkt_burst ||
+		dev->tx_pkt_burst == rte_eth_pkt_burst_dummy) {
+		if (priv->flags & DPAA2_TX_DYNAMIC_CONF_ENABLE)
+			dev->tx_pkt_burst = dpaa2_dev_tx_with_dynamic_cnf;
+		else
+			dev->tx_pkt_burst = dpaa2_dev_tx;
+	}
 
 	dev->data->dev_link.link_status = state.up;
 	dev->data->dev_link.link_speed = state.rate;
@@ -2096,8 +2120,8 @@ dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
 		/* todo- we may have to manually cleanup queues.
 		 */
 	} else {
-		DPAA2_PMD_INFO("Port %d Link DOWN successful",
-			       dev->data->port_id);
+		DPAA2_PMD_DEBUG("Port %d Link DOWN successful",
+			dev->data->port_id);
 	}
 
 	dev->data->dev_link.link_status = 0;
@@ -2723,6 +2747,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
 	struct dpni_buffer_layout layout;
 	int ret, hw_id, i;
+	char *penv;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2760,7 +2785,10 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 			eth_dev->rx_pkt_burst = dpaa2_dev_rx;
 		else
 			eth_dev->rx_pkt_burst = dpaa2_dev_prefetch_rx;
-		eth_dev->tx_pkt_burst = dpaa2_dev_tx;
+		if (priv->flags & DPAA2_TX_DYNAMIC_CONF_ENABLE)
+			eth_dev->tx_pkt_burst = dpaa2_dev_tx_with_dynamic_cnf;
+		else
+			eth_dev->tx_pkt_burst = dpaa2_dev_tx;
 		return 0;
 	}
 
@@ -2769,9 +2797,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	hw_id = dpaa2_dev->object_id;
 	ret = dpni_open(dpni_dev, CMD_PRI_LOW, hw_id, &priv->token);
 	if (ret) {
-		DPAA2_PMD_ERR(
-			     "Failure in opening dpni@%d with err code %d",
-			     hw_id, ret);
+		DPAA2_PMD_ERR("Failure in opening dpni@%d with err code %d",
+			hw_id, ret);
 		rte_free(dpni_dev);
 		return ret;
 	}
@@ -2783,7 +2810,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	ret = dpni_reset(dpni_dev, CMD_PRI_LOW, priv->token);
 	if (ret) {
 		DPAA2_PMD_ERR("Failure cleaning dpni@%d with err code %d",
-			      hw_id, ret);
+			hw_id, ret);
 		goto init_err;
 	}
 
@@ -2838,12 +2865,28 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	priv->flags |= DPAA2_TX_CONF_ENABLE;
 #endif
 	/* Used with ``fslmc:dpni.1,drv_tx_conf=1`` */
-	if (dpaa2_get_devargs(dev->devargs, DRIVER_TX_CONF)) {
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_TX_CONF) ||
+		getenv("DPAA2_TX_CONF")) {
 		priv->flags |= DPAA2_TX_CONF_ENABLE;
 		DPAA2_PMD_INFO("TX_CONF Enabled");
+		if (getenv("DPAA2_TX_DYNAMIC_CONF")) {
+			priv->flags |= DPAA2_TX_DYNAMIC_CONF_ENABLE;
+			DPAA2_PMD_INFO("TX_DYNAMIC_CONF Enabled");
+			priv->flags |= DPAA2_TX_PREFETCH_DYNAMIC_CONF;
+			penv = getenv("DPAA2_TX_DYNAMIC_CONF_PREFETCH");
+			if (penv && !atoi(penv))
+				priv->flags &= ~DPAA2_TX_PREFETCH_DYNAMIC_CONF;
+			DPAA2_PMD_INFO("Tx dynamic prefetch confirm %s",
+				(priv->flags & DPAA2_TX_PREFETCH_DYNAMIC_CONF) ?
+				"enabled" : "disabled");
+			penv = getenv("DPAA2_TX_CONF_FD_OVERFLOW");
+			if (penv)
+				dpaa2_tx_cnf_fd_overflow = atoi(penv);
+		}
 	}
 
-	if (dpaa2_get_devargs(dev->devargs, DRIVER_ERROR_QUEUE)) {
+	if (dpaa2_get_devargs(dev->devargs, DRIVER_ERROR_QUEUE) ||
+		getenv("DPAA2_ENABLE_ERROR_QUEUE")) {
 		dpaa2_enable_err_queue = 1;
 		DPAA2_PMD_INFO("Enable error queue");
 	}
@@ -2859,8 +2902,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		priv->flags |= DPAA2_PARSE_ERR_DROP;
 		DPAA2_PMD_INFO("Drop parse error packets in hw");
 	}
-	if (getenv("DPAA2_ENABLE_ERROR_QUEUE"))
-		dpaa2_enable_err_queue = 1;
 
 	if (getenv("DPAA2_PRINT_RX_PARSER_RESULT"))
 		dpaa2_print_parser_result = 1;
@@ -2879,8 +2920,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->data->mac_addrs = rte_zmalloc("dpni",
 		RTE_ETHER_ADDR_LEN * attr.mac_filter_entries, 0);
 	if (eth_dev->data->mac_addrs == NULL) {
-		DPAA2_PMD_ERR(
-		   "Failed to allocate %d bytes needed to store MAC addresses",
+		DPAA2_PMD_ERR("Failed to allocate %dB for MAC addresses",
 		   RTE_ETHER_ADDR_LEN * attr.mac_filter_entries);
 		ret = -ENOMEM;
 		goto init_err;
@@ -2938,7 +2978,10 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	} else {
 		eth_dev->rx_pkt_burst = dpaa2_dev_prefetch_rx;
 	}
-	eth_dev->tx_pkt_burst = dpaa2_dev_tx;
+	if (priv->flags & DPAA2_TX_DYNAMIC_CONF_ENABLE)
+		eth_dev->tx_pkt_burst = dpaa2_dev_tx_with_dynamic_cnf;
+	else
+		eth_dev->tx_pkt_burst = dpaa2_dev_tx;
 
 	/* Init fields w.r.t. classification */
 	memset(&priv->extract.qos_key_extract, 0,
@@ -3171,4 +3214,4 @@ RTE_PMD_REGISTER_PARAM_STRING(NET_DPAA2_PMD_DRIVER_NAME,
 		DRIVER_NO_PREFETCH_MODE "=<int>"
 		DRIVER_TX_CONF "=<int>"
 		DRIVER_ERROR_QUEUE "=<int>");
-RTE_LOG_REGISTER_DEFAULT(dpaa2_logtype_pmd, NOTICE);
+RTE_LOG_REGISTER_DEFAULT(dpaa2_logtype_pmd, INFO);
