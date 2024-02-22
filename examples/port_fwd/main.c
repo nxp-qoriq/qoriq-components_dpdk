@@ -46,6 +46,7 @@
 #include <rte_string_fns.h>
 #include <rte_spinlock.h>
 #include <rte_malloc.h>
+#include <rte_pmd_dpaa2.h>
 
 #include <cmdline_parse.h>
 #include <cmdline_parse_etheraddr.h>
@@ -126,6 +127,7 @@ static int fwd_dst_port[RTE_MAX_ETHPORTS];
 static int rx_seg_port[RTE_MAX_ETHPORTS];
 
 static struct rte_mempool *pktmbuf_pool;
+static struct rte_mempool *default_pktmbuf_pool;
 
 static struct rte_mempool *pktmbuf_pool_for_2nd;
 
@@ -214,13 +216,99 @@ port_fwd_rx_seg_port(uint16_t rx_port)
 	return rx_seg_port[rx_port];
 }
 
+static void
+port_fwd_drain_tx_cnf(struct lcore_conf *qconf)
+{
+	uint16_t drain, i, portid, queueid;
+	int dstportid;
+
+	for (i = 0; i < qconf->n_rx_queue; i++) {
+		portid = qconf->rx_queue_list[i].port_id;
+		dstportid = port_fwd_dst_port(portid);
+		if (dstportid < 0)
+			continue;
+		queueid = qconf->tx_queue_id[dstportid];
+		if (!rte_pmd_dpaa2_dev_is_dpaa2(dstportid))
+			continue;
+		rte_delay_us(10000);
+drain_again:
+		drain = rte_pmd_dpaa2_clean_tx_conf(dstportid,
+				queueid);
+		if (drain)
+			goto drain_again;
+	}
+}
+
+static uint16_t
+port_fwd_dup_mbufs(uint32_t eth_id,
+	uint16_t txq_id, struct rte_mbuf *mbuf_to[],
+	struct rte_mbuf *mbuf_from[], uint16_t count)
+{
+	uint16_t tx_clean, clean_count, alloc_count, i;
+	int ret;
+	struct rte_mempool *pool;
+
+	pool = default_pktmbuf_pool ?
+		default_pktmbuf_pool : pktmbuf_pool;
+
+	if (!mbuf_from) {
+		alloc_count = 0;
+alloc_again:
+		if (alloc_count > 10)
+			return 0;
+		ret = rte_pktmbuf_alloc_bulk(pool,
+				mbuf_to, count);
+		if (ret) {
+			clean_count = 0;
+alloc_clean_again:
+			tx_clean = rte_pmd_dpaa2_clean_tx_conf(eth_id,
+						txq_id);
+			if (!tx_clean) {
+				clean_count++;
+				if (clean_count < 100)
+					goto alloc_clean_again;
+			}
+			alloc_count++;
+			goto alloc_again;
+		}
+
+		return count;
+	}
+
+	for (i = 0; i < count; i++) {
+		alloc_count = 0;
+copy_again:
+		if (alloc_count > 10)
+			break;
+		mbuf_to[i] = rte_pktmbuf_copy(mbuf_from[i],
+			pool, 0,
+			mbuf_from[i]->pkt_len);
+		if (!mbuf_to[i]) {
+			clean_count = 0;
+copy_clean_again:
+			tx_clean = rte_pmd_dpaa2_clean_tx_conf(eth_id, txq_id);
+			if (!tx_clean) {
+				clean_count++;
+				if (clean_count < 100)
+					goto copy_clean_again;
+			}
+			alloc_count++;
+			goto copy_again;
+		}
+	}
+
+	rte_pktmbuf_free_bulk(mbuf_from, count);
+
+	return i;
+}
+
 static int
 main_injection_test_loop(void)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
 	uint16_t tx_len[MAX_PKT_BURST];
 	unsigned int lcore_id;
-	int i, nb_rx, j, ret;
+	int i, nb_rx, j;
 	uint16_t nb_tx, sent;
 	uint16_t portid;
 	int dstportid;
@@ -292,10 +380,12 @@ main_injection_test_loop(void)
 
 			rte_pktmbuf_free_bulk(pkts_burst, nb_rx);
 
-			ret = rte_pktmbuf_alloc_bulk(pktmbuf_pool,
-				pkts_burst, burst_size);
-			if (ret)
+			burst_size = port_fwd_dup_mbufs(dstportid,
+				qconf->tx_queue_id[dstportid],
+				pkts_burst, NULL, burst_size);
+			if (!burst_size)
 				continue;
+
 			nb_tx = burst_size;
 
 			for (j = 0; j < nb_tx; j++) {
@@ -330,6 +420,9 @@ main_injection_test_loop(void)
 		rte_free(qconf->dump_buf);
 		qconf->dump_buf = NULL;
 	}
+
+	if (default_pktmbuf_pool)
+		port_fwd_drain_tx_cnf(qconf);
 
 	return 0;
 }
@@ -514,6 +607,7 @@ main_loop(__attribute__((unused)) void *dummy)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
 	struct rte_mbuf *tx_burst[MAX_PKT_BURST];
+	struct rte_mbuf *tx_burst_dup[MAX_PKT_BURST];
 	struct rte_mbuf **tx_pkts;
 	unsigned int lcore_id;
 	int i, nb_rx, j;
@@ -680,7 +774,17 @@ port_forwarding:
 				continue;
 			}
 
-			nb_tx = port_fwd_xmit_burst(tx_burst, rx_left,
+			tx_pkts = tx_burst;
+			if (default_pktmbuf_pool) {
+				rx_left = port_fwd_dup_mbufs(dstportid,
+					qconf->tx_queue_id[dstportid],
+					tx_burst_dup, tx_burst, rx_left);
+				if (!rx_left)
+					continue;
+				tx_pkts = tx_burst_dup;
+			}
+
+			nb_tx = port_fwd_xmit_burst(tx_pkts, rx_left,
 				portid, dstportid,
 				qconf->tx_queue_id[dstportid], sents,
 				re_send_max);
@@ -697,6 +801,9 @@ port_forwarding:
 			qconf->tx_statistic[dstportid].packets += nb_tx;
 		}
 	}
+
+	if (default_pktmbuf_pool)
+		port_fwd_drain_tx_cnf(qconf);
 
 	if (qconf->dump_buf) {
 		rte_free(qconf->dump_buf);
@@ -1222,12 +1329,14 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 	char s_tx[64];
 	char s_2nd[64];
 	char s_tx_2nd[64];
+	char s_generic[64];
 	char *penv;
 
 	snprintf(s, sizeof(s), "port_fwd_mbuf_pool");
 	snprintf(s_tx, sizeof(s_tx), "port_fwd_mbuf_tx_pool");
 	snprintf(s_2nd, sizeof(s_2nd), "port_fwd_2nd_mbuf_pool");
 	snprintf(s_tx_2nd, sizeof(s_tx_2nd), "port_fwd_2nd_mbuf_tx_pool");
+	snprintf(s_generic, sizeof(s_generic), "port_fwd_generic_pool");
 
 	if (s_proc_type == proc_attach_secondary) {
 		pktmbuf_pool = rte_mempool_lookup(s_2nd);
@@ -1279,10 +1388,27 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 			}
 		}
 	}
+
+	penv = getenv("TX_FROM_DEFAULT_BUF_POOL");
+	if (penv && atoi(penv) > 0) {
+		default_pktmbuf_pool =
+			rte_pktmbuf_pool_create_by_ops(s_generic,
+				nb_mbuf,
+				MEMPOOL_CACHE_SIZE, 0,
+				buf_size, 0,
+				RTE_MBUF_DEFAULT_MEMPOOL_OPS);
+		if (default_pktmbuf_pool) {
+			RTE_LOG(INFO, port_fwd,
+				"default mbuf pool(%s)(count=%d) created\n",
+				s_generic, nb_mbuf);
+		}
+	}
 	if (!pktmbuf_pool)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool(%s)\n", s);
 
 	port_fwd_mp_max_min_addr(pktmbuf_pool);
+	if (default_pktmbuf_pool)
+		port_fwd_mp_max_min_addr(default_pktmbuf_pool);
 
 	return 0;
 }
@@ -1809,6 +1935,20 @@ main(int argc, char **argv)
 	if (ret) {
 		rte_exit(EXIT_FAILURE,
 			"remote launch thread failed!(%d)\n", ret);
+	}
+
+	if (default_pktmbuf_pool) {
+		uint32_t avail;
+
+		avail = rte_mempool_avail_count(default_pktmbuf_pool);
+		RTE_LOG(INFO, port_fwd,
+			"default pool(%s) avail=%d, total=%d\n",
+			default_pktmbuf_pool->name,
+			avail, nb_mbuf);
+		if (avail != nb_mbuf) {
+			RTE_LOG(ERR, port_fwd,
+				"Leak or(and) duplicated buf error!\n");
+		}
 	}
 
 	/* stop ports */
