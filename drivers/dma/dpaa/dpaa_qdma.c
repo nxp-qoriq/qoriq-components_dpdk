@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021-2023 NXP
+ * Copyright 2021-2024 NXP
  */
 
 #include <bus_dpaa_driver.h>
@@ -500,7 +500,7 @@ fsl_qdma_enqueue_desc(struct fsl_qdma_queue *fsl_queue,
 	csgf_dest = (struct fsl_qdma_format *)fsl_queue->virt_addr[fsl_queue->ci] +
 		    QDMA_SGF_DST_OFF;
 #ifdef RTE_DMA_DPAA_ERRATA_ERR050757
-	sdf = (struct fsl_qdma_sdf *)queue->desc_virt_addr[i];
+	sdf = (struct fsl_qdma_sdf *)fsl_queue->desc_virt_addr[fsl_queue->ci];
 	sdf->cmd = rte_cpu_to_le_32(FSL_QDMA_CMD_RWTTYPE <<
 			FSL_QDMA_CMD_RWTTYPE_OFFSET);
 #ifdef RTE_DMA_DPAA_ERRATA_ERR050265
