@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #ifndef _DPAA2_QDMA_H_
@@ -281,6 +281,7 @@ struct qdma_virt_queue {
 	uint64_t num_enqueues;
 	/* Total number of dequeues from this VQ */
 	uint64_t num_dequeues;
+	uint64_t copy_num;
 
 	uint16_t vq_id;
 	uint32_t flags;

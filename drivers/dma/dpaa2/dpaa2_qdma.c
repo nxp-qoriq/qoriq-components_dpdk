@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #include <rte_eal.h>
@@ -622,6 +622,11 @@ dpaa2_qdma_copy_sg(void *dev_private,
 		return -ENOTSUP;
 	}
 
+	if (unlikely(!nb_src)) {
+		DPAA2_QDMA_ERR("No SG entry specified");
+		return -EINVAL;
+	}
+
 	if (unlikely(nb_src > RTE_DPAA2_QDMA_JOB_SUBMIT_MAX)) {
 		DPAA2_QDMA_ERR("SG entry number(%d) > MAX(%d)",
 			nb_src, RTE_DPAA2_QDMA_JOB_SUBMIT_MAX);
@@ -693,10 +698,13 @@ dpaa2_qdma_copy_sg(void *dev_private,
 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
 		expected = qdma_vq->fd_idx;
 		ret = dpaa2_qdma_multi_eq(qdma_vq);
-		if (likely(ret == expected))
-			return 0;
+		if (likely(ret == expected)) {
+			qdma_vq->copy_num += nb_src;
+			return qdma_vq->copy_num - 1;
+		}
 	} else {
-		return 0;
+		qdma_vq->copy_num += nb_src;
+		return qdma_vq->copy_num - 1;
 	}
 
 	return ret;
@@ -810,10 +818,13 @@ dpaa2_qdma_short_copy(struct qdma_virt_queue *qdma_vq,
 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
 		expected = qdma_vq->fd_idx;
 		ret = dpaa2_qdma_multi_eq(qdma_vq);
-		if (likely(ret == expected))
-			return 0;
+		if (likely(ret == expected)) {
+			qdma_vq->copy_num++;
+			return qdma_vq->copy_num - 1;
+		}
 	} else {
-		return 0;
+		qdma_vq->copy_num++;
+		return qdma_vq->copy_num - 1;
 	}
 
 	return ret;
@@ -878,10 +889,13 @@ dpaa2_qdma_long_copy(struct qdma_virt_queue *qdma_vq,
 	if (flags & RTE_DMA_OP_FLAG_SUBMIT) {
 		expected = qdma_vq->fd_idx;
 		ret = dpaa2_qdma_multi_eq(qdma_vq);
-		if (likely(ret == expected))
-			return 0;
+		if (likely(ret == expected)) {
+			qdma_vq->copy_num++;
+			return qdma_vq->copy_num - 1;
+		}
 	} else {
-		return 0;
+		qdma_vq->copy_num++;
+		return qdma_vq->copy_num - 1;
 	}
 
 	return ret;
