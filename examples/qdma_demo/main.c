@@ -713,7 +713,7 @@ lcore_qdma_iova_seg_to_continue(void)
 			g_vqid[rte_lcore_id()],
 			src_iova, iova_base,
 			iova_offset, RTE_DMA_OP_FLAG_SUBMIT);
-	if (ret) {
+	if (ret < 0) {
 		RTE_LOG(ERR, qdma_demo,
 			"DMA copy failed(%d)\n",
 			ret);
@@ -893,7 +893,7 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 				g_vqid[lcore_id], src_sge, dst_sge,
 				job_num, job_num,
 				flags);
-		if (unlikely(ret)) {
+		if (unlikely(ret < 0)) {
 			RTE_LOG(ERR, qdma_demo,
 				"SG DMA submit %d jobs error(%d)\n",
 				job_num, ret);
