@@ -899,12 +899,12 @@ lsxvio_qdma_append(struct lsxvio_queue *vq,
 			ret = rte_dma_copy(vq->dma_id, vq->dma_vq,
 				dma_jobs[i]->src, dma_jobs[i]->dst,
 				dma_jobs[i]->len, flags);
-			if (unlikely(ret))
+			if (unlikely(ret < 0))
 				break;
 		}
 		ret = rte_dma_submit(vq->dma_id, vq->dma_vq);
 	}
-	if (likely(!ret)) {
+	if (likely(ret >= 0)) {
 		vq->jobs_pending -= (append_len + dma_bd_nb);
 		vq->pkts_eq += (append_len + dma_bd_nb);
 		vq->start_dma_idx += append_len;
@@ -949,12 +949,12 @@ lsxvio_qdma_multiple_enqueue(struct lsxvio_queue *queue,
 				queue->dma_vq,
 				jobs[i]->src, jobs[i]->dst,
 				jobs[i]->len, flags);
-			if (unlikely(ret))
+			if (unlikely(ret < 0))
 				break;
 		}
 		ret = rte_dma_submit(queue->dma_id, queue->dma_vq);
 	}
-	if (likely(!ret)) {
+	if (likely(ret >= 0)) {
 		queue->jobs_pending -= nb_jobs;
 		queue->pkts_eq += nb_jobs;
 	} else {

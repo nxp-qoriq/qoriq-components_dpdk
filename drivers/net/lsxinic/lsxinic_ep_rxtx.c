@@ -375,7 +375,7 @@ lsinic_qdma_rx_seg_enqueue(struct lsinic_queue *queue)
 		ret = rte_dma_copy_sg(queue->dma_id,
 			queue->dma_vq, src, dst,
 			job->seg_nb, job->seg_nb, flags);
-		if (likely(!ret)) {
+		if (likely(ret >= 0)) {
 			queue->pkts_eq += job->seg_nb;
 		} else {
 			queue->errors++;
@@ -442,7 +442,7 @@ lsinic_qdma_tx_seg_enqueue(struct lsinic_queue *queue)
 			RTE_DMA_OP_FLAG_SUBMIT);
 	ret = rte_dma_copy_sg(queue->dma_id, queue->dma_vq,
 			src, dst, sg_nb, sg_nb, flags);
-	if (likely(!ret)) {
+	if (likely(ret >= 0)) {
 		queue->jobs_pending--;
 		queue->jobs_avail_idx++;
 		queue->bytes_eq += total_len;
@@ -779,12 +779,12 @@ eq_again:
 			ret = rte_dma_copy(queue->dma_id,
 				queue->dma_vq, src[i].addr,
 				dst[i].addr, src[i].length, flags);
-			if (unlikely(ret))
+			if (unlikely(ret < 0))
 				break;
 		}
 		ret = rte_dma_submit(queue->dma_id, queue->dma_vq);
 	}
-	if (likely(!ret)) {
+	if (likely(ret >= 0)) {
 		nb_jobs -= (bd_jobs_nb + txq_bd_jobs_nb);
 		queue->jobs_pending -= nb_jobs;
 		queue->jobs_avail_idx += nb_jobs;
@@ -931,13 +931,13 @@ eq_again:
 				0);
 			ret = rte_dma_copy(queue->dma_id, queue->dma_vq,
 				src[i].addr, dst[i].addr, src[i].length, flags);
-			if (unlikely(ret))
+			if (unlikely(ret < 0))
 				break;
 		}
 		ret = rte_dma_submit(queue->dma_id, queue->dma_vq);
 	}
 
-	if (likely(!ret)) {
+	if (likely(ret >= 0)) {
 		queue->jobs_pending -= (nb_jobs - txq_bd_jobs_num);
 		queue->jobs_avail_idx += (nb_jobs - txq_bd_jobs_num);
 		for (i = 0; i < (nb_jobs - txq_bd_jobs_num); i++)
