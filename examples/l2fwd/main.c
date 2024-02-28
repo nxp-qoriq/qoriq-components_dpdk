@@ -320,6 +320,8 @@ l2fwd_usage(const char *prgname)
 	       "       - The source MAC address is replaced by the TX port MAC address\n"
 	       "       - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n"
 	       "  -b NUM: burst size for receive packet (default is 32)\n"
+	       "  -r NUM: RX queue size (default is 1024)\n"
+	       "  -t NUM: TX queue size (default is 1024)\n"
 	       "  --portmap: Configure forwarding port pair mapping\n"
 	       "	      Default: alternate port pairs\n\n",
 	       prgname);
@@ -434,6 +436,8 @@ static const char short_options[] =
 	"q:"  /* number of queues */
 	"T:"  /* timer period */
 	"b:"  /* burst size */
+	"r:"  /* RX queue size */
+	"t:"  /* TX queue size */
 	;
 
 #define CMD_LINE_OPT_NO_MAC_UPDATING "no-mac-updating"
@@ -460,6 +464,7 @@ static int
 l2fwd_parse_args(int argc, char **argv)
 {
 	int opt, ret, timer_secs, burst_size;
+	unsigned long rx_size, tx_size;
 	char **argvopt;
 	int option_index;
 	char *prgname = argv[0];
@@ -514,6 +519,28 @@ l2fwd_parse_args(int argc, char **argv)
 				return -1;
 			}
 			max_burst_size = burst_size;
+			break;
+
+		/* RX queue size */
+		case 'r':
+			rx_size = (unsigned int)atoi(optarg);
+			if (rx_size == 0 || rx_size > UINT16_MAX) {
+				printf("invalid RX queue size\n");
+				l2fwd_usage(prgname);
+				return -1;
+			}
+			nb_rxd = rx_size;
+			break;
+
+		/* TX queue size */
+		case 't':
+			tx_size = (unsigned int)atoi(optarg);
+			if (tx_size == 0 || tx_size > UINT16_MAX) {
+				printf("invalid TX queue size\n");
+				l2fwd_usage(prgname);
+				return -1;
+			}
+			nb_txd = tx_size;
 			break;
 
 		/* long options */
