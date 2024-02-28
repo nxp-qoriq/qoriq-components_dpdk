@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2024 NXP
+
+
+Data validation Setup:
+----------------------
+
+ _______________                                    _______________
+|               |                                  |               |
+|    Machine1   |                                  |   Machine2    |
+|      Eth0     |                                  |     Eth3      |
+|   198.18.0.5  |                                  |  198.18.1.5   |
+|      MAC0     |                                  |     MAC3      |
+|_______________|                                  |_______________|
+	|                                                 |
+	|                                                 |
+	|                _________________                |
+	|               |                 |               |
+	|               |       DUT       |               |
+	|_______________|1G            10G|_______________|
+			|Eth1         Eth2|
+			|MAC1         MAC2|
+			|_________________|
+
+
+Machine 1:
+----------
+
+  ifconfig <Eth0> 198.18.0.5
+  ifconfig <Eth0> up
+  ip route get 198.18.0.5
+  ip addr add 198.18.0.5/24 dev <Eth0>
+  arp -s 198.18.0.10 <MAC1>
+  ip route add 198.18.1.5 via 198.18.0.10 dev <Eth0>
+
+  NOTE: Before ping/scp configure DUT and Machine2 as per the steps given in
+  this readme. Refer the section "Machine 2" and "DUT".
+
+  Ping:
+	tcpdump -nvvvXi <Eth0> -w <file_name>.pcap &
+	ping 198.18.1.5
+  Scp:
+	scp machine2@198.18.1.5:/path/to/<file_name> .
+	md5sum <file_name>
+	Note: md5sum should be same on both machines.
+
+
+Machine 2:
+----------
+
+  ifconfig <Eth3> 198.18.1.5
+  ifconfig <Eth3> up
+  ip route get 198.18.1.5
+  ip addr add 198.18.1.5/24 dev <Eth3>
+  arp -s 198.18.1.10 <MAC2>
+  ip route add 198.18.0.5 via 198.18.1.10 dev <Eth3>
+
+  NOTE: Before ping/scp configure DUT and Machine1 as per the steps given in
+  this readme. Please refer section "Machine 1" and "DUT".
+
+  Ping:
+	tcpdump -nvvvXi <Eth3> -w <file_name>.pcap &
+	ping 198.18.0.5
+  Scp:
+	scp machine1@198.18.0.5:/path/to/<file_name> .
+	md5sum <file_name>
+	Note: md5sum should be same on both machines.
+
+
+DUT:
+----
+
+  Run DPDK l3fwd application with dest mac:
+	./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x3 --config="(0,0,1), (1,0,1)" --eth-dest=0,<MAC0> --eth-dest=1,<MAC3> --parse-ptype
+
+  NOTE: Please refer nxp/README for DUT machine setup.
