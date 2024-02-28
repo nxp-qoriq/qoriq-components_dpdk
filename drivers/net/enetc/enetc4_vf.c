@@ -23,6 +23,13 @@ enetc4_vf_dev_start(struct rte_eth_dev *dev __rte_unused)
 	return 0;
 }
 
+static int
+enetc4_vf_stats_get(struct rte_eth_dev *dev __rte_unused,
+			struct rte_eth_stats *stats __rte_unused)
+{
+	return 0;
+}
+
 /* Messaging */
 static void
 enetc4_msg_vsi_write_msg(struct enetc_hw *hw,
@@ -276,6 +283,7 @@ static const struct eth_dev_ops enetc4_vf_ops = {
 .dev_start            = enetc4_vf_dev_start,
 .dev_stop             = enetc4_vf_dev_stop,
 .dev_close            = enetc4_dev_close,
+.stats_get            = enetc4_vf_stats_get,
 .link_update          = enetc4_link_update,
 .dev_infos_get        = enetc4_dev_infos_get,
 .mac_addr_set         = enetc4_vf_set_mac_addr,
