@@ -107,13 +107,13 @@
 #define COMMAND_QUEUE_OVERFLOW		10
 
 /* qdma engine attribute */
-#define QDMA_QUEUE_SIZE			64
-#define QDMA_STATUS_SIZE		QDMA_QUEUE_SIZE
-#define QDMA_CCSR_BASE			0x8380000
-#define QDMA_BLOCK_OFFSET		0x10000
-#define QDMA_BLOCKS			4
-#define QDMA_QUEUES			8
-#define QDMA_QUEUE_CR_WM		32
+#define QDMA_QUEUE_SIZE FSL_QDMA_CIRCULAR_DESC_SIZE_MIN
+#define QDMA_STATUS_SIZE QDMA_QUEUE_SIZE
+#define QDMA_CCSR_BASE 0x8380000
+#define QDMA_BLOCK_OFFSET 0x10000
+#define QDMA_BLOCKS 4
+#define QDMA_QUEUES 8
+#define QDMA_QUEUE_CR_WM 32
 
 #define QDMA_BIG_ENDIAN			1
 #ifdef QDMA_BIG_ENDIAN
@@ -140,7 +140,9 @@ struct fsl_qdma_format {
 			uint32_t addr_lo; /* low 32-bits of 40-bit address */
 			uint8_t addr_hi; /* high 8-bits of 40-bit address */
 			uint8_t __reserved1[2];
-			uint8_t cfg8b_w1; /* dd, queue */
+			uint8_t queue:3;
+			uint8_t rsv:3;
+			uint8_t dd:2;
 		};
 		uint64_t data;
 	};
@@ -182,6 +184,7 @@ struct fsl_qdma_queue {
 	uint16_t n_cq;
 	uint8_t block_id;
 	uint8_t queue_id;
+	uint8_t channel_id;
 	void *block_vir;
 	uint32_t le_cqmr;
 	struct fsl_qdma_format *cq;
@@ -189,6 +192,18 @@ struct fsl_qdma_queue {
 	uint8_t pending;
 	dma_addr_t bus_addr;
 	struct fsl_qdma_df **df;
+	void *engine;
+};
+
+struct fsl_qdma_status_queue {
+	uint16_t n_cq;
+	uint16_t complete;
+	uint8_t block_id;
+	void *block_vir;
+	struct fsl_qdma_format *cq;
+	struct rte_dma_stats stats;
+	dma_addr_t bus_addr;
+	void *engine;
 };
 
 struct fsl_qdma_engine {
@@ -197,10 +212,13 @@ struct fsl_qdma_engine {
 	void *status_base;
 	void *block_base;
 	uint32_t n_queues;
-	struct fsl_qdma_queue **queue;
-	struct fsl_qdma_queue **status;
+	uint8_t block_queues[QDMA_BLOCKS];
+	struct fsl_qdma_queue cmd_queues[QDMA_BLOCKS][QDMA_QUEUES];
+	struct fsl_qdma_status_queue stat_queues[QDMA_BLOCKS];
+	struct fsl_qdma_queue *chan[QDMA_BLOCKS * QDMA_QUEUES];
 	uint32_t num_blocks;
 	int block_offset;
+	int is_slient;
 };
 
 #endif /* _DPAA_QDMA_H_ */
