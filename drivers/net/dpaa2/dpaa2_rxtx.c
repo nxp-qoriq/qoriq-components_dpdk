@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2023 NXP
+ *   Copyright 2016-2024 NXP
  *
  */
 
@@ -154,9 +154,8 @@ dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
 	uint32_t pkt_type = RTE_PTYPE_UNKNOWN;
 	uint16_t *vlan_tci;
 
-	DPAA2_PMD_DP_DEBUG("(slow parse)annotation(3)=0x%" PRIx64 "\t"
-			"(4)=0x%" PRIx64 "\t",
-			annotation->word3, annotation->word4);
+	DPAA2_PMD_DP_DEBUG("Annotation word3 = 0x%lx, word4 = 0x%lx\n",
+		annotation->word3, annotation->word4);
 
 #if defined(RTE_LIBRTE_IEEE1588)
 	if (BIT_ISSET_AT_POS(annotation->word1, DPAA2_ETH_FAS_PTP)) {
@@ -252,16 +251,15 @@ parse_done:
 static inline uint32_t __rte_hot
 dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 {
-	struct dpaa2_annot_hdr *annotation =
-			(struct dpaa2_annot_hdr *)hw_annot_addr;
+	struct dpaa2_annot_hdr *annotation = hw_annot_addr;
 
-	DPAA2_PMD_DP_DEBUG("(fast parse) Annotation = 0x%" PRIx64 "\t",
-			   annotation->word4);
+	DPAA2_PMD_DP_DEBUG("Annotation word4 = 0x%lx\n",
+		annotation->word4);
 
 	if (unlikely(dpaa2_print_parser_result))
 		dpaa2_print_parse_result(annotation);
 
-	if (dpaa2_enable_ts[mbuf->port]) {
+	if (unlikely(dpaa2_enable_ts[mbuf->port])) {
 		*dpaa2_timestamp_dynfield(mbuf) = annotation->word2;
 		mbuf->ol_flags |= dpaa2_timestamp_rx_dynflag;
 		DPAA2_PMD_DP_DEBUG("pkt timestamp: 0x%" PRIx64 "",
@@ -269,7 +267,7 @@ dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 	}
 
 	/* Check detailed parsing requirement */
-	if (annotation->word3 & 0x7FFFFC3FFFF)
+	if (unlikely(annotation->word3 & 0x7FFFFC3FFFF))
 		return dpaa2_dev_rx_parse_slow(mbuf, annotation);
 
 	/* Return some common types from parse processing */
@@ -932,22 +930,17 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 void __rte_hot
 dpaa2_dev_process_parallel_event(struct qbman_swp *swp,
-				 const struct qbman_fd *fd,
-				 const struct qbman_result *dq,
-				 struct dpaa2_queue *rxq,
-				 struct rte_event *ev)
+	const struct qbman_fd *fd,
+	const struct qbman_result *dq,
+	struct dpaa2_queue *rxq,
+	struct rte_event *ev)
 {
-	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd) +
-		DPAA2_FD_PTA_SIZE + 16));
+	if (dpaa2_svr_family != SVR_LX2160A) {
+		rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd) +
+			DPAA2_FD_PTA_SIZE));
+	}
 
-	ev->flow_id = rxq->ev.flow_id;
-	ev->sub_event_type = rxq->ev.sub_event_type;
-	ev->event_type = RTE_EVENT_TYPE_ETHDEV;
-	ev->op = RTE_EVENT_OP_NEW;
-	ev->sched_type = rxq->ev.sched_type;
-	ev->queue_id = rxq->ev.queue_id;
-	ev->priority = rxq->ev.priority;
-
+	ev->event = rxq->ev.event;
 	ev->mbuf = eth_fd_to_mbuf(fd, rxq->eth_data->port_id);
 
 	qbman_swp_dqrr_consume(swp, dq);
@@ -955,24 +948,19 @@ dpaa2_dev_process_parallel_event(struct qbman_swp *swp,
 
 void __rte_hot
 dpaa2_dev_process_atomic_event(struct qbman_swp *swp __rte_unused,
-			       const struct qbman_fd *fd,
-			       const struct qbman_result *dq,
-			       struct dpaa2_queue *rxq,
-			       struct rte_event *ev)
+	const struct qbman_fd *fd,
+	const struct qbman_result *dq,
+	struct dpaa2_queue *rxq,
+	struct rte_event *ev)
 {
 	uint8_t dqrr_index;
 
-	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd) +
-		DPAA2_FD_PTA_SIZE + 16));
+	if (dpaa2_svr_family != SVR_LX2160A) {
+		rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd) +
+			DPAA2_FD_PTA_SIZE));
+	}
 
-	ev->flow_id = rxq->ev.flow_id;
-	ev->sub_event_type = rxq->ev.sub_event_type;
-	ev->event_type = RTE_EVENT_TYPE_ETHDEV;
-	ev->op = RTE_EVENT_OP_NEW;
-	ev->sched_type = rxq->ev.sched_type;
-	ev->queue_id = rxq->ev.queue_id;
-	ev->priority = rxq->ev.priority;
-
+	ev->event = rxq->ev.event;
 	ev->mbuf = eth_fd_to_mbuf(fd, rxq->eth_data->port_id);
 
 	dqrr_index = qbman_get_dqrr_idx(dq);
@@ -984,22 +972,17 @@ dpaa2_dev_process_atomic_event(struct qbman_swp *swp __rte_unused,
 
 void __rte_hot
 dpaa2_dev_process_ordered_event(struct qbman_swp *swp,
-				const struct qbman_fd *fd,
-				const struct qbman_result *dq,
-				struct dpaa2_queue *rxq,
-				struct rte_event *ev)
+	const struct qbman_fd *fd,
+	const struct qbman_result *dq,
+	struct dpaa2_queue *rxq,
+	struct rte_event *ev)
 {
-	rte_prefetch0((void *)(size_t)(DPAA2_GET_FD_ADDR(fd) +
-		DPAA2_FD_PTA_SIZE + 16));
+	if (dpaa2_svr_family != SVR_LX2160A) {
+		rte_prefetch0((void *)(DPAA2_GET_FD_ADDR(fd) +
+			DPAA2_FD_PTA_SIZE));
+	}
 
-	ev->flow_id = rxq->ev.flow_id;
-	ev->sub_event_type = rxq->ev.sub_event_type;
-	ev->event_type = RTE_EVENT_TYPE_ETHDEV;
-	ev->op = RTE_EVENT_OP_NEW;
-	ev->sched_type = rxq->ev.sched_type;
-	ev->queue_id = rxq->ev.queue_id;
-	ev->priority = rxq->ev.priority;
-
+	ev->event = rxq->ev.event;
 	ev->mbuf = eth_fd_to_mbuf(fd, rxq->eth_data->port_id);
 
 	*dpaa2_seqn(ev->mbuf) = DPAA2_ENQUEUE_FLAG_ORP;

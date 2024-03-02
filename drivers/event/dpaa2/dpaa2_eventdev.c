@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017,2019-2022 NXP
+ * Copyright 2017,2019-2024 NXP
  */
 
 #include <assert.h>
@@ -1062,11 +1062,12 @@ dpaa2_eventdev_create(const char *name)
 
 		ret = dpaa2_eventdev_setup_dpci(dpci_dev, dpcon_dev);
 		if (ret) {
-			DPAA2_EVENTDEV_ERR(
-				    "DPCI setup failed: err(%d)", ret);
+			DPAA2_EVENTDEV_ERR("DPCI setup failed: err(%d)", ret);
 			return ret;
 		}
 		priv->max_event_queues++;
+		if (priv->max_event_queues >= DPAA2_EVENT_MAX_QUEUES)
+			break;
 	} while (dpcon_dev && dpci_dev);
 
 	RTE_LOG(INFO, PMD, "%s eventdev created\n", name);

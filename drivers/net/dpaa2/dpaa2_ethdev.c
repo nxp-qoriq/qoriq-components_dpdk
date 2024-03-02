@@ -624,9 +624,8 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 					eth_conf->rx_adv_conf.rss_conf.rss_hf,
 					tc_index);
 			if (ret) {
-				DPAA2_PMD_ERR(
-					"Unable to set flow distribution on tc%d."
-					"Check queue config", tc_index);
+				DPAA2_PMD_ERR("Set flow dist on tc%d err(%d)",
+					tc_index, ret);
 				return ret;
 			}
 		}
@@ -2257,22 +2256,22 @@ dpaa2_dev_rss_hash_update(struct rte_eth_dev *dev,
 		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
 			ret = dpaa2_setup_flow_dist(dev, rss_conf->rss_hf,
 				tc_index);
-			if (ret) {
-				DPAA2_PMD_ERR("Unable to set flow dist on tc%d",
-					tc_index);
-				return ret;
-			}
+			if (ret)
+				break;
 		}
 	} else {
 		for (tc_index = 0; tc_index < priv->num_rx_tc; tc_index++) {
 			ret = dpaa2_remove_flow_dist(dev, tc_index);
-			if (ret) {
-				DPAA2_PMD_ERR(
-					"Unable to remove flow dist on tc%d",
-					tc_index);
-				return ret;
-			}
+			if (ret)
+				break;
 		}
+	}
+	if (ret) {
+		DPAA2_PMD_ERR("%s: %s flow dist on tc%d err(%d)",
+			data->name, rss_conf->rss_hf ? "set" : "remove",
+			tc_index, ret);
+
+		return ret;
 	}
 	eth_conf->rx_adv_conf.rss_conf.rss_hf = rss_conf->rss_hf;
 	return 0;
@@ -2372,7 +2371,12 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 		return ret;
 	}
 
-	memcpy(&dpaa2_ethq->ev, &queue_conf->ev, sizeof(struct rte_event));
+	rte_memcpy(&dpaa2_ethq->ev, &queue_conf->ev,
+		sizeof(struct rte_event));
+	dpaa2_ethq->ev.flow_id = flow_id;
+	dpaa2_ethq->ev.event_type = RTE_EVENT_TYPE_ETHDEV;
+	dpaa2_ethq->ev.op = RTE_EVENT_OP_NEW;
+	dpaa2_ethq->ev.queue_id = eth_rx_queue_id;
 
 	return 0;
 }
