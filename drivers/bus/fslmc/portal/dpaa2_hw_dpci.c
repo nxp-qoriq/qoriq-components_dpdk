@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2017, 2020, 2023 NXP
+ *   Copyright 2017, 2020, 2023-2024 NXP
  *
  */
 
@@ -94,22 +94,10 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 		}
 
 		/* Allocate DQ storage for the DPCI Rx queues */
-		rxq = &(dpci_node->rx_queue[i]);
-		rxq->q_storage = rte_malloc("dq_storage",
-					sizeof(struct queue_storage_info_t),
-					RTE_CACHE_LINE_SIZE);
-		if (!rxq->q_storage) {
-			DPAA2_BUS_ERR("q_storage allocation failed\n");
-			ret = -ENOMEM;
+		rxq = &dpci_node->rx_queue[i];
+		ret = dpaa2_queue_storage_alloc(rxq, 1);
+		if (ret)
 			goto err;
-		}
-
-		memset(rxq->q_storage, 0, sizeof(struct queue_storage_info_t));
-		ret = dpaa2_alloc_dq_storage(rxq->q_storage);
-		if (ret) {
-			DPAA2_BUS_ERR("dpaa2_alloc_dq_storage failed\n");
-			goto err;
-		}
 	}
 
 	/* Enable the device */
@@ -154,12 +142,9 @@ rte_dpaa2_create_dpci_device(int vdev_fd __rte_unused,
 
 err:
 	for (i = 0; i < DPAA2_DPCI_MAX_QUEUES; i++) {
-		struct dpaa2_queue *rxq = &(dpci_node->rx_queue[i]);
+		struct dpaa2_queue *rxq = &dpci_node->rx_queue[i];
 
-		if (rxq->q_storage) {
-			dpaa2_free_dq_storage(rxq->q_storage);
-			rte_free(rxq->q_storage);
-		}
+		dpaa2_queue_storage_free(rxq, 1);
 	}
 	rte_free(dpci_node);
 

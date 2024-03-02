@@ -1934,7 +1934,7 @@ lsinic_dpaa2_rx_lpbk(void *queue,
 	struct qbman_swp *swp;
 	const struct qbman_fd *fd;
 	struct qbman_pull_desc pulldesc;
-	struct queue_storage_info_t *q_storage = dpaa2_q->q_storage;
+	struct queue_storage_info_t *q_storage = dpaa2_q->q_storage[0];
 	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
 	struct lsinic_queue *lsinic_q;
 	struct qbman_result *res;
