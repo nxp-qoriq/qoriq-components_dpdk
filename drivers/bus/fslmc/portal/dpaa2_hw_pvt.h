@@ -168,8 +168,9 @@ struct dpaa2_queue {
 	uint64_t tx_pkts;
 	uint64_t err_pkts;
 	union {
-		struct queue_storage_info_t *q_storage;
-		struct queue_storage_info_t *per_core_q_storage[RTE_MAX_LCORE];
+		/**Ingress*/
+		struct queue_storage_info_t *q_storage[RTE_MAX_LCORE];
+		/**Egress*/
 		struct qbman_result *cscn;
 	};
 	struct rte_event ev;
@@ -191,6 +192,38 @@ struct swp_active_dqs {
 	struct qbman_result *global_active_dqs;
 	uint64_t reserved[7];
 };
+
+#define dpaa2_queue_storage_alloc(q, num) \
+({ \
+	int ret = 0, i; \
+	\
+	for (i = 0; i < (num); i++) { \
+		(q)->q_storage[i] = rte_zmalloc(NULL, \
+			sizeof(struct queue_storage_info_t), \
+			RTE_CACHE_LINE_SIZE); \
+		if (!(q)->q_storage[i]) { \
+			ret = -ENOBUFS; \
+			break; \
+		} \
+		ret = dpaa2_alloc_dq_storage((q)->q_storage[i]); \
+		if (ret) \
+			break; \
+	} \
+	ret; \
+})
+
+#define dpaa2_queue_storage_free(q, num) \
+({ \
+	int i; \
+	\
+	for (i = 0; i < (num); i++) { \
+		if ((q)->q_storage[i]) { \
+			dpaa2_free_dq_storage((q)->q_storage[i]); \
+			rte_free((q)->q_storage[i]); \
+			(q)->q_storage[i] = NULL; \
+		} \
+	} \
+})
 
 #define NUM_MAX_SWP 64
 

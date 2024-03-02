@@ -653,6 +653,7 @@ dpaa2_free_dq_storage(struct queue_storage_info_t *q_storage)
 
 	for (i = 0; i < NUM_DQS_PER_QUEUE; i++) {
 		rte_free(q_storage->dq_storage[i]);
+		q_storage->dq_storage[i] = NULL;
 	}
 }
 
@@ -662,7 +663,7 @@ dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage)
 	int i = 0;
 
 	for (i = 0; i < NUM_DQS_PER_QUEUE; i++) {
-		q_storage->dq_storage[i] = rte_malloc(NULL,
+		q_storage->dq_storage[i] = rte_zmalloc(NULL,
 			dpaa2_dqrr_size * sizeof(struct qbman_result),
 			RTE_CACHE_LINE_SIZE);
 		if (!q_storage->dq_storage[i])
@@ -670,8 +671,10 @@ dpaa2_alloc_dq_storage(struct queue_storage_info_t *q_storage)
 	}
 	return 0;
 fail:
-	while (--i >= 0)
+	while (--i >= 0) {
 		rte_free(q_storage->dq_storage[i]);
+		q_storage->dq_storage[i] = NULL;
+	}
 
 	return -1;
 }
