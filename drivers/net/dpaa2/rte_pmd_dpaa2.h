@@ -133,7 +133,10 @@ rte_pmd_dpaa2_set_opr(uint16_t port_id, uint16_t rx_queue_id);
 
 int
 rte_pmd_dpaa2_dev_is_dpaa2(uint32_t eth_id);
-const char*
+const char *
 rte_pmd_dpaa2_ep_name(uint32_t eth_id);
+uint16_t
+rte_pmd_dpaa2_clean_tx_conf(uint32_t eth_id,
+	uint16_t txq_id);
 
 #endif /* _RTE_PMD_DPAA2_H */

@@ -3066,7 +3066,7 @@ rte_pmd_dpaa2_dev_is_dpaa2(uint32_t eth_id)
 	return dev->device->driver == &rte_dpaa2_pmd.driver;
 }
 
-const char*
+const char *
 rte_pmd_dpaa2_ep_name(uint32_t eth_id)
 {
 	struct rte_eth_dev *dev;
@@ -3088,6 +3088,33 @@ rte_pmd_dpaa2_ep_name(uint32_t eth_id)
 	priv = dev->data->dev_private;
 
 	return priv->ep_name;
+}
+
+uint16_t
+rte_pmd_dpaa2_clean_tx_conf(uint32_t eth_id,
+	uint16_t txq_id)
+{
+	struct rte_eth_dev *dev;
+	struct dpaa2_dev_priv *priv;
+	struct dpaa2_queue *txq;
+
+	if (unlikely(!rte_pmd_dpaa2_dev_is_dpaa2(eth_id))) {
+		DPAA2_PMD_WARN("eth%d is NOT dpaa2 device",
+			eth_id);
+		return 0;
+	}
+
+	dev = &rte_eth_devices[eth_id];
+	priv = dev->data->dev_private;
+	if (!((priv->flags & DPAA2_TX_CONF_ENABLE) &&
+		(priv->flags & DPAA2_TX_DYNAMIC_CONF_ENABLE))) {
+		DPAA2_PMD_WARN("TX dynamic confirm not enabled on %s",
+			dev->data->name);
+		return 0;
+	}
+	txq = dev->data->tx_queues[txq_id];
+
+	return dpaa2_dev_tx_conf_dynamic(txq->tx_conf_queue);
 }
 
 static int dpaa2_tx_sg_pool_init(void)
