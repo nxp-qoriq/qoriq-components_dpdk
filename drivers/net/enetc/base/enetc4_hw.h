@@ -22,6 +22,18 @@ struct enetc_msg_swbd {
 	int size;
 };
 
+/* enetc4 txbd flags */
+#define ENETC4_TXBD_FLAGS_L4CS		BIT(0)
+#define ENETC4_TXBD_FLAGS_L_TX_CKSUM	BIT(3)
+#define ENETC4_TXBD_FLAGS_F		BIT(7)
+/* L4 type */
+#define ENETC4_TXBD_L4T_UDP		BIT(0)
+#define ENETC4_TXBD_L4T_TCP		BIT(1)
+/* L3 type is set to 0 for IPv4 and 1 for IPv6 */
+#define ENETC4_TXBD_L3T			0
+/* IPv4 checksum */
+#define ENETC4_TXBD_IPCS		1
+
 /***************************ENETC port registers**************************/
 #define ENETC4_PMR		0x10
 #define ENETC4_PMR_EN		(BIT(16) | BIT(17) | BIT(18))

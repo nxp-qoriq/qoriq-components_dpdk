@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #ifndef _ENETC_HW_H_
@@ -188,8 +188,7 @@ enum enetc_bdr_type {TX, RX};
 
 #define ENETC_TX_ADDR(txq, addr) ((void *)((txq)->enetc_txbdr + (addr)))
 
-#define ENETC_TXBD_FLAGS_IE		BIT(13)
-#define ENETC_TXBD_FLAGS_F		BIT(15)
+#define ENETC_TXBD_FLAGS_F		BIT(7)
 
 /* ENETC Parsed values (Little Endian) */
 #define ENETC_PARSE_ERROR		0x8000
@@ -254,8 +253,19 @@ struct enetc_tx_bd {
 	uint64_t addr;
 	uint16_t buf_len;
 	uint16_t frm_len;
-	uint16_t err_csum;
-	uint16_t flags;
+	union {
+		struct {
+			uint8_t l3_start:7;
+			uint8_t ipcs:1;
+			uint8_t l3_hdr_size:7;
+			uint8_t l3t:1;
+			uint8_t resv:5;
+			uint8_t l4t:3;
+			uint8_t flags;
+		};/* default layout */
+		uint32_t txstart;
+		uint32_t lstatus;
+	};
 };
 
 /* RX buffer descriptor */
