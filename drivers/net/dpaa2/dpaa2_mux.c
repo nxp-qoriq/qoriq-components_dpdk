@@ -54,6 +54,7 @@ struct dpaa2_dpdmux_dev {
 	uint8_t *key_param;
 	uint64_t key_param_iova;
 	uint16_t flow_num;
+	rte_spinlock_t lock;
 	LIST_HEAD(, dpaa2_mux_flow) flows;
 };
 
@@ -338,8 +339,7 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
 	if (!dpdmux_dev) {
 		DPAA2_PMD_ERR("Invalid DPDMUX ID(%d)", dpdmux_id);
-		ret = -ENODEV;
-		goto creation_error;
+		return -ENODEV;
 	}
 
 	if (actions[0].type == RTE_FLOW_ACTION_TYPE_VF) {
@@ -357,6 +357,8 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 			actions[0].type);
 		return -ENOTSUP;
 	}
+
+	rte_spinlock_lock(&dpdmux_dev->lock);
 
 	flow = rte_zmalloc(NULL, sizeof(struct dpaa2_mux_flow),
 			   RTE_CACHE_LINE_SIZE);
@@ -742,18 +744,68 @@ add_entry:
 	}
 	dpdmux_dev->flow_num++;
 	LIST_INSERT_HEAD(&dpdmux_dev->flows, flow, next);
+	rte_spinlock_unlock(&dpdmux_dev->lock);
 
 	return flow->rule.entry_index;
 
 creation_error:
-	if (flow->key_addr)
+	rte_spinlock_unlock(&dpdmux_dev->lock);
+	if (flow) {
 		rte_free(flow->key_addr);
-	if (flow->mask_addr)
 		rte_free(flow->mask_addr);
-	if (flow)
-		rte_free(flow);
+	}
+	rte_free(flow);
 
 	return ret;
+}
+
+int
+rte_pmd_dpaa2_mux_flow_destroy(uint32_t dpdmux_id,
+	uint16_t entry_index)
+{
+	struct dpaa2_dpdmux_dev *dpdmux_dev;
+	int ret;
+	struct dpaa2_mux_flow *flow, *next;
+
+	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
+	if (!dpdmux_dev) {
+		DPAA2_PMD_ERR("Invalid DPDMUX ID(%d)", dpdmux_id);
+		return -ENODEV;
+	}
+
+	rte_spinlock_lock(&dpdmux_dev->lock);
+
+	flow = LIST_FIRST(&dpdmux_dev->flows);
+	while (flow) {
+		next = LIST_NEXT(flow, next);
+		if (flow->rule.entry_index != entry_index) {
+			flow = next;
+			continue;
+		}
+		dpaa2_mux_flow_rule_log(flow, "remove");
+		ret = dpdmux_remove_custom_cls_entry(&dpdmux_dev->dpdmux,
+				CMD_PRI_LOW, dpdmux_dev->token,
+				&flow->rule);
+		if (ret) {
+			DPAA2_PMD_ERR("Remove mux rule failed: err(%d)",
+				ret);
+			rte_spinlock_unlock(&dpdmux_dev->lock);
+			return ret;
+		}
+		LIST_REMOVE(flow, next);
+		rte_free(flow->key_addr);
+		rte_free(flow->mask_addr);
+		rte_free(flow);
+		rte_spinlock_unlock(&dpdmux_dev->lock);
+
+		return 0;
+	}
+
+	rte_spinlock_unlock(&dpdmux_dev->lock);
+	DPAA2_PMD_ERR("%s: no flow index(%d) found in dpdmux%d",
+		__func__, entry_index, dpdmux_id);
+
+	return -EINVAL;
 }
 
 int
@@ -1067,16 +1119,17 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 		ret = -ENOBUFS;
 		goto init_err;
 	}
+	rte_spinlock_init(&dpdmux_dev->lock);
 
 	TAILQ_INSERT_TAIL(&dpdmux_dev_list, dpdmux_dev, next);
 
 	return 0;
 
 init_err:
-	if (dpdmux_dev->mux_eps)
+	if (dpdmux_dev) {
 		rte_free(dpdmux_dev->mux_eps);
-	if (dpdmux_dev->key_param)
 		rte_free(dpdmux_dev->key_param);
+	}
 	rte_free(dpdmux_dev);
 
 	return ret;
@@ -1101,10 +1154,8 @@ dpaa2_close_dpdmux_device(int object_id)
 		if (ret)
 			DPAA2_PMD_ERR("Remove mux rule failed: err(%d)", ret);
 		LIST_REMOVE(flow, next);
-		if (flow->key_addr)
-			rte_free(flow->key_addr);
-		if (flow->mask_addr)
-			rte_free(flow->mask_addr);
+		rte_free(flow->key_addr);
+		rte_free(flow->mask_addr);
 		rte_free(flow);
 		flow = next;
 	}

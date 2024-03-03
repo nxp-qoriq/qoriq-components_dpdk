@@ -32,7 +32,9 @@ int
 rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 	struct rte_flow_item pattern[],
 	struct rte_flow_action actions[]);
-
+int
+rte_pmd_dpaa2_mux_flow_destroy(uint32_t dpdmux_id,
+	uint16_t entry_index);
 int
 rte_pmd_dpaa2_mux_flow_l2(uint32_t dpdmux_id,
 	uint8_t mac_addr[6], uint16_t vlan_id, int dest_if);
