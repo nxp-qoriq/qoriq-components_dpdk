@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2023 NXP
+# Copyright 2018-2024 NXP
 
 QDMA
 ----
@@ -257,11 +257,18 @@ The setup is as given below:
 
 LATENCY_TEST
 ------------
-add "--latency_test" for testing latency
+add "--latency_test" for testing latency.
+add "--dma_latency" to include dma prepararion time in latency.
 
-MEMCOPY
+CPU COPY or DMA COPY
 -------
-One can use --memcpy option to use core instead of qdma engine for comparision reasons.
+One can use --test_mode option to chose core or qdma engine for comparision reasons.
+#DMA mode, default.
+--test_mode=dma_mode
+#CPU mode
+--test_mode=cpu_mode
+#Both DMA and CPU involved to check if PCIe access by CPU will impact DMA over PCIe performance.
+--test_mode=mix_mode
 
 SCATTER GATHER
 --------------

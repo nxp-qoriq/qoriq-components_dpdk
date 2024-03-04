@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2023 NXP
+# Copyright 2018-2024 NXP
 ===============================================================================
 NXP DPDK README
 ---------------
@@ -1364,6 +1364,18 @@ DPAA2:
 16. DPAA2_FLOW_CONTROL_MISS_FLOW  Set queue id for packets not bound for any queue.
 				  Set it to -1 to drop the missed flow packets.
 				  By default, it is set to queue 0.
+
+17. DPAA2_PRINT_RX_PARSER_RESULT  Print detailed protocol information of RX packet decoded from
+				  hard and soft parser results.
+
+18. DPAA2_TX_DYNAMIC_CONF	Enable dynamic TX confirmation by source of TX buffer.
+				If TX buffer was not allocated from hardware pool(BMan),
+				TX confirmation is generated to release buffer to default memory pool.
+				This configuration is effective with DPAA2_TX_CONF enabled.
+
+19. DPAA2_TX_CONF_FD_OVERFLOW	Clean TX confirm queue to make FD in HW not overflow the number set.
+				Default overflow number is 65535 and it's effectiver with
+				DPAA2_TX_DYNAMIC_CONF enabled.
 
 ================================================================================
 
