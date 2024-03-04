@@ -1,6 +1,6 @@
 #!/bin/bash -i
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2023 NXP
+# Copyright 2018-2024 NXP
 
 #usages are:
 #./crypto_perf_test.sh dpaa2_sec
@@ -90,6 +90,14 @@ then
         # for openssl
         vdev_string="--vdev crypto_openssl"
         dev_string=crypto_openssl
+	logoutput="dpdk_${dev_string}_report.txt"
+
+elif [[ ${!arg} == "caam_jr" ]]
+then
+	echo -e "=============== running caam_jr" | tee ${logoutput}
+	export DPAA_SEC_DISABLE=1
+	vdev_string="--vdev crypto_caam_jr0"
+	dev_string=crypto_caam_jr
 	logoutput="dpdk_${dev_string}_report.txt"
 
 elif [[ ${!arg} == "armv8" ]]
