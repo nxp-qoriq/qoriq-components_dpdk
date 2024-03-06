@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2021-2023 NXP
+ * Copyright 2021-2024 NXP
  */
 
 #ifndef _DPAA_QDMA_H_
@@ -11,7 +11,6 @@
 #define BIT(nr)		(1UL << (nr))
 #endif
 
-#define CORE_NUMBER 4
 #define RETRIES	5
 
 #ifndef GENMASK
@@ -19,6 +18,12 @@
 #define GENMASK(h, l) \
 		(((~0UL) << (l)) & (~0UL >> (BITS_PER_LONG - 1 - (h))))
 #endif
+
+#define QDMA_CTRL_REGION_OFFSET 0
+#define QDMA_CTRL_REGION_SIZE 0x10000
+#define QDMA_STATUS_REGION_OFFSET \
+	(QDMA_CTRL_REGION_OFFSET + QDMA_CTRL_REGION_SIZE)
+#define QDMA_STATUS_REGION_SIZE 0x10000
 
 #define FSL_QDMA_DMR			0x0
 #define FSL_QDMA_DSR			0x4
@@ -54,19 +59,18 @@
 #define FSL_QDMA_QUEUE_MAX		8
 
 #define FSL_QDMA_BCQMR_EN		0x80000000
-#define FSL_QDMA_BCQMR_EI_BE		0x40
+#define FSL_QDMA_BCQMR_EI		0x40000000
+
 #define FSL_QDMA_BCQMR_CD_THLD(x)	((x) << 20)
 #define FSL_QDMA_BCQMR_CQ_SIZE(x)	((x) << 16)
 
 /* Update the value appropriately whenever QDMA_QUEUE_SIZE
  * changes.
  */
-#define FSL_QDMA_BCQMR_EI		0x20c0
 
 #define FSL_QDMA_BCQSR_QF_XOFF_BE	0x1000100
 
 #define FSL_QDMA_BSQMR_EN		0x80000000
-#define FSL_QDMA_BSQMR_DI_BE		0x40
 #define FSL_QDMA_BSQMR_CQ_SIZE(x)	((x) << 16)
 #define FSL_QDMA_BSQMR_DI		0xc0
 
@@ -75,8 +79,6 @@
 #define FSL_QDMA_DMR_DQD		0x40000000
 #define FSL_QDMA_DSR_DB			0x80000000
 
-#define FSL_QDMA_COMMAND_BUFFER_SIZE	64
-#define FSL_QDMA_DESCRIPTOR_BUFFER_SIZE 32
 #define FSL_QDMA_CIRCULAR_DESC_SIZE_MIN	64
 #define FSL_QDMA_CIRCULAR_DESC_SIZE_MAX	16384
 #define FSL_QDMA_QUEUE_NUM_MAX		8
@@ -106,16 +108,11 @@
 
 /* qdma engine attribute */
 #define QDMA_QUEUE_SIZE			64
-#define QDMA_STATUS_SIZE		64
+#define QDMA_STATUS_SIZE		QDMA_QUEUE_SIZE
 #define QDMA_CCSR_BASE			0x8380000
-#define VIRT_CHANNELS			32
 #define QDMA_BLOCK_OFFSET		0x10000
 #define QDMA_BLOCKS			4
 #define QDMA_QUEUES			8
-#define QDMA_DELAY			1000
-#define QDMA_SGF_SRC_OFF		2
-#define QDMA_SGF_DST_OFF		3
-#define QDMA_DESC_OFF			1
 #define QDMA_QUEUE_CR_WM		32
 
 #define QDMA_BIG_ENDIAN			1
@@ -134,64 +131,76 @@
 #define FSL_QDMA_BLOCK_BASE_OFFSET(fsl_qdma_engine, x)			\
 	(((fsl_qdma_engine)->block_offset) * (x))
 
-typedef void (*dma_call_back)(void *params);
-
 /* qDMA Command Descriptor Formats */
 struct fsl_qdma_format {
-	__le32 status; /* ser, status */
-	__le32 cfg;	/* format, offset */
+	uint32_t status; /* ser, status */
+	uint32_t cfg;	/* format, offset */
 	union {
 		struct {
-			__le32 addr_lo;	/* low 32-bits of 40-bit address */
-			u8 addr_hi;	/* high 8-bits of 40-bit address */
-			u8 __reserved1[2];
-			u8 cfg8b_w1; /* dd, queue */
+			uint32_t addr_lo; /* low 32-bits of 40-bit address */
+			uint8_t addr_hi; /* high 8-bits of 40-bit address */
+			uint8_t __reserved1[2];
+			uint8_t cfg8b_w1; /* dd, queue */
 		};
-		__le64 data;
+		uint64_t data;
 	};
 };
 
 /* qDMA Source Descriptor Format */
 struct fsl_qdma_sdf {
-	__le32 rev3;
-	__le32 cfg; /* rev4, bit[0-11] - ssd, bit[12-23] sss */
-	__le32 rev5;
-	__le32 cmd;
+	uint32_t rev3;
+	uint32_t cfg; /* rev4, bit[0-11] - ssd, bit[12-23] sss */
+	uint32_t rev5;
+	uint32_t cmd;
 };
 
 /* qDMA Destination Descriptor Format */
 struct fsl_qdma_ddf {
-	__le32 rev1;
-	__le32 cfg; /* rev2, bit[0-11] - dsd, bit[12-23] - dss */
-	__le32 rev3;
-	__le32 cmd;
+	uint32_t rev1;
+	uint32_t cfg; /* rev2, bit[0-11] - dsd, bit[12-23] - dss */
+	uint32_t rev3;
+	uint32_t cmd;
+};
+
+struct fsl_qdma_df {
+	struct fsl_qdma_sdf sdf;
+	struct fsl_qdma_ddf ddf;
+};
+
+struct fsl_qdma_cmpd_ft {
+	struct fsl_qdma_format desc_buf;
+	struct fsl_qdma_format desc_sbuf;
+	struct fsl_qdma_format desc_dbuf;
 };
 
 struct fsl_qdma_queue {
-	struct fsl_qdma_format	*virt_head;
-	void                    **virt_addr;
-	u8			ci;
-	u8			n_cq;
-	u8			id;
-	void			*queue_base;
-	struct fsl_qdma_format	*cq;
-	struct rte_dma_stats	stats;
-	u8			pending;
-	dma_addr_t		bus_addr;
-	void			**desc_virt_addr;
+	struct fsl_qdma_format *cmd_desc;
+	int used;
+	struct fsl_qdma_cmpd_ft **ft;
+	uint16_t ci;
+	uint16_t complete;
+	uint16_t n_cq;
+	uint8_t block_id;
+	uint8_t queue_id;
+	void *block_vir;
+	uint32_t le_cqmr;
+	struct fsl_qdma_format *cq;
+	struct rte_dma_stats stats;
+	uint8_t pending;
+	dma_addr_t bus_addr;
+	struct fsl_qdma_df **df;
 };
 
 struct fsl_qdma_engine {
-	void			*ctrl_base;
-	void			*status_base;
-	void			*block_base;
-	u32			n_queues;
-	struct fsl_qdma_queue	**queue;
-	struct fsl_qdma_queue	**status;
-	u32			num_blocks;
-	u8			free_block_id;
-	u32			vchan_map[4];
-	int			block_offset;
+	void *reg_base;
+	void *ctrl_base;
+	void *status_base;
+	void *block_base;
+	uint32_t n_queues;
+	struct fsl_qdma_queue **queue;
+	struct fsl_qdma_queue **status;
+	uint32_t num_blocks;
+	int block_offset;
 };
 
 #endif /* _DPAA_QDMA_H_ */
