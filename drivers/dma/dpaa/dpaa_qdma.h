@@ -83,28 +83,14 @@
 #define FSL_QDMA_CIRCULAR_DESC_SIZE_MAX	16384
 #define FSL_QDMA_QUEUE_NUM_MAX		8
 
+#define FSL_QDMA_COMP_SG_FORMAT		0x1
+
 #define FSL_QDMA_CMD_RWTTYPE		0x4
 #define FSL_QDMA_CMD_LWC		0x2
 
-#define FSL_QDMA_CMD_RWTTYPE_OFFSET	28
-#define FSL_QDMA_CMD_LWC_OFFSET		16
-#define FSL_QDMA_CMD_PF			BIT(17)
-
-#define FSL_QDMA_CMD_SSEN		BIT(19)
 #define FSL_QDMA_CFG_SSS_OFFSET		12
 #define FSL_QDMA_CMD_SSS_STRIDE		128
 #define FSL_QDMA_CMD_SSS_DISTANCE	128
-
-#define QDMA_CCDF_STATUS		20
-#define QDMA_CCDF_OFFSET		20
-#define QDMA_CCDF_MASK			GENMASK(28, 20)
-#define QDMA_CCDF_FOTMAT		BIT(29)
-#define QDMA_CCDF_SER			BIT(30)
-
-#define QDMA_SG_FIN			BIT(30)
-#define QDMA_SG_LEN_MASK		GENMASK(29, 0)
-
-#define COMMAND_QUEUE_OVERFLOW		10
 
 /* qdma engine attribute */
 #define QDMA_QUEUE_SIZE FSL_QDMA_CIRCULAR_DESC_SIZE_MIN
@@ -132,64 +118,160 @@
 	(((fsl_qdma_engine)->block_offset) * (x))
 
 /* qDMA Command Descriptor Formats */
-struct fsl_qdma_format {
-	uint32_t status; /* ser, status */
-	uint32_t cfg;	/* format, offset */
-	union {
-		struct {
-			uint32_t addr_lo; /* low 32-bits of 40-bit address */
-			uint8_t addr_hi; /* high 8-bits of 40-bit address */
-			uint8_t __reserved1[2];
-			uint8_t queue:3;
-			uint8_t rsv:3;
-			uint8_t dd:2;
-		};
-		uint64_t data;
-	};
-};
+struct fsl_qdma_comp_cmd_desc {
+	uint8_t status;
+	uint32_t rsv0:22;
+	uint32_t ser:1;
+	uint32_t rsv1:21;
+	uint32_t offset:9;
+	uint32_t format:3;
+	uint32_t addr_lo;
+	uint8_t addr_hi;
+	uint16_t rsv3;
+	uint8_t queue:3;
+	uint8_t rsv4:3;
+	uint8_t dd:2;
+} __rte_packed;
 
-/* qDMA Source Descriptor Format */
+struct fsl_qdma_comp_sg_desc {
+	uint32_t offset:13;
+	uint32_t rsv0:19;
+	uint32_t length:30;
+	uint32_t final:1;
+	uint32_t extion:1;
+	uint32_t addr_lo;
+	uint8_t addr_hi;
+	uint32_t rsv1:24;
+} __rte_packed;
+
 struct fsl_qdma_sdf {
-	uint32_t rev3;
-	uint32_t cfg; /* rev4, bit[0-11] - ssd, bit[12-23] sss */
-	uint32_t rev5;
-	uint32_t cmd;
-};
+	uint32_t rsv0;
+	uint32_t ssd:12;
+	uint32_t sss:12;
+	uint32_t rsv1:8;
+	uint32_t rsv2;
 
-/* qDMA Destination Descriptor Format */
+	uint32_t rsv3:17;
+	uint32_t prefetch:1;
+	uint32_t rsv4:1;
+	uint32_t ssen:1;
+	uint32_t rthrotl:4;
+	uint32_t sqos:3;
+	uint32_t ns:1;
+	uint32_t srttype:4;
+} __rte_packed;
+
 struct fsl_qdma_ddf {
-	uint32_t rev1;
-	uint32_t cfg; /* rev2, bit[0-11] - dsd, bit[12-23] - dss */
-	uint32_t rev3;
-	uint32_t cmd;
-};
+	uint32_t rsv0;
+	uint32_t dsd:12;
+	uint32_t dss:12;
+	uint32_t rsv1:8;
+	uint32_t rsv2;
+
+	uint16_t rsv3;
+	uint32_t lwc:2;
+	uint32_t rsv4:1;
+	uint32_t dsen:1;
+	uint32_t wthrotl:4;
+	uint32_t dqos:3;
+	uint32_t ns:1;
+	uint32_t dwttype:4;
+} __rte_packed;
 
 struct fsl_qdma_df {
 	struct fsl_qdma_sdf sdf;
 	struct fsl_qdma_ddf ddf;
 };
 
+#define FSL_QDMA_SG_MAX_ENTRY RTE_DPAAX_QDMA_JOB_SUBMIT_MAX
+#define FSL_QDMA_MAX_DESC_NUM (FSL_QDMA_SG_MAX_ENTRY * QDMA_QUEUE_SIZE)
 struct fsl_qdma_cmpd_ft {
-	struct fsl_qdma_format desc_buf;
-	struct fsl_qdma_format desc_sbuf;
-	struct fsl_qdma_format desc_dbuf;
+	struct fsl_qdma_comp_sg_desc desc_buf;
+	struct fsl_qdma_comp_sg_desc desc_sbuf;
+	struct fsl_qdma_comp_sg_desc desc_dbuf;
+	uint64_t cache_align[2];
+	struct fsl_qdma_comp_sg_desc desc_ssge[FSL_QDMA_SG_MAX_ENTRY];
+	struct fsl_qdma_comp_sg_desc desc_dsge[FSL_QDMA_SG_MAX_ENTRY];
+	uint64_t phy_ssge;
+	uint64_t phy_dsge;
+} __rte_packed;
+
+#define FSL_QDMA_ERR_REG_STATUS_OFFSET 0xe00
+
+struct fsl_qdma_dedr_reg {
+	uint32_t me:1;
+	uint32_t rsv0:1;
+	uint32_t rte:1;
+	uint32_t wte:1;
+	uint32_t cde:1;
+	uint32_t sde:1;
+	uint32_t dde:1;
+	uint32_t ere:1;
+	uint32_t rsv1:24;
+};
+
+struct fsl_qdma_deccqidr_reg {
+	uint32_t rsv:27;
+	uint32_t block:2;
+	uint32_t queue:3;
+};
+
+#define FSL_QDMA_DECCD_ERR_NUM \
+	(sizeof(struct fsl_qdma_comp_cmd_desc) / sizeof(uint32_t))
+
+struct fsl_qdma_err_reg {
+	uint32_t deier;
+	union {
+		rte_be32_t dedr_be;
+		struct fsl_qdma_dedr_reg dedr;
+	};
+	uint32_t rsv0[2];
+	union {
+		rte_le32_t deccd_le[FSL_QDMA_DECCD_ERR_NUM];
+		struct fsl_qdma_comp_cmd_desc err_cmd;
+	};
+	uint32_t rsv1[4];
+	union {
+		rte_be32_t deccqidr_be;
+		struct fsl_qdma_deccqidr_reg deccqidr;
+	};
+	rte_be32_t decbr;
+};
+
+#define DPAA_QDMA_IDXADDR_FROM_SG_FLAG(flag) \
+	((void *)((flag) - ((flag) & RTE_DPAAX_QDMA_SG_IDX_ADDR_MASK)))
+
+#define DPAA_QDMA_IDX_FROM_FLAG(flag) \
+	((flag) >> RTE_DPAAX_QDMA_COPY_IDX_OFFSET)
+
+struct fsl_qdma_desc {
+	rte_iova_t src;
+	rte_iova_t dst;
+	uint64_t flag;
+	uint64_t len;
 };
 
 struct fsl_qdma_queue {
-	struct fsl_qdma_format *cmd_desc;
 	int used;
 	struct fsl_qdma_cmpd_ft **ft;
 	uint16_t ci;
-	uint16_t complete;
+	struct rte_ring *complete_burst;
+	struct rte_ring *complete_desc;
+	struct rte_ring *complete_pool;
 	uint16_t n_cq;
 	uint8_t block_id;
 	uint8_t queue_id;
 	uint8_t channel_id;
 	void *block_vir;
 	uint32_t le_cqmr;
-	struct fsl_qdma_format *cq;
+	struct fsl_qdma_comp_cmd_desc *cq;
+	uint16_t desc_in_hw[QDMA_QUEUE_SIZE];
 	struct rte_dma_stats stats;
-	uint8_t pending;
+	struct fsl_qdma_desc *pending_desc;
+	uint16_t pending_max;
+	uint16_t pending_start;
+	uint8_t pending_num;
+	uint16_t complete_start;
 	dma_addr_t bus_addr;
 	struct fsl_qdma_df **df;
 	void *engine;
@@ -200,7 +282,7 @@ struct fsl_qdma_status_queue {
 	uint16_t complete;
 	uint8_t block_id;
 	void *block_vir;
-	struct fsl_qdma_format *cq;
+	struct fsl_qdma_comp_cmd_desc *cq;
 	struct rte_dma_stats stats;
 	dma_addr_t bus_addr;
 	void *engine;
