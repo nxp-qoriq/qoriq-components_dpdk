@@ -42,7 +42,7 @@
 #include <dirent.h>
 #include <bus_pci_driver.h>
 #include <bus_fslmc_driver.h>
-#include <rte_pmd_dpaa2_qdma.h>
+#include <rte_pmd_dpaax_qdma.h>
 #include "qdma_demo.h"
 #include <rte_pmd_lsxinic.h>
 
@@ -212,7 +212,7 @@ init_dma:
 			qdma_dev_id, ret);
 		return ret;
 	}
-	if (local_dma_info.dev_capa & RTE_DMA_CAPA_DPAA2_QDMA_FLAGS_INDEX)
+	if (local_dma_info.dev_capa & RTE_DMA_CAPA_DPAAX_QDMA_FLAGS_INDEX)
 		s_flags_cntx = 1;
 	dma_config.nb_vchans = local_dma_info.max_vchans;
 	dma_config.enable_silent = g_silent;
@@ -528,8 +528,8 @@ static int
 qdma_demo_validate_check(struct dma_job *job[],
 	uint32_t job_num)
 {
-	int cmp_src, cmp_dst;
-	uint32_t i, j, k;
+	uint32_t i = 0, j = 0;
+	int dma_err = 0, cpu_err = 0;
 
 	if (!g_validate)
 		return 0;
@@ -538,63 +538,39 @@ qdma_demo_validate_check(struct dma_job *job[],
 		if (!job[i]->dma_len)
 			goto cpu_validate;
 
-		for (j = 0; j < job[i]->dma_len / 4; j++) {
-			cmp_src = *((int *)(job[i]->vdmasrc) + j);
-			cmp_dst = *((int *)(job[i]->vdmadst) + j);
-			if (cmp_src != cmp_dst) {
-				RTE_LOG(ERR, qdma_demo,
-					"cmp_src(%p)(0x%08x) != cmp_dst(%p)(0x%08x)\n",
-					job[i]->vdmasrc + j, cmp_src,
-					job[i]->vdmadst + j, cmp_dst);
-
-				rte_exit(EXIT_FAILURE, "Validate failed\n");
-				return -EINVAL;
+		for (j = 0; j < job[i]->dma_len; j++) {
+			if (job[i]->vdmasrc[j] != job[i]->vdmadst[j]) {
+				dma_err = 1;
+				goto err_quit;
 			}
-		}
-		k = 0;
-		while ((j * 4 + k) < job[i]->dma_len) {
-			cmp_src = *(job[i]->vdmasrc + j * 4 + k);
-			cmp_dst = *(job[i]->vdmadst + j * 4 + k);
-			if (cmp_src != cmp_dst) {
-				RTE_LOG(ERR, qdma_demo,
-					"cmp_src(0x%08x) != cmp_dst(0x%08x)\n",
-					cmp_src, cmp_dst);
-				rte_exit(EXIT_FAILURE, "Validate failed\n");
-				return -EINVAL;
-			}
-			k++;
 		}
 
 cpu_validate:
 		if (!job[i]->cpu_len)
 			continue;
 
-		for (j = 0; j < job[i]->cpu_len / 4; j++) {
-			cmp_src = *((int *)(job[i]->vcpusrc) + j);
-			cmp_dst = *((int *)(job[i]->vcpudst) + j);
-			if (cmp_src != cmp_dst) {
-				RTE_LOG(ERR, qdma_demo,
-					"cmp_src(%p)(0x%08x) != cmp_dst(%p)(0x%08x)\n",
-					job[i]->vcpusrc + j, cmp_src,
-					job[i]->vcpudst + j, cmp_dst);
+		for (j = 0; j < job[i]->cpu_len; j++) {
+			if (job[i]->vcpusrc[j] != job[i]->vcpudst[j]) {
+				cpu_err = 1;
+				goto err_quit;
+			}
+		}
+	}
 
-				rte_exit(EXIT_FAILURE, "Validate failed\n");
-				return -EINVAL;
-			}
-		}
-		k = 0;
-		while ((j * 4 + k) < job[i]->cpu_len) {
-			cmp_src = *(job[i]->vcpusrc + j * 4 + k);
-			cmp_dst = *(job[i]->vcpudst + j * 4 + k);
-			if (cmp_src != cmp_dst) {
-				RTE_LOG(ERR, qdma_demo,
-					"cmp_src(0x%08x) != cmp_dst(0x%08x)\n",
-					cmp_src, cmp_dst);
-				rte_exit(EXIT_FAILURE, "Validate failed\n");
-				return -EINVAL;
-			}
-			k++;
-		}
+err_quit:
+	if (dma_err) {
+		rte_exit(EXIT_FAILURE,
+			"DMA job[%d]: src(%p)[%d](%d) != dst(%p)[%d](%d)\n",
+			job[i]->idx, job[i]->vdmasrc, j,
+			job[i]->vdmasrc[j], job[i]->vdmadst,
+			j, job[i]->vdmadst[j]);
+	}
+	if (cpu_err) {
+		rte_exit(EXIT_FAILURE,
+			"CPU job[%d]: src(%p)[%d](%d) != dst(%p)[%d](%d)\n",
+			job[i]->idx, job[i]->vcpusrc, j,
+			job[i]->vcpusrc[j], job[i]->vcpudst,
+			j, job[i]->vcpudst[j]);
 	}
 
 	return 0;
@@ -782,7 +758,7 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 	int ret = 0;
 
 	uint32_t dq_num = 0, miss_time = 0;
-	uint32_t burst_nb = g_scatter_gather ? 32 : g_burst;
+	const uint32_t burst_nb = g_burst;
 	uint8_t *vsrc, *vdst;
 
 	lcore_id = rte_lcore_id();
@@ -833,10 +809,10 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 
 			flags = job[i]->flags;
 			if (i == (job_num - 1) && s_flags_cntx)
-				flags |= RTE_DPAA2_QDMA_COPY_SUBMIT(job[i]->idx,
+				flags |= RTE_DPAAX_QDMA_COPY_SUBMIT(job[i]->idx,
 						RTE_DMA_OP_FLAG_SUBMIT);
 			else if (s_flags_cntx)
-				flags |= RTE_DPAA2_QDMA_COPY_SUBMIT(job[i]->idx,
+				flags |= RTE_DPAAX_QDMA_COPY_SUBMIT(job[i]->idx,
 						0);
 			else if (i == (job_num - 1))
 				flags |= RTE_DMA_OP_FLAG_SUBMIT;
@@ -882,7 +858,7 @@ lcore_qdma_process_loop(__attribute__((unused)) void *arg)
 			goto dequeue;
 
 		if (s_flags_cntx) {
-			flags = RTE_DPAA2_QDMA_SG_SUBMIT(g_dma_idx[lcore_id],
+			flags = RTE_DPAAX_QDMA_SG_SUBMIT(g_dma_idx[lcore_id],
 				RTE_DMA_OP_FLAG_SUBMIT);
 		} else {
 			flags = RTE_DMA_OP_FLAG_SUBMIT;
@@ -928,8 +904,10 @@ dequeue:
 		for (i = 0; i < dq_num; i++)
 			job[i] = &g_jobs[lcore_id][dq_idx[i]];
 		ret = qdma_demo_validate_check(job, dq_num);
-		if (ret)
+		if (ret) {
+			rte_exit(EXIT_FAILURE, "Validate failed\n");
 			return ret;
+		}
 		if (error) {
 			RTE_LOG(ERR, qdma_demo, "DMA complete error\n");
 			rte_exit(EXIT_FAILURE, "Job Processing Error\n");
@@ -1068,7 +1046,7 @@ qdma_demo_jobs_init(struct dma_job *jobs,
 
 	g_dma_idx[lcore_id] = rte_malloc(NULL,
 		sizeof(uint16_t) * g_packet_num,
-		RTE_DPAA2_QDMA_SG_IDX_ADDR_ALIGN);
+		RTE_DPAAX_QDMA_SG_IDX_ADDR_ALIGN);
 	if (!g_dma_idx[lcore_id]) {
 		RTE_LOG(ERR, qdma_demo,
 			"DMA index created failed on core%d\n",
@@ -1308,8 +1286,11 @@ lcore_qdma_control_loop(void)
 	memset(&info, 0, sizeof(struct rte_dma_info));
 	if (g_test_mode & QDMA_DEMO_DMA_MODE) {
 		ret = test_dma_init(&info);
-		if (ret)
+		if (ret) {
+			RTE_LOG(ERR, qdma_demo, "DMA init failed(%d)\n", ret);
 			return ret;
+		}
+
 		memset(&conf, 0, sizeof(struct rte_dma_vchan_conf));
 
 		if (g_test_path == MEM_TO_PCI &&
@@ -1499,8 +1480,11 @@ launch_cores(unsigned int cores)
 
 	/* start synchro and launch test on master */
 	ret = lcore_qdma_control_loop();
-	if (ret < 0)
+	if (ret < 0) {
+		RTE_LOG(ERR, qdma_demo,
+			"DMA control failed(%d)\n", ret);
 		return ret;
+	}
 	cores = cores_save;
 	RTE_LCORE_FOREACH_WORKER(lcore_id) {
 		if (cores == 1)
