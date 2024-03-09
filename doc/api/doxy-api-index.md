@@ -4,6 +4,7 @@ API
 <!--
   SPDX-License-Identifier: BSD-3-Clause
   Copyright(c) 2013-2017 6WIND S.A.
+  Copyright 2024 NXP
 -->
 
 The public API headers are grouped by topics:
@@ -52,7 +53,7 @@ The public API headers are grouped by topics:
   [mlx5](@ref rte_pmd_mlx5.h),
   [dpaa2_mempool](@ref rte_dpaa2_mempool.h),
   [dpaa2_cmdif](@ref rte_pmd_dpaa2_cmdif.h),
-  [dpaa2_qdma](@ref rte_pmd_dpaa2_qdma.h),
+  [dpaa2_qdma](@ref rte_pmd_dpaax_qdma.h),
   [crypto_scheduler](@ref rte_cryptodev_scheduler.h),
   [dlb2](@ref rte_pmd_dlb2.h),
   [ifpga](@ref rte_pmd_ifpga.h)
