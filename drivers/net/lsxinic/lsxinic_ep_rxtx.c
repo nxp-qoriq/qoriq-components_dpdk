@@ -370,7 +370,7 @@ lsinic_qdma_rx_seg_enqueue(struct lsinic_queue *queue)
 			dst[j].length = job->len[j];
 			len_total += job->len[j];
 		}
-		flags = RTE_DPAA2_QDMA_SG_SUBMIT(queue->dma_idx,
+		flags = RTE_DPAAX_QDMA_SG_SUBMIT(queue->dma_idx,
 			RTE_DMA_OP_FLAG_SUBMIT);
 		ret = rte_dma_copy_sg(queue->dma_id,
 			queue->dma_vq, src, dst,
@@ -438,7 +438,7 @@ lsinic_qdma_tx_seg_enqueue(struct lsinic_queue *queue)
 		sg_nb++;
 	}
 
-	flags = RTE_DPAA2_QDMA_SG_SUBMIT(queue->dma_idx,
+	flags = RTE_DPAAX_QDMA_SG_SUBMIT(queue->dma_idx,
 			RTE_DMA_OP_FLAG_SUBMIT);
 	ret = rte_dma_copy_sg(queue->dma_id, queue->dma_vq,
 			src, dst, sg_nb, sg_nb, flags);
@@ -767,14 +767,14 @@ lsinic_rxq_dma_eq(void *q, int append, int dma_bd)
 
 eq_again:
 	if (ep_cap & LSINIC_EP_CAP_RXQ_SG_DMA) {
-		flags = RTE_DPAA2_QDMA_SG_SUBMIT(queue->dma_idx,
+		flags = RTE_DPAAX_QDMA_SG_SUBMIT(queue->dma_idx,
 			RTE_DMA_OP_FLAG_SUBMIT);
 		ret = rte_dma_copy_sg(queue->dma_id,
 			queue->dma_vq, src, dst,
 			nb_jobs, nb_jobs, flags);
 	} else {
 		for (i = 0; i < nb_jobs; i++) {
-			flags = RTE_DPAA2_QDMA_COPY_SUBMIT(queue->dma_idx[i],
+			flags = RTE_DPAAX_QDMA_COPY_SUBMIT(queue->dma_idx[i],
 				0);
 			ret = rte_dma_copy(queue->dma_id,
 				queue->dma_vq, src[i].addr,
@@ -920,14 +920,14 @@ lsinic_txq_dma_eq(void *q, int append)
 
 eq_again:
 	if (ep_cap & LSINIC_EP_CAP_TXQ_SG_DMA) {
-		flags = RTE_DPAA2_QDMA_SG_SUBMIT(queue->dma_idx,
+		flags = RTE_DPAAX_QDMA_SG_SUBMIT(queue->dma_idx,
 			RTE_DMA_OP_FLAG_SUBMIT);
 		ret = rte_dma_copy_sg(queue->dma_id, queue->dma_vq,
 			src, dst,
 			nb_jobs, nb_jobs, flags);
 	} else {
 		for (i = 0; i < nb_jobs; i++) {
-			flags = RTE_DPAA2_QDMA_COPY_SUBMIT(queue->dma_idx[i],
+			flags = RTE_DPAAX_QDMA_COPY_SUBMIT(queue->dma_idx[i],
 				0);
 			ret = rte_dma_copy(queue->dma_id, queue->dma_vq,
 				src[i].addr, dst[i].addr, src[i].length, flags);
@@ -3981,7 +3981,7 @@ dq_seg:
 		pkts_dq++;
 		seg_job = &txq->dma_seg_jobs[idx];
 		if (unlikely(!seg_job->seg_nb ||
-			seg_job->seg_nb >= RTE_DPAA2_QDMA_JOB_SUBMIT_MAX)) {
+			seg_job->seg_nb >= RTE_DPAAX_QDMA_JOB_SUBMIT_MAX)) {
 			LSXINIC_PMD_ERR("Invalid segment number(%d)",
 				seg_job->seg_nb);
 			rte_panic("Fatal quit\n");
@@ -5951,7 +5951,7 @@ lsinic_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	txq->rdma_bd_start = LSINIC_BD_DMA_START_FLAG;
 	txq->dma_idx = rte_malloc(NULL,
 		sizeof(uint16_t) * nb_desc,
-		RTE_DPAA2_QDMA_SG_IDX_ADDR_ALIGN);
+		RTE_DPAAX_QDMA_SG_IDX_ADDR_ALIGN);
 	if (!txq->dma_idx)
 		return -ENOMEM;
 
@@ -6107,7 +6107,7 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	rxq->dma_idx = rte_malloc(NULL,
 		sizeof(uint16_t) * nb_desc,
-		RTE_DPAA2_QDMA_SG_IDX_ADDR_ALIGN);
+		RTE_DPAAX_QDMA_SG_IDX_ADDR_ALIGN);
 	if (!rxq->dma_idx)
 		return -ENOMEM;
 
