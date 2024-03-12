@@ -6,6 +6,7 @@
 #define _RTE_REMOTE_DIRECT_FLOW_H
 #include <linux/msg.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 key_t
 ftok(const char *__pathname, int __proj_id);
