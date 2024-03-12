@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2023 NXP  */
+/* Copyright 2020-2024 NXP  */
 
 #ifndef _LSXINIC_EP_VIO_RXTX_H_
 #define _LSXINIC_EP_VIO_RXTX_H_
 
 #include <rte_ethdev.h>
 #include <rte_dmadev.h>
-#include <rte_pmd_dpaa2_qdma.h>
+#include <rte_pmd_dpaax_qdma.h>
 
 #include "virtio.h"
 #include "virtio_ring.h"

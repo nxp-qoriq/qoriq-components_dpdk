@@ -54,7 +54,7 @@
 #include "lsxinic_ep_vio_net.h"
 #include "lsxinic_ep_vio_rxtx.h"
 #include "lsxinic_ep_dma.h"
-#include <rte_pmd_dpaa2_qdma.h>
+#include <rte_pmd_dpaax_qdma.h>
 
 #define DEFAULT_BURST_THRESH LSINIC_QDMA_EQ_DATA_MAX_NB
 
@@ -510,7 +510,7 @@ lsxvio_dev_tx_queue_setup(struct rte_eth_dev *dev,
 
 	txq->dma_idx = rte_malloc(NULL,
 		sizeof(uint16_t) * nb_desc,
-		RTE_DPAA2_QDMA_SG_IDX_ADDR_ALIGN);
+		RTE_DPAAX_QDMA_SG_IDX_ADDR_ALIGN);
 	if (!txq->dma_idx)
 		return -ENOMEM;
 
@@ -595,7 +595,7 @@ lsxvio_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	rxq->dma_idx = rte_malloc(NULL,
 		sizeof(uint16_t) * nb_desc,
-		RTE_DPAA2_QDMA_SG_IDX_ADDR_ALIGN);
+		RTE_DPAAX_QDMA_SG_IDX_ADDR_ALIGN);
 	if (!rxq->dma_idx)
 		return -ENOMEM;
 
@@ -886,7 +886,7 @@ lsxvio_qdma_append(struct lsxvio_queue *vq,
 			dst_sg[i].addr = dma_jobs[i]->dst;
 			dst_sg[i].length = dma_jobs[i]->len;
 		}
-		flags = RTE_DPAA2_QDMA_SG_SUBMIT(vq->dma_idx,
+		flags = RTE_DPAAX_QDMA_SG_SUBMIT(vq->dma_idx,
 					RTE_DMA_OP_FLAG_SUBMIT);
 		ret = rte_dma_copy_sg(vq->dma_id,
 			vq->dma_vq,
@@ -895,7 +895,7 @@ lsxvio_qdma_append(struct lsxvio_queue *vq,
 			flags);
 	} else {
 		for (i = 0; i < (append_len + dma_bd_nb); i++) {
-			flags = RTE_DPAA2_QDMA_COPY_SUBMIT(dma_jobs[i]->idx, 0);
+			flags = RTE_DPAAX_QDMA_COPY_SUBMIT(dma_jobs[i]->idx, 0);
 			ret = rte_dma_copy(vq->dma_id, vq->dma_vq,
 				dma_jobs[i]->src, dma_jobs[i]->dst,
 				dma_jobs[i]->len, flags);
@@ -936,7 +936,7 @@ lsxvio_qdma_multiple_enqueue(struct lsxvio_queue *queue,
 			dst_sg[i].addr = jobs[i]->dst;
 			dst_sg[i].length = jobs[i]->len;
 		}
-		flags = RTE_DPAA2_QDMA_SG_SUBMIT(queue->dma_idx,
+		flags = RTE_DPAAX_QDMA_SG_SUBMIT(queue->dma_idx,
 					RTE_DMA_OP_FLAG_SUBMIT);
 		ret = rte_dma_copy_sg(queue->dma_id,
 			queue->dma_vq,
@@ -944,7 +944,7 @@ lsxvio_qdma_multiple_enqueue(struct lsxvio_queue *queue,
 			flags);
 	} else {
 		for (i = 0; i < nb_jobs; i++) {
-			flags = RTE_DPAA2_QDMA_COPY_SUBMIT(jobs[i]->idx, 0);
+			flags = RTE_DPAAX_QDMA_COPY_SUBMIT(jobs[i]->idx, 0);
 			ret = rte_dma_copy(queue->dma_id,
 				queue->dma_vq,
 				jobs[i]->src, jobs[i]->dst,

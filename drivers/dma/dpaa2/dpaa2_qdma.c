@@ -10,7 +10,7 @@
 
 #include <mc/fsl_dpdmai.h>
 
-#include "rte_pmd_dpaa2_qdma.h"
+#include <rte_pmd_dpaax_qdma.h>
 #include "dpaa2_qdma.h"
 #include "dpaa2_qdma_logs.h"
 
@@ -245,7 +245,7 @@ sg_entry_pre_populate(struct qdma_cntx_sg *sg_cntx)
 	struct qdma_sg_entry *src_sge = sg_cntx->sg_src_entry;
 	struct qdma_sg_entry *dst_sge = sg_cntx->sg_dst_entry;
 
-	for (i = 0; i < RTE_DPAA2_QDMA_JOB_SUBMIT_MAX; i++) {
+	for (i = 0; i < RTE_DPAAX_QDMA_JOB_SUBMIT_MAX; i++) {
 		/* source SG */
 		src_sge[i].ctrl.sl = QDMA_SG_SL_LONG;
 		src_sge[i].ctrl.fmt = QDMA_SG_FMT_SDB;
@@ -274,7 +274,7 @@ fle_sdd_sg_pre_populate(struct qdma_cntx_sg *sg_cntx,
 
 	memset(sg_cntx, 0, sizeof(struct qdma_cntx_sg));
 
-	iova_size = RTE_DPAA2_QDMA_JOB_SUBMIT_MAX *
+	iova_size = RTE_DPAAX_QDMA_JOB_SUBMIT_MAX *
 		sizeof(struct qdma_sg_entry);
 
 	src_sge_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(src_sge, iova_size);
@@ -577,7 +577,7 @@ dpaa2_qdma_long_fmt_dump(const struct qbman_fle *fle)
 		DPAA2_QDMA_INFO("long format/SG format, job number:%d",
 			cntx_sg->job_nb);
 		if (!cntx_sg->job_nb ||
-			cntx_sg->job_nb > RTE_DPAA2_QDMA_JOB_SUBMIT_MAX) {
+			cntx_sg->job_nb > RTE_DPAAX_QDMA_JOB_SUBMIT_MAX) {
 			DPAA2_QDMA_ERR("Invalid SG job number:%d",
 				cntx_sg->job_nb);
 			return;
@@ -627,9 +627,9 @@ dpaa2_qdma_copy_sg(void *dev_private,
 		return -EINVAL;
 	}
 
-	if (unlikely(nb_src > RTE_DPAA2_QDMA_JOB_SUBMIT_MAX)) {
+	if (unlikely(nb_src > RTE_DPAAX_QDMA_JOB_SUBMIT_MAX)) {
 		DPAA2_QDMA_ERR("SG entry number(%d) > MAX(%d)",
-			nb_src, RTE_DPAA2_QDMA_JOB_SUBMIT_MAX);
+			nb_src, RTE_DPAAX_QDMA_JOB_SUBMIT_MAX);
 		return -EINVAL;
 	}
 
@@ -1090,7 +1090,7 @@ dpaa2_qdma_dequeue(void *dev_private,
 		}
 		fd = qbman_result_DQ_fd(dq_storage);
 		ret = dpaa2_qdma_dq_fd(fd, qdma_vq, &free_space, &fle_elem_nb);
-		if (ret || free_space < RTE_DPAA2_QDMA_JOB_SUBMIT_MAX)
+		if (ret || free_space < RTE_DPAAX_QDMA_JOB_SUBMIT_MAX)
 			pending = 0;
 
 		dq_storage++;
@@ -1143,11 +1143,11 @@ dpaa2_qdma_info_get(const struct rte_dma_dev *dev,
 		RTE_DMA_CAPA_SILENT |
 		RTE_DMA_CAPA_OPS_COPY |
 		RTE_DMA_CAPA_OPS_COPY_SG;
-	dev_info->dev_capa |= RTE_DMA_CAPA_DPAA2_QDMA_FLAGS_INDEX;
+	dev_info->dev_capa |= RTE_DMA_CAPA_DPAAX_QDMA_FLAGS_INDEX;
 	dev_info->max_vchans = dpdmai_dev->num_queues;
 	dev_info->max_desc = DPAA2_QDMA_MAX_DESC;
 	dev_info->min_desc = DPAA2_QDMA_MIN_DESC;
-	dev_info->max_sges = RTE_DPAA2_QDMA_JOB_SUBMIT_MAX;
+	dev_info->max_sges = RTE_DPAAX_QDMA_JOB_SUBMIT_MAX;
 	dev_info->dev_name = dev->device->name;
 	if (dpdmai_dev->qdma_dev)
 		dev_info->nb_vchans = dpdmai_dev->qdma_dev->num_vqs;

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2020-2023 NXP
+# Copyright 2020-2024 NXP
 
 # meson file, for building this example as part of a main DPDK build.
 #
@@ -14,7 +14,7 @@ sources = files(
 
 cflags += ['-DALLOW_INTERNAL_API']
 
-includes += include_directories('../../drivers/dma/dpaa2/')
+includes += include_directories('../../drivers/common/dpaax/')
 includes += include_directories('../../drivers/net/lsxinic/')
 includes += include_directories('../../drivers/bus/fslmc/')
 includes += include_directories('../../drivers/bus/pci/')

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2016 Intel Corporation. All rights reserved.
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #include <stdio.h>
@@ -39,7 +39,7 @@
 #include <rte_ethdev.h>
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
-#include <rte_pmd_dpaa2_qdma.h>
+#include <rte_pmd_dpaax_qdma.h>
 #include <rte_dmadev.h>
 
 #define RTE_LOGTYPE_l2fwd_qdma RTE_LOGTYPE_USER1
@@ -278,10 +278,10 @@ l2fwd_qdma_copy(struct rte_mbuf **m, unsigned int portid,
 		qdma_job[i]->out_mbuf = m_new[i];
 		flags = qdma_job[i]->flags;
 		if (i == (nb_jobs - 1) && s_flags_cntx)
-			flags |= RTE_DPAA2_QDMA_COPY_SUBMIT(qdma_job[i]->idx,
+			flags |= RTE_DPAAX_QDMA_COPY_SUBMIT(qdma_job[i]->idx,
 				RTE_DMA_OP_FLAG_SUBMIT);
 		else if (s_flags_cntx)
-			flags |= RTE_DPAA2_QDMA_COPY_SUBMIT(qdma_job[i]->idx,
+			flags |= RTE_DPAAX_QDMA_COPY_SUBMIT(qdma_job[i]->idx,
 				0);
 		else if (i == (nb_jobs - 1))
 			flags |= RTE_DMA_OP_FLAG_SUBMIT;
@@ -305,7 +305,7 @@ l2fwd_qdma_copy(struct rte_mbuf **m, unsigned int portid,
 
 	if (qdma_sg) {
 		if (s_flags_cntx)
-			flags = RTE_DPAA2_QDMA_SG_SUBMIT(g_l2fwd_dma_idx[vq_id],
+			flags = RTE_DPAAX_QDMA_SG_SUBMIT(g_l2fwd_dma_idx[vq_id],
 				RTE_DMA_OP_FLAG_SUBMIT);
 		else
 			flags = RTE_DMA_OP_FLAG_SUBMIT;
@@ -722,7 +722,7 @@ init_dma:
 			qdma_dev_id, ret);
 		return ret;
 	}
-	if (dma_info.dev_capa & RTE_DMA_CAPA_DPAA2_QDMA_FLAGS_INDEX)
+	if (dma_info.dev_capa & RTE_DMA_CAPA_DPAAX_QDMA_FLAGS_INDEX)
 		s_flags_cntx = 1;
 	dma_config.nb_vchans = dma_info.max_vchans;
 	dma_config.enable_silent = 0;
@@ -772,7 +772,7 @@ l2fwd_qdma_job_ring_init(uint32_t lcore_id)
 	if (s_flags_cntx) {
 		g_l2fwd_dma_idx[lcore_id] = rte_zmalloc(NULL,
 			MAX_JOBS_PER_RING * sizeof(uint16_t),
-			RTE_DPAA2_QDMA_SG_IDX_ADDR_ALIGN);
+			RTE_DPAAX_QDMA_SG_IDX_ADDR_ALIGN);
 		if (!g_l2fwd_dma_idx[lcore_id]) {
 			RTE_LOG(ERR, l2fwd_qdma,
 				"dma index created failed on core%d\n",
