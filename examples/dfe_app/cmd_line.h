@@ -39,7 +39,8 @@
 	"\tconfig qec <tx/rx> f_delay <value>\n" \
 	"\tconfig qec <tx/rx> iq_taps [ 0 f2 h2(4) h1(4) h2(3) h1(3) h2(2) h1(2) h2(1) h1(1) h2(0) h1(0)]\n" \
 	"\tvspa debug\n" \
-	"\tvspa benchmark size <size_bytes> mode <read/write> dma <num of DMAs> iter <number of iterations>  \n"
+	"\tvspa benchmark size <size_bytes> mode <read/write> dma <num of DMAs> iter <number of iterations>\n" \
+	"\tvspa fr1fr2_test_tool host-handshake-bypass-flag <0/1>\n"
 
 /* add your callbacks here */
 extern void cmd_quit_parsed(void *parsed_result, struct cmdline *cl, void *data);
@@ -59,11 +60,12 @@ extern void cmd_axiq_lb_enable_parsed(void *parsed_result, struct cmdline *cl, v
 extern void cmd_axiq_lb_disable_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_vspa_debug_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_vspa_benchmark_parsed(void *parsed_result, struct cmdline *cl, void *data);
-extern void cmd_wait_response_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_vspa_fr1fr2_tool_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_qec_pt_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_qec_dco_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_qec_fdelay_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_qec_iqtaps_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_wait_response_parsed(void *parsed_result, struct cmdline *cl, void *data);
 
 struct cmd_wait_response_result {
 	cmdline_fixed_string_t wait;
@@ -540,6 +542,35 @@ static cmdline_parse_inst_t cmd_vspa_benchmark = {
 	}
 };
 
+struct cmd_vspa_fr1fr2_tool_result {
+	cmdline_fixed_string_t vspa;
+	cmdline_fixed_string_t fr1fr2_test_tool;
+	cmdline_fixed_string_t host_bypass_flag;
+	uint16_t flag;
+};
+
+static cmdline_parse_token_string_t cmd_vspa_fr1fr2_tool_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_vspa_fr1fr2_tool_result, vspa, "vspa");
+static cmdline_parse_token_string_t cmd_vspa_fr1fr2_test_tool_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_vspa_fr1fr2_tool_result, fr1fr2_test_tool, "fr1fr2_test_tool");
+static cmdline_parse_token_string_t cmd_vspa_fr1fr2_tool_host_flag_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_vspa_fr1fr2_tool_result, host_bypass_flag, "host-handshake-bypass-flag");
+static cmdline_parse_token_num_t cmd_vspa_handshake_flag_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_vspa_fr1fr2_tool_result, flag, RTE_UINT16);
+
+static cmdline_parse_inst_t cmd_vspa_fr1fr2 = {
+	.f = cmd_vspa_fr1fr2_tool_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_vspa_fr1fr2_tool_tok,
+		(void *)&cmd_vspa_fr1fr2_test_tool_tok,
+		(void *)&cmd_vspa_fr1fr2_tool_host_flag_tok,
+		(void *)&cmd_vspa_handshake_flag_tok,
+		NULL,
+	}
+};
+
 struct cmd_config_qec_pt_result {
 	cmdline_fixed_string_t config;
 	cmdline_fixed_string_t qec;
@@ -732,6 +763,7 @@ static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_axiq_lb_disable,
 	&cmd_vspa_debug,
 	&cmd_vspa_benchmark,
+	&cmd_vspa_fr1fr2,
 	&cmd_config_qec_pt,
 	&cmd_config_qec_dco,
 	&cmd_config_qec_fdelay,
