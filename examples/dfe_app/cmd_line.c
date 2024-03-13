@@ -198,6 +198,18 @@ cmd_vspa_benchmark_parsed(void *parsed_result,
 	}
 }
 
+
+void
+cmd_vspa_fr1fr2_tool_parsed(__attribute__((unused)) void *parsed_result,
+			    __attribute__((unused)) struct cmdline *cl,
+			    __attribute__((unused)) void *data)
+{
+	struct cmd_vspa_fr1fr2_tool_result *res = parsed_result;
+
+	app_print_info("cmd_vspa_fr1fr2_tool_parsed: res->flag = %d\n", res->flag);
+	cmd_do_vspa_fr1fr2_tool(res->flag);
+}
+
 void
 cmd_config_qec_pt_parsed(void *parsed_result,
 			 __attribute__((unused)) struct cmdline *cl,

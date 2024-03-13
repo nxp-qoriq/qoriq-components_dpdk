@@ -23,7 +23,7 @@
 #include "cmd_line.h"
 #include "ipc.h"
 
-#define APP_VERSION       "0.2"
+#define APP_VERSION       "0.2.1-fr1fr2_test_tool"
 
 int log_level = APP_DBG_LOG_ERROR;
 int rte_log_level = RTE_LOGTYPE_EAL;
@@ -312,6 +312,26 @@ void cmd_do_vspa_benchmark(uint32_t size_bytes, uint32_t mode, uint32_t parallel
 	/* user wants his answer */
 	wait_response = 1;
 
+	ret = send_dfe_command(msg);
+	if (ret < 0)
+		app_print_err("Failed to send IPC message\n");
+}
+
+void cmd_do_vspa_fr1fr2_tool(uint16_t param)
+{
+	struct dfe_msg *msg;
+	int ret;
+
+	app_print_info("Send VSPA fr1fr2_test_tool host handshake bypass flag command\n");
+
+	msg = (struct dfe_msg *)get_tx_buf(BBDEV_IPC_H2M_QUEUE);
+	if (!msg)
+		return;
+
+	msg->type = DFE_VSPA_PROD_HOST_BYPASS;
+	msg->payload[0] = param;
+
+	wait_response = 1;
 	ret = send_dfe_command(msg);
 	if (ret < 0)
 		app_print_err("Failed to send IPC message\n");
