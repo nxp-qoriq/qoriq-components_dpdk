@@ -283,7 +283,7 @@ Note:
 	and the container created be dprc.x
   $ echo dprc.x > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/unbind
   $ restool dprc disconnect dprc.x --endpoint=dpni.x
-  $ restool dpdmux create --default-if=1 --num-ifs=2 --method DPDMUX_METHOD_CUSTOM --manip=DPDMUX_MANIP_NONE --option=DPDMUX_OPT_CLS_MASK_SUPPORT --container=dprc.1
+  $ restool dpdmux create --default-if=1 --num-ifs=2 --method DPDMUX_METHOD_CUSTOM --manip=DPDMUX_MANIP_NONE --option=DPDMUX_OPT_CLS_MASK_SUPPORT,DPDMUX_OPT_AUTO_MAX_FRAME_LEN --container=dprc.1
   $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.0 --endpoint2=dpmac.x
   $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.1 --endpoint2=dpni.z
   $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.2 --endpoint2=dpni.x
