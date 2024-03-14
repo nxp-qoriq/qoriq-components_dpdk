@@ -232,6 +232,7 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 	int speed, duplex;
 	int ret, rx_status, socket_fd;
 	struct ifreq ifr;
+	char *sh_if_name, sh_if_name_env_str[24];
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -253,8 +254,13 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 			DPAA_PMD_ERR("Cannot open IF socket");
 			return -errno;
 		}
-
-		strcpy(ifr.ifr_name, dpaa_intf->name);
+		sprintf(sh_if_name_env_str, "DPAA_SHARED_IF_NAME_%d", dpaa_intf->ifid);
+		sh_if_name = getenv(sh_if_name_env_str);
+		if (sh_if_name == NULL){
+			strncpy(ifr.ifr_name, dpaa_intf->name, IFNAMSIZ);
+		} else {
+			strncpy(ifr.ifr_name, sh_if_name, IFNAMSIZ);
+		}
 
 		if (ioctl(socket_fd, SIOCGIFMTU, &ifr) < 0) {
 			DPAA_PMD_ERR("Cannot get interface mtu");

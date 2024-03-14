@@ -121,6 +121,11 @@ Steps to run dpdk-pkt_split_app on LS1046ARDB when split port is eth port
    Note: Please refer to "Steps to increase MTU of kernel interface in VSP mode"
          section to increase the MTU of kernel interface.
 
+   Note : When using shared interface, if the interface name on linux (ifconfig)
+	is not same as being used by dpdk i.e. fmX-macY style. Use this to export
+	the kernel shared interface name to DPDK.
+	e.g. export DPAA_SHARED_IF_NAME_0="eth1" 
+	(Here the 0 is the DPDK ethernet interface id for this port).
 -------------------------------------------------------------------
 Steps to run dpdk-pkt_split_app on LS1046ARDB when split port is OL port
 (With ASK's FMAN micro code)
