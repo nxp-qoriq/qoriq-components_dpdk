@@ -4,7 +4,7 @@
 
 # tunable parameters
 
-logoutput="nxp_debug_"
+logoutput="nxp_debug"
 logoutput="${logoutput}_"`date +%d%m%Y_%H%M%S`".txt"
 silent=0
 # Some colors
@@ -51,7 +51,7 @@ function system() {
 	mycmd "cat /sys/bus/soc/devices/soc0/*"
 
 	print "*************** PCI details *******"
-	mycmd "lspci -v"
+	mycmd "lspci -vvv"
 	print "*************** Block Details *******"
 	mycmd "df -k"
 	mycmd "lsblk"
