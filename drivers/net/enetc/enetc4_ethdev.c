@@ -803,6 +803,23 @@ enetc4_tx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx)
 	return 0;
 }
 
+const uint32_t *
+enetc4_supported_ptypes_get(struct rte_eth_dev *dev __rte_unused)
+{
+	static const uint32_t ptypes[] = {
+		RTE_PTYPE_L2_ETHER,
+		RTE_PTYPE_L3_IPV4,
+		RTE_PTYPE_L3_IPV6,
+		RTE_PTYPE_L4_TCP,
+		RTE_PTYPE_L4_UDP,
+		RTE_PTYPE_L4_SCTP,
+		RTE_PTYPE_L4_ICMP,
+		RTE_PTYPE_TUNNEL_ESP,
+		RTE_PTYPE_UNKNOWN
+	};
+	return ptypes;
+}
+
 /*
  * The set of PCI devices this driver supports
  */
@@ -831,7 +848,7 @@ static const struct eth_dev_ops enetc4_ops = {
 	.tx_queue_start       = enetc4_tx_queue_start,
 	.tx_queue_stop        = enetc4_tx_queue_stop,
 	.tx_queue_release     = enetc4_tx_queue_release,
-	.dev_supported_ptypes_get = enetc_supported_ptypes_get,
+	.dev_supported_ptypes_get = enetc4_supported_ptypes_get,
 };
 
 /*

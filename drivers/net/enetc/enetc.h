@@ -162,6 +162,7 @@ int enetc4_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 int enetc4_tx_queue_start(struct rte_eth_dev *dev, uint16_t qidx);
 int enetc4_tx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx);
 void enetc4_tx_queue_release(struct rte_eth_dev *dev, uint16_t qid);
+const uint32_t *enetc4_supported_ptypes_get(struct rte_eth_dev *dev __rte_unused);
 
 /*
  * enetc4_vf function prototype
@@ -181,8 +182,6 @@ uint16_t enetc_recv_pkts_nc(void *rxq, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts);
 
 int enetc_refill_rx_ring(struct enetc_bdr *rx_ring, const int buff_cnt);
-const uint32_t *enetc_supported_ptypes_get(struct rte_eth_dev *dev
-					    __rte_unused);
 void enetc4_dev_hw_init(struct rte_eth_dev *eth_dev);
 void print_ethaddr(const char *name, const struct rte_ether_addr *eth_addr);
 

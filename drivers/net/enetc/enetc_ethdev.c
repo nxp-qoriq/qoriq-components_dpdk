@@ -84,7 +84,7 @@ enetc_dev_stop(struct rte_eth_dev *dev)
 	return 0;
 }
 
-const uint32_t *
+static const uint32_t *
 enetc_supported_ptypes_get(struct rte_eth_dev *dev __rte_unused)
 {
 	static const uint32_t ptypes[] = {

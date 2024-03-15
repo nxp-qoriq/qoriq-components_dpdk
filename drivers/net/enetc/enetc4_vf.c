@@ -268,7 +268,6 @@ enetc4_vf_promisc_disable(struct rte_eth_dev *dev)
 	return 0;
 }
 
-
 /*
  * The set of PCI devices this driver supports
  */
@@ -299,6 +298,7 @@ static const struct eth_dev_ops enetc4_vf_ops = {
 .tx_queue_start       = enetc4_tx_queue_start,
 .tx_queue_stop        = enetc4_tx_queue_stop,
 .tx_queue_release     = enetc4_tx_queue_release,
+.dev_supported_ptypes_get = enetc4_supported_ptypes_get,
 };
 
 static int
