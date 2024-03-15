@@ -8,10 +8,11 @@ endif
 
 deps += ['common_dpaax']
 sources = files(
-	'enetc4_ethdev.c',
-	'enetc4_vf.c',
+        'enetc4_ethdev.c',
+        'enetc4_vf.c',
         'enetc_ethdev.c',
         'enetc_rxtx.c',
+        'enetc_cbdr.c',
 )
 
 includes += include_directories('base')
