@@ -511,6 +511,8 @@ enetc_clean_rx_ring_nc(struct enetc_bdr *rx_ring,
 		bd_status = rte_le_to_cpu_32(rxbd_temp.r.lstatus);
 		if (!bd_status)
 			break;
+		if (rxbd_temp.r.error)
+			rx_ring->ierrors++;
 
 		rx_swbd->buffer_addr->pkt_len = rxbd_temp.r.buf_len -
 						rx_ring->crc_len;
