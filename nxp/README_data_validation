@@ -2,8 +2,8 @@
 # Copyright 2024 NXP
 
 
-Data validation Setup:
-----------------------
+1. Data validation Setup:
+=========================
 
  _______________                                    _______________
 |               |                                  |               |
@@ -74,3 +74,116 @@ DUT:
 	./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x3 --config="(0,0,1), (1,0,1)" --eth-dest=0,<MAC0> --eth-dest=1,<MAC3> --parse-ptype
 
   NOTE: Please refer nxp/README for DUT machine setup.
+
+
+
+2. Data validation Setup with TAP:
+==================================
+
+ _______________                                 _______________
+|               |                               |               |
+|    Machine1   |                               |     Kernel    |
+|      Eth0     |                               |      dtap0    |
+|   198.18.0.5  |                               |   198.18.1.5  |
+|      MAC0     |                               |      MAC3     |
+|_______________|                               |_______________|
+	|                                                |
+	|                                                |
+	|               _________________                |
+	|              |                 |               |
+	|              |       DUT       |               |
+	|______________|1G               |_______________|
+		       |Eth1     us_dtap0|
+		       |MAC1         MAC2|
+		       |_________________|
+
+
+DUT:
+----
+
+  Run DPDK l3fwd application with dest mac:
+	./dpdk-l3fwd -c 0x2 -n 1 --vdev 'net_tap0',mac=<fixed_MAC2> -- -p 0x3 --config="(0,0,1),(1,0,1)" --eth-dest=0,<MAC0> --eth-dest=1,<MAC3> --parse-ptype
+
+	NOTE: Here MAC2 = MAC3. Please refer nxp/README for DUT machine setup.
+
+Machine 1:
+----------
+  Please refer Data validation Setup: "Machine 1" section.
+
+
+Kernel dtap0:
+-------------
+  ifconfig <dtap0> 198.18.1.5
+  ifconfig <dtap0> up
+  ip route get 198.18.1.5
+  ip addr add 198.18.1.5/24 dev <dtap0>
+  arp -s 198.18.1.10 <MAC2>
+  ip route add 198.18.0.5 via 198.18.1.10 dev <dtap0>
+
+  NOTE: Before ping/scp configure DUT and Machine1 as per the steps given above.
+  Please refer section "DUT" and "Machine 1".
+
+  Ping:
+	tcpdump -nvvvXi <dtap0> -w <file_name>.pcap &
+	ping 198.18.0.5
+  Scp:
+	scp machine1@198.18.0.5:/path/to/<file_name> .
+	md5sum <file_name>
+	Note: md5sum should be same on both machines.
+
+
+
+3. Data validation Setup with VIRTIO :
+======================================
+
+ _______________         ________________         _______________
+|               |       |                |       |               |
+|    Machine1   |       |                |       |     Kernel    |
+|      Eth0     |_______|       DUT      |_______|      tap0     |
+|    1.1.1.2    |       |Eth1     us_tap0|       |    1.1.1.4    |
+|      MAC0     |       |                |       |      MAC1     |
+|_______________|       |________________|       |_______________|
+
+
+DUT:
+----
+  Run DPDK testpmd application:
+  ./dpdk-testpmd -l 2-3 -n 1 --vdev=virtio_user0,path=/dev/vhost-net,queues=1 -- -i --txq=1 --rxq=1
+  testpmd> port start all
+  testpmd> start
+
+  NOTE: Please refer nxp/README for DUT machine setup.
+
+Machine 1:
+----------
+  ifconfig <Eth0> 1.1.1.2
+  ifconfig <Eth0> up
+  arp -s 1.1.1.4 <MAC1> -i <Eth0>
+
+  NOTE: Before ping/scp configure DUT and tap0 as per the steps given in this
+  readme. Please refer section "DUT" and "Kernel tap0".
+  Ping:
+	tcpdump -nvvvXi <Eth0> -w <file_name>.pcap &
+	ping 1.1.1.4
+  Scp:
+	scp kernel_tap0@1.1.1.4:/path/to/<file_name> .
+	md5sum <file_name>
+	Note: md5sum should be same on both machines.
+
+
+Kernel tap0:
+-------------
+  ifconfig <tap0> 1.1.1.4
+  ifconfig <tap0> up
+  arp -s 1.1.1.2 <MAC0> -i <tap0>
+
+  NOTE: Before ping/scp configure DUT and Machine1 as per the steps given above.
+  Please refer section "DUT" and "Machine 1".
+
+  Ping:
+	tcpdump -nvvvXi <dtap0> -w <file_name>.pcap &
+	ping 1.1.1.2
+  Scp:
+	scp machine1@1.1.1.2:/path/to/<file_name> .
+	md5sum <file_name>
+	Note: md5sum should be same on both machines.
