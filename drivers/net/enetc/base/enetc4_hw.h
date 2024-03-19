@@ -123,6 +123,13 @@ struct enetc_msg_swbd {
 #define ENETC4_DEF_VSI_WAIT_TIMEOUT_UPDATE     100
 #define ENETC4_DEF_VSI_WAIT_DELAY_UPDATE       2000 /* us */
 
+/* Station interface statistics */
+#define ENETC4_SIROCT0           0x300
+#define ENETC4_SIRFRM0           0x308
+#define ENETC4_SITOCT0           0x320
+#define ENETC4_SITFRM0           0x328
+#define ENETC4_SITDFCR           0x340
+
 /* VSI Registers */
 #define ENETC4_VSIMSGSR  0x204   /* RO */
 #define ENETC4_VSIMSGSR_MB       BIT(0)

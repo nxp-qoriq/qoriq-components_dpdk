@@ -24,9 +24,24 @@ enetc4_vf_dev_start(struct rte_eth_dev *dev __rte_unused)
 }
 
 static int
-enetc4_vf_stats_get(struct rte_eth_dev *dev __rte_unused,
-			struct rte_eth_stats *stats __rte_unused)
+enetc4_vf_stats_get(struct rte_eth_dev *dev,
+		    struct rte_eth_stats *stats)
 {
+	struct enetc_eth_hw *hw =
+		ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct enetc_hw *enetc_hw = &hw->hw;
+	struct enetc_bdr *rx_ring;
+	uint8_t i;
+
+	stats->ipackets = enetc4_rd(enetc_hw, ENETC4_SIRFRM0);
+	stats->opackets = enetc4_rd(enetc_hw, ENETC4_SITFRM0);
+	stats->ibytes = enetc4_rd(enetc_hw, ENETC4_SIROCT0);
+	stats->obytes = enetc4_rd(enetc_hw, ENETC4_SITOCT0);
+	stats->oerrors = enetc4_rd(enetc_hw, ENETC4_SITDFCR);
+	for (i = 0; i < dev->data->nb_rx_queues; i++) {
+		rx_ring = dev->data->rx_queues[i];
+		stats->ierrors += rx_ring->ierrors;
+	}
 	return 0;
 }
 
