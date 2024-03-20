@@ -139,4 +139,14 @@ uint16_t
 rte_pmd_dpaa2_clean_tx_conf(uint32_t eth_id,
 	uint16_t txq_id);
 
+#if defined(RTE_LIBRTE_IEEE1588)
+__rte_experimental
+int
+rte_pmd_dpaa2_set_one_step_ts(uint16_t port_id, uint16_t offset, uint8_t ch_update);
+
+__rte_experimental
+int
+rte_pmd_dpaa2_get_one_step_ts(uint16_t port_id, bool mc_query);
+#endif
+
 #endif /* _RTE_PMD_DPAA2_H */
