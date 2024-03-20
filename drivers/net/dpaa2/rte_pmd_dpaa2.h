@@ -142,4 +142,14 @@ int
 rte_pmd_dpaa2_rx_get_offset(struct rte_mbuf *m,
 	uint8_t *l3_off, uint8_t *l4_off, uint8_t *l5_off);
 
+#if defined(RTE_LIBRTE_IEEE1588)
+__rte_experimental
+int
+rte_pmd_dpaa2_set_one_step_ts(uint16_t port_id, uint16_t offset, uint8_t ch_update);
+
+__rte_experimental
+int
+rte_pmd_dpaa2_get_one_step_ts(uint16_t port_id, bool mc_query);
+#endif
+
 #endif /* _RTE_PMD_DPAA2_H */

@@ -25,6 +25,9 @@ EXPERIMENTAL {
 	rte_pmd_dpaa2_get_tlu_hash;
 	# added in 22.11
 	rte_pmd_dpaa2_mux_dump_counter;
+
+	rte_pmd_dpaa2_set_one_step_ts;
+	rte_pmd_dpaa2_get_one_step_ts;
 };
 
 INTERNAL {
