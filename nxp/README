@@ -726,7 +726,7 @@ Below steps are for running DPDK applications on i.MX8MP and i.MX93 boards.
   $ source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.5
   $ echo dprc.2 > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/unbind
   $ restool dprc disconnect dprc.2 --endpoint=dpni.3
-  $ restool dpdmux create --default-if=1 --num-ifs=2 --method DPDMUX_METHOD_CUSTOM --manip=DPDMUX_MANIP_NONE --option=DPDMUX_OPT_CLS_MASK_SUPPORT --container=dprc.1
+  $ restool dpdmux create --default-if=1 --num-ifs=2 --method DPDMUX_METHOD_CUSTOM --manip=DPDMUX_MANIP_NONE --option=DPDMUX_OPT_CLS_MASK_SUPPORT,DPDMUX_OPT_AUTO_MAX_FRAME_LEN --container=dprc.1
   $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.0 --endpoint2=dpmac.5
   $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.1 --endpoint2=dpni.2
   $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.2 --endpoint2=dpni.3
@@ -899,7 +899,7 @@ with the primary process.
   $ source /usr/local/dpdk/dpaa2/dynamic_dpl.sh dpmac.5
   $ echo dprc.2 > /sys/bus/fsl-mc/drivers/vfio-fsl-mc/unbind
   $ restool dprc disconnect dprc.2 --endpoint=dpni.3
-  $ restool dpdmux create --default-if=1 --num-ifs=2 --method DPDMUX_METHOD_CUSTOM --manip=DPDMUX_MANIP_NONE --option=DPDMUX_OPT_CLS_MASK_SUPPORT --container=dprc.1
+  $ restool dpdmux create --default-if=1 --num-ifs=2 --method DPDMUX_METHOD_CUSTOM --manip=DPDMUX_MANIP_NONE --option=DPDMUX_OPT_CLS_MASK_SUPPORT,DPDMUX_OPT_AUTO_MAX_FRAME_LEN --container=dprc.1
   $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.0 --endpoint2=dpmac.5
   $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.1 --endpoint2=dpni.2
   $ restool dprc connect dprc.1 --endpoint1=dpdmux.0.2 --endpoint2=dpni.3
@@ -1298,6 +1298,11 @@ DPAA1:
 				2 - dump sec error along with useful debugging
 				    information.
 				By default, 1 is configured.
+4. DPAA_SHARED_IF_NAME_<PORTID>	When using shared interface, if the interface name on
+				linux (ifconfig) is not same as being used by dpdk
+				i.e. fmX-macY style. Use this to export the kernel
+				shared interface name to DPDK e.g. export DPAA_SHARED_IF_NAME_0="eth1"
+				(Here the 0 is the DPDK ethernet interface id for this port).
 
 DPAA2:
 ------
