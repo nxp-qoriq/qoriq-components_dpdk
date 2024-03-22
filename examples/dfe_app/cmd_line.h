@@ -26,7 +26,7 @@
 	"\thelp\n" \
 	"\tfdd start/stop\n" \
 	"\ttdd start/stop\n" \
-	"\ttdd config pattern <scs> <dl1> <g1> <ul1> <g2> <ul2> <g3>\n" \
+	"\ttdd config pattern <scs> <dl1> <g1> <ul1> <dl2> <g2> <ul2>\n" \
 	"\tconfig symbol_size <sym_size/128>\n" \
 	"\tconfig rx ant <1-4>\n" \
 	"\tconfig rx addr <rx_addr>\n" \
@@ -210,9 +210,9 @@ struct cmd_tdd_config_pattern_result {
 	uint16_t dl1;
 	uint16_t g1;
 	uint16_t ul1;
+	uint16_t dl2;
 	uint16_t g2;
 	uint16_t ul2;
-	uint16_t g3;
 };
 
 static cmdline_parse_token_string_t cmd_tdd_config_pattern_tdd_tok =
@@ -229,12 +229,12 @@ static cmdline_parse_token_num_t cmd_tdd_config_pattern_g1_tok =
 	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, g1, RTE_UINT16);
 static cmdline_parse_token_num_t cmd_tdd_config_pattern_ul1_tok =
 	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, ul1, RTE_UINT16);
+static cmdline_parse_token_num_t cmd_tdd_config_pattern_dl2_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, dl2, RTE_UINT16);
 static cmdline_parse_token_num_t cmd_tdd_config_pattern_g2_tok =
 	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, g2, RTE_UINT16);
 static cmdline_parse_token_num_t cmd_tdd_config_pattern_ul2_tok =
 	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, ul2, RTE_UINT16);
-static cmdline_parse_token_num_t cmd_tdd_config_pattern_g3_tok =
-	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, g3, RTE_UINT16);
 
 static cmdline_parse_inst_t cmd_tdd_config_pattern = {
 	.f = cmd_tdd_config_pattern_parsed,
@@ -248,9 +248,9 @@ static cmdline_parse_inst_t cmd_tdd_config_pattern = {
 		(void *)&cmd_tdd_config_pattern_dl1_tok,
 		(void *)&cmd_tdd_config_pattern_g1_tok,
 		(void *)&cmd_tdd_config_pattern_ul1_tok,
+		(void *)&cmd_tdd_config_pattern_dl2_tok,
 		(void *)&cmd_tdd_config_pattern_g2_tok,
 		(void *)&cmd_tdd_config_pattern_ul2_tok,
-		(void *)&cmd_tdd_config_pattern_g3_tok,
 		NULL,
 	}
 };
