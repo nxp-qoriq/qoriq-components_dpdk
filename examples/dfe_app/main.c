@@ -23,7 +23,7 @@
 #include "cmd_line.h"
 #include "ipc.h"
 
-#define APP_VERSION       "0.2.1-fr1fr2_test_tool"
+#define APP_VERSION       "0.2.2"
 
 int log_level = APP_DBG_LOG_ERROR;
 int rte_log_level = RTE_LOGTYPE_EAL;
