@@ -92,9 +92,9 @@ cmd_tdd_config_pattern_parsed(void *parsed_result,
 			res->dl1,
 			res->g1,
 			res->ul1,
+			res->dl2,
 			res->g2,
-			res->ul2,
-			res->g3);
+			res->ul2);
 
 }
 
