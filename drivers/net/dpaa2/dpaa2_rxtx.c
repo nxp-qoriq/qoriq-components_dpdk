@@ -33,6 +33,26 @@ dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
 
 static void enable_tx_tstamp(struct qbman_fd *fd) __rte_unused;
 
+static inline void
+dpaa2_parse_result_offset(struct rte_mbuf *mbuf,
+	const struct dpaa2_annot_hdr *annotation)
+{
+	uint64_t word6;
+	struct dpaa2_psr_result_word6 *decoded;
+	struct dpaa2_dyn_rx_protocol_pos *pos;
+
+	if (dpaa2_rx_protocol_pos_mbuf_offset < 0)
+		return;
+
+	pos = (void *)((uint8_t *)mbuf + dpaa2_rx_protocol_pos_mbuf_offset);
+
+	word6 = rte_cpu_to_be_64(annotation->word6);
+	decoded = (void *)&word6;
+	pos->l3_offset = decoded->l3_off;
+	pos->l4_offset = decoded->l4_off;
+	pos->l5_offset = decoded->l5_off;
+}
+
 static inline rte_mbuf_timestamp_t *
 dpaa2_timestamp_dynfield(struct rte_mbuf *mbuf)
 {
@@ -295,6 +315,30 @@ dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 	return dpaa2_dev_rx_parse_slow(mbuf, annotation);
 }
 
+int
+rte_pmd_dpaa2_rx_get_offset(struct rte_mbuf *m,
+	uint8_t *l3_off, uint8_t *l4_off, uint8_t *l5_off)
+{
+	struct dpaa2_dyn_rx_protocol_pos *pos;
+
+	if (unlikely(dpaa2_rx_protocol_pos_mbuf_offset < 0)) {
+		DPAA2_PMD_ERR("%s: Not register for RX protocol pos.\n",
+			__func__);
+
+		return -EINVAL;
+	}
+	pos = (void *)((uint8_t *)m + dpaa2_rx_protocol_pos_mbuf_offset);
+
+	if (l3_off)
+		*l3_off = pos->l3_offset;
+	if (l4_off)
+		*l4_off = pos->l4_offset;
+	if (l5_off)
+		*l5_off = pos->l5_offset;
+
+	return 0;
+}
+
 static inline struct rte_mbuf *__rte_hot
 eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 		  int port_id)
@@ -307,6 +351,8 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 
 	fd_addr = (size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 	hw_annot_addr = (void *)(fd_addr + DPAA2_FD_PTA_SIZE);
+	if (dpaa2_rx_protocol_pos_mbuf_offset >= 0)
+		rte_prefetch0(hw_annot_addr);
 
 	/* Get Scatter gather table address */
 	sgt = (struct qbman_sge *)(fd_addr + DPAA2_GET_FD_OFFSET(fd));
@@ -331,6 +377,8 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 	else
 		first_seg->packet_type =
 			dpaa2_dev_rx_parse(first_seg, hw_annot_addr);
+
+	dpaa2_parse_result_offset(first_seg, hw_annot_addr);
 
 	rte_mbuf_refcnt_set(first_seg, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
@@ -378,6 +426,9 @@ eth_fd_to_mbuf(const struct qbman_fd *fd,
 	struct rte_mbuf *mbuf = DPAA2_INLINE_MBUF_FROM_BUF(v_addr,
 		     rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
 
+	if (dpaa2_rx_protocol_pos_mbuf_offset >= 0)
+		rte_prefetch0(hw_annot_addr);
+
 	/* need to repopulated some of the fields,
 	 * as they may have changed in last transmission
 	 */
@@ -404,6 +455,8 @@ eth_fd_to_mbuf(const struct qbman_fd *fd,
 		dpaa2_dev_rx_parse_new(mbuf, fd, hw_annot_addr);
 	else
 		mbuf->packet_type = dpaa2_dev_rx_parse(mbuf, hw_annot_addr);
+
+	dpaa2_parse_result_offset(mbuf, hw_annot_addr);
 
 	DPAA2_PMD_DP_DEBUG("to mbuf - mbuf =%p, mbuf->buf_addr =%p, off = %d,"
 		"fd_off=%d fd =%" PRIx64 ", meta = %d  bpid =%d, len=%d\n",

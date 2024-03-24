@@ -182,6 +182,19 @@ extern bool dpaa2_print_parser_result;
 
 extern int dpaa2_tx_cnf_fd_overflow;
 
+extern int dpaa2_rx_protocol_pos_mbuf_offset;
+
+struct dpaa2_dyn_rx_protocol_pos {
+	uint8_t l3_offset;
+	uint8_t l4_offset;
+	uint8_t l5_offset;
+	uint8_t rsv;
+};
+
+#define L3_OFFSET_OF_MBUF_DYN 0
+#define L4_OFFSET_OF_MBUF_DYN 1
+#define L5_OFFSET_OF_MBUF_DYN 2
+
 /* 00 00 00 - last 6 bit represent data, annotation,
  * context stashing setting 01 01 00 (0x14)
  * (in following order ->DS AS CS)
