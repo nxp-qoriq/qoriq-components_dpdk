@@ -553,6 +553,17 @@ rte_pmd_dpaa2_mux_flow_create(uint32_t dpdmux_id,
 			if (ret)
 				goto creation_error;
 
+			if (spec && mask && mask->hdr.src_port) {
+				ret = dpaa2_mux_add_hdr_extract(key_extract,
+					NET_PROT_UDP, NH_FLD_UDP_PORT_SRC,
+					sizeof(rte_be16_t),
+					&spec->hdr.src_port,
+					&mask->hdr.src_port,
+					flow->key_addr, flow->mask_addr,
+					&extract_update);
+				if (ret)
+					goto creation_error;
+			}
 			if (spec && mask && mask->hdr.dst_port) {
 				ret = dpaa2_mux_add_hdr_extract(key_extract,
 					NET_PROT_UDP, NH_FLD_UDP_PORT_DST,
