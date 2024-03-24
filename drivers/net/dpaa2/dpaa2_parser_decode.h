@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2022-2023 NXP
+ *   Copyright 2022-2024 NXP
  *
  */
 
@@ -445,12 +445,18 @@ struct dpaa2_sp_rocev2 {
 	uint8_t dest_qp[ROCEV2_DEST_QP_SIZE];
 } __attribute__ ((__packed__));
 
-struct dpaa2_psr_result_parse {
+struct dpaa2_psr_result_word3 {
 	rte_be16_t nxthdr;
 	union dpaa2_sp_fafe_parse fafe;
 	uint8_t rsv;
 	struct dpaa2_faf_l_parse_be faf_l_be;
+};
+
+struct dpaa2_psr_result_word4 {
 	struct dpaa2_faf_h_parse_be faf_h_be;
+};
+
+struct dpaa2_psr_result_word5 {
 	union {
 		struct {
 			uint8_t shim_off1;
@@ -470,6 +476,9 @@ struct dpaa2_psr_result_parse {
 		uint8_t vxlan_in_daddr1;
 	};
 	uint8_t last_etype_off;
+};
+
+struct dpaa2_psr_result_word6 {
 	union {
 		uint8_t pppoe_off;
 		uint8_t vxlan_in_daddr2;
@@ -493,6 +502,9 @@ struct dpaa2_psr_result_parse {
 	};
 	uint8_t l4_off;
 	uint8_t l5_off;
+};
+
+struct dpaa2_psr_result_word7 {
 	union {
 		uint8_t route_hdr1_off;
 		uint8_t vxlan_in_saddr1;
@@ -508,6 +520,9 @@ struct dpaa2_psr_result_parse {
 	};
 	rte_be16_t gross_running_sum;
 	rte_be16_t running_sum;
+};
+
+struct dpaa2_psr_result_word8 {
 	uint8_t psr_err;
 	union {
 		uint8_t nxthdr_frag_off;
@@ -526,12 +541,21 @@ struct dpaa2_psr_result_parse {
 		union dpaa2_sp_ecpri_msg ecpri_msg;
 		struct dpaa2_sp_rocev2 rocev2;
 	} __attribute__((__packed__));
+};
+
+struct dpaa2_psr_result_parse {
+	struct dpaa2_psr_result_word3 word3;
+	struct dpaa2_psr_result_word4 word4;
+	struct dpaa2_psr_result_word5 word5;
+	struct dpaa2_psr_result_word6 word6;
+	struct dpaa2_psr_result_word7 word7;
+	struct dpaa2_psr_result_word8 word8;
 } __attribute__((__packed__));
 
 #define DPAA2_PSR_RESULT_SIZE sizeof(struct dpaa2_psr_result_parse)
 
 #define DPAA2_FAFE_PSR_RESULT_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, fafe)
+	offsetof(struct dpaa2_psr_result_parse, word3.fafe)
 
 union dpaa2_sp_fafe_parse_8b {
 	uint8_t fafe_8b;
@@ -550,47 +574,47 @@ union dpaa2_faf_h_parse_64b {
 
 /* Set by SP for vxlan distribution start*/
 #define DPAA2_VXLAN_IN_TCI_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_vlan_tci)
+	offsetof(struct dpaa2_psr_result_parse, word5.vxlan_vlan_tci)
 #define DPAA2_VXLAN_IN_DADDR0_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_in_daddr0)
+	offsetof(struct dpaa2_psr_result_parse, word5.vxlan_in_daddr0)
 #define DPAA2_VXLAN_IN_DADDR1_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_in_daddr1)
+	offsetof(struct dpaa2_psr_result_parse, word5.vxlan_in_daddr1)
 #define DPAA2_VXLAN_IN_DADDR2_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_in_daddr2)
+	offsetof(struct dpaa2_psr_result_parse, word6.vxlan_in_daddr2)
 #define DPAA2_VXLAN_IN_DADDR3_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_in_daddr3)
+	offsetof(struct dpaa2_psr_result_parse, word6.vxlan_in_daddr3)
 #define DPAA2_VXLAN_IN_DADDR4_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_in_daddr4)
+	offsetof(struct dpaa2_psr_result_parse, word6.vxlan_in_daddr4)
 #define DPAA2_VXLAN_IN_DADDR5_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_in_daddr5)
+	offsetof(struct dpaa2_psr_result_parse, word6.vxlan_in_daddr5)
 
 #define DPAA2_VXLAN_IN_SADDR0_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_in_saddr0)
+	offsetof(struct dpaa2_psr_result_parse, word6.vxlan_in_saddr0)
 #define DPAA2_VXLAN_IN_SADDR1_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_in_saddr1)
+	offsetof(struct dpaa2_psr_result_parse, word7.vxlan_in_saddr1)
 #define DPAA2_VXLAN_IN_SADDR2_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_in_saddr2)
+	offsetof(struct dpaa2_psr_result_parse, word7.vxlan_in_saddr2)
 #define DPAA2_VXLAN_IN_SADDR3_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_in_saddr3)
+	offsetof(struct dpaa2_psr_result_parse, word7.vxlan_in_saddr3)
 #define DPAA2_VXLAN_IN_SADDR4_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_in_saddr4)
+	offsetof(struct dpaa2_psr_result_parse, word8.vxlan_in_saddr4)
 #define DPAA2_VXLAN_IN_SADDR5_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_in_saddr5)
+	offsetof(struct dpaa2_psr_result_parse, word8.vxlan_in_saddr5)
 
 #define DPAA2_VXLAN_VNI_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_vni[0])
+	offsetof(struct dpaa2_psr_result_parse, word8.vxlan_vni[0])
 #define DPAA2_VXLAN_IN_TYPE_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, vxlan_eth_type)
+	offsetof(struct dpaa2_psr_result_parse, word8.vxlan_eth_type)
 /* Set by SP for vxlan distribution end*/
 
 #define DPAA2_ECPRI_MSG_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, ecpri_msg)
+	offsetof(struct dpaa2_psr_result_parse, word8.ecpri_msg)
 
 #define DPAA2_ROCEV2_OPCODE_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, rocev2.opcode)
+	offsetof(struct dpaa2_psr_result_parse, word8.rocev2.opcode)
 
 #define DPAA2_ROCEV2_DST_QP_OFFSET \
-	offsetof(struct dpaa2_psr_result_parse, rocev2.dest_qp[0])
+	offsetof(struct dpaa2_psr_result_parse, word8.rocev2.dest_qp[0])
 
 static inline uint32_t
 dpaa2_spsr_fafe_bit_offset(union dpaa2_sp_fafe_parse fafe)
@@ -605,7 +629,7 @@ dpaa2_spsr_fafe_bit_offset(union dpaa2_sp_fafe_parse fafe)
 		fafe_tmp.fafe_8b = fafe_tmp.fafe_8b << 1;
 		offset--;
 	}
-	return offset + BIT_OFFSET(struct dpaa2_psr_result_parse, fafe);
+	return offset + BIT_OFFSET(struct dpaa2_psr_result_parse, word3.fafe);
 }
 
 static inline uint32_t
@@ -621,7 +645,8 @@ dpaa2_psr_faf_l_bit_offset(struct dpaa2_faf_l_parse faf_l)
 		faf_l_tmp.faf_l_32b = faf_l_tmp.faf_l_32b << 1;
 		offset--;
 	}
-	return offset + BIT_OFFSET(struct dpaa2_psr_result_parse, faf_l_be);
+	return offset + BIT_OFFSET(struct dpaa2_psr_result_parse,
+		word3.faf_l_be);
 }
 
 static inline uint32_t
@@ -637,7 +662,8 @@ dpaa2_psr_faf_h_bit_offset(struct dpaa2_faf_h_parse faf_h)
 		faf_h_tmp.faf_h_64b = faf_h_tmp.faf_h_64b << 1;
 		offset--;
 	}
-	return offset + BIT_OFFSET(struct dpaa2_psr_result_parse, faf_h_be);
+	return offset + BIT_OFFSET(struct dpaa2_psr_result_parse,
+		word4.faf_h_be);
 }
 
 static inline int
@@ -753,11 +779,11 @@ dpaa2_dev_rx_parse_frc(const struct qbman_fd *fd,
 		m->ol_flags |= RTE_MBUF_F_RX_VLAN;
 		if (sum->vlan > 1) {
 			psr = (const void *)&annotation->word3;
-			m->vlan_tci = psr->vlan_tci_n_off;
+			m->vlan_tci = psr->word5.vlan_tci_n_off;
 			packet_type |= RTE_PTYPE_L2_ETHER_QINQ;
 			m->ol_flags |= RTE_MBUF_F_RX_QINQ;
 		} else {
-			m->vlan_tci = psr->vlan_tci_1_off;
+			m->vlan_tci = psr->word5.vlan_tci_1_off;
 		}
 	}
 	if (sum_l->l4.l3 == DPAA2_PSR_SUMMARY_IPV4) {
@@ -1052,10 +1078,10 @@ dpaa2_print_rocev2_parse_result(const struct dpaa2_psr_result_parse *psr)
 {
 	int i;
 
-	DPAA2_PR_PRINT("ROCEv2 opcode: 0x%02x\r\n", psr->rocev2.opcode);
+	DPAA2_PR_PRINT("ROCEv2 opcode: 0x%02x\r\n", psr->word8.rocev2.opcode);
 	DPAA2_PR_PRINT("ROCEv2 qp: ");
 	for (i = 0; i < ROCEV2_DEST_QP_SIZE; i++)
-		DPAA2_PR_PRINT("0x%02x ", psr->rocev2.dest_qp[i]);
+		DPAA2_PR_PRINT("0x%02x ", psr->word8.rocev2.dest_qp[i]);
 
 	DPAA2_PR_PRINT("\r\n");
 }
@@ -1066,21 +1092,21 @@ dpaa2_print_vxlan_parse_result(const struct dpaa2_psr_result_parse *psr)
 	struct rte_ether_hdr vxlan_in_eth;
 	uint16_t vxlan_vlan_tci, i;
 
-	vxlan_in_eth.dst_addr.addr_bytes[0] = psr->vxlan_in_daddr0;
-	vxlan_in_eth.dst_addr.addr_bytes[1] = psr->vxlan_in_daddr1;
-	vxlan_in_eth.dst_addr.addr_bytes[2] = psr->vxlan_in_daddr2;
-	vxlan_in_eth.dst_addr.addr_bytes[3] = psr->vxlan_in_daddr3;
-	vxlan_in_eth.dst_addr.addr_bytes[4] = psr->vxlan_in_daddr4;
-	vxlan_in_eth.dst_addr.addr_bytes[5] = psr->vxlan_in_daddr5;
+	vxlan_in_eth.dst_addr.addr_bytes[0] = psr->word5.vxlan_in_daddr0;
+	vxlan_in_eth.dst_addr.addr_bytes[1] = psr->word5.vxlan_in_daddr1;
+	vxlan_in_eth.dst_addr.addr_bytes[2] = psr->word6.vxlan_in_daddr2;
+	vxlan_in_eth.dst_addr.addr_bytes[3] = psr->word6.vxlan_in_daddr3;
+	vxlan_in_eth.dst_addr.addr_bytes[4] = psr->word6.vxlan_in_daddr4;
+	vxlan_in_eth.dst_addr.addr_bytes[5] = psr->word6.vxlan_in_daddr5;
 
-	vxlan_in_eth.src_addr.addr_bytes[0] = psr->vxlan_in_saddr0;
-	vxlan_in_eth.src_addr.addr_bytes[1] = psr->vxlan_in_saddr1;
-	vxlan_in_eth.src_addr.addr_bytes[2] = psr->vxlan_in_saddr2;
-	vxlan_in_eth.src_addr.addr_bytes[3] = psr->vxlan_in_saddr3;
-	vxlan_in_eth.src_addr.addr_bytes[4] = psr->vxlan_in_saddr4;
-	vxlan_in_eth.src_addr.addr_bytes[5] = psr->vxlan_in_saddr5;
+	vxlan_in_eth.src_addr.addr_bytes[0] = psr->word6.vxlan_in_saddr0;
+	vxlan_in_eth.src_addr.addr_bytes[1] = psr->word7.vxlan_in_saddr1;
+	vxlan_in_eth.src_addr.addr_bytes[2] = psr->word7.vxlan_in_saddr2;
+	vxlan_in_eth.src_addr.addr_bytes[3] = psr->word7.vxlan_in_saddr3;
+	vxlan_in_eth.src_addr.addr_bytes[4] = psr->word8.vxlan_in_saddr4;
+	vxlan_in_eth.src_addr.addr_bytes[5] = psr->word8.vxlan_in_saddr5;
 
-	vxlan_in_eth.ether_type = psr->vxlan_eth_type;
+	vxlan_in_eth.ether_type = psr->word8.vxlan_eth_type;
 	vxlan_in_eth.ether_type = rte_be_to_cpu_16(vxlan_in_eth.ether_type);
 
 	DPAA2_PR_PRINT("VXLAN inner eth:\r\n");
@@ -1101,7 +1127,7 @@ dpaa2_print_vxlan_parse_result(const struct dpaa2_psr_result_parse *psr)
 	DPAA2_PR_PRINT("type: 0x%04x\r\n", vxlan_in_eth.ether_type);
 	if (vxlan_in_eth.ether_type == RTE_ETHER_TYPE_VLAN) {
 		rte_memcpy(&vxlan_vlan_tci,
-			&psr->vxlan_vlan_tci, sizeof(uint16_t));
+			&psr->word5.vxlan_vlan_tci, sizeof(uint16_t));
 		vxlan_vlan_tci = rte_be_to_cpu_16(vxlan_vlan_tci);
 		DPAA2_PR_PRINT("vlan tci: 0x%04x\r\n", vxlan_vlan_tci);
 	}
@@ -1113,7 +1139,7 @@ dpaa2_print_ecpri_parse_result(const struct dpaa2_psr_result_parse *psr)
 	uint8_t msg_type;
 	struct rte_ecpri_combined_msg_hdr ecpri_msg;
 
-	msg_type = psr->fafe.ecpri.msg_type;
+	msg_type = psr->word3.fafe.ecpri.msg_type;
 	if (msg_type > RTE_ECPRI_MSG_TYPE_IWF_DCTRL) {
 		DPAA2_PR_PRINT("Invalid ECPRI message type(0x%02x)\r\n",
 			msg_type);
@@ -1121,7 +1147,8 @@ dpaa2_print_ecpri_parse_result(const struct dpaa2_psr_result_parse *psr)
 	}
 
 	DPAA2_PR_PRINT("ECPRI type %d present\r\n", msg_type);
-	rte_memcpy(&ecpri_msg.type0, psr->sp_psr_ctx, DPAA2_SP_PSR_CTX_LEN);
+	rte_memcpy(&ecpri_msg.type0, psr->word8.sp_psr_ctx,
+		DPAA2_SP_PSR_CTX_LEN);
 	if (msg_type == RTE_ECPRI_MSG_TYPE_IQ_DATA ||
 		msg_type == RTE_ECPRI_MSG_TYPE_BIT_SEQ) {
 		DPAA2_PR_PRINT("pc_id(0x%04x) seq_id(0x%04x)\r\n",
@@ -1286,138 +1313,139 @@ dpaa2_print_parse_result(const struct dpaa2_annot_hdr *annotation)
 		fas->ifpid, fas->ppid, fas->status);
 
 	/** FAF error dump.*/
-	if (psr->faf_l_be.arp_err)
+	if (psr->word3.faf_l_be.arp_err)
 		DPAA2_PR_PRINT("FAF ARP error detected\r\n");
-	if (psr->faf_l_be.mpls_err)
+	if (psr->word3.faf_l_be.mpls_err)
 		DPAA2_PR_PRINT("FAF MPLS error detected\r\n");
-	if (psr->faf_l_be.pppoe_ppp_err)
+	if (psr->word3.faf_l_be.pppoe_ppp_err)
 		DPAA2_PR_PRINT("FAF PPPOE/PPP error detected\r\n");
-	if (psr->faf_l_be.vlan_err)
+	if (psr->word3.faf_l_be.vlan_err)
 		DPAA2_PR_PRINT("FAF vLAN error detected\r\n");
-	if (psr->faf_l_be.llc_snap_err)
+	if (psr->word3.faf_l_be.llc_snap_err)
 		DPAA2_PR_PRINT("FAF LLC/SNAP error detected\r\n");
-	if (psr->faf_l_be.eth_err)
+	if (psr->word3.faf_l_be.eth_err)
 		DPAA2_PR_PRINT("FAF Ethernet error detected\r\n");
-	if (psr->faf_l_be.psr_err)
+	if (psr->word3.faf_l_be.psr_err)
 		DPAA2_PR_PRINT("FAF Parser error detected\r\n");
-	if (psr->faf_l_be.spsr_err)
+	if (psr->word3.faf_l_be.spsr_err)
 		DPAA2_PR_PRINT("FAF Soft Parser error detected\r\n");
-	if (psr->faf_l_be.vxlan_err)
+	if (psr->word3.faf_l_be.vxlan_err)
 		DPAA2_PR_PRINT("FAF VXLan error detected\r\n");
-	if (psr->faf_h_be.esp_err)
+	if (psr->word4.faf_h_be.esp_err)
 		DPAA2_PR_PRINT("FAF ESP error detected\r\n");
-	if (psr->faf_h_be.gtp_err)
+	if (psr->word4.faf_h_be.gtp_err)
 		DPAA2_PR_PRINT("FAF GTP error detected\r\n");
-	if (psr->faf_h_be.gtp_err)
+	if (psr->word4.faf_h_be.gtp_err)
 		DPAA2_PR_PRINT("FAF GTP error detected\r\n");
-	if (psr->faf_h_be.l4_spsr_err)
+	if (psr->word4.faf_h_be.l4_spsr_err)
 		DPAA2_PR_PRINT("FAF L4 soft Parser error detected\r\n");
-	if (psr->faf_h_be.sctp_err)
+	if (psr->word4.faf_h_be.sctp_err)
 		DPAA2_PR_PRINT("FAF SCTP error detected\r\n");
-	if (psr->faf_h_be.ipsec_err)
+	if (psr->word4.faf_h_be.ipsec_err)
 		DPAA2_PR_PRINT("FAF IPSec error detected\r\n");
-	if (psr->faf_h_be.tcp_err)
+	if (psr->word4.faf_h_be.tcp_err)
 		DPAA2_PR_PRINT("FAF TCP error detected\r\n");
-	if (psr->faf_h_be.udp_err)
+	if (psr->word4.faf_h_be.udp_err)
 		DPAA2_PR_PRINT("FAF UDP error detected\r\n");
-	if (psr->faf_h_be.l3_spsr_err)
+	if (psr->word4.faf_h_be.l3_spsr_err)
 		DPAA2_PR_PRINT("FAF L3 soft Parser error detected\r\n");
-	if (psr->faf_h_be.gre_err)
+	if (psr->word4.faf_h_be.gre_err)
 		DPAA2_PR_PRINT("FAF GRE error detected\r\n");
-	if (psr->faf_h_be.min_encp_err)
+	if (psr->word4.faf_h_be.min_encp_err)
 		DPAA2_PR_PRINT("FAF Min.Encap error detected\r\n");
-	if (psr->faf_h_be.ip_n_err)
+	if (psr->word4.faf_h_be.ip_n_err)
 		DPAA2_PR_PRINT("FAF IP.n error detected\r\n");
-	if (psr->faf_h_be.ip_1_err)
+	if (psr->word4.faf_h_be.ip_1_err)
 		DPAA2_PR_PRINT("FAF IP.1 error detected\r\n");
-	if (psr->faf_h_be.l2_spsr_err)
+	if (psr->word4.faf_h_be.l2_spsr_err)
 		DPAA2_PR_PRINT("FAF L2 soft parser error detected\r\n");
 
 	DPAA2_PR_PRINT("Next Header: %04x\r\n",
-		rte_be_to_cpu_16(psr->nxthdr));
+		rte_be_to_cpu_16(psr->word3.nxthdr));
 
-	if (psr->fafe.ecpri.ecpri) {
+	if (psr->word3.fafe.ecpri.ecpri) {
 		DPAA2_PR_PRINT("FAFE ECPRI present, msg: %d\r\n",
-			psr->fafe.ecpri.msg_type);
-	} else if (psr->fafe.ibth_vxlan.ibth) {
+			psr->word3.fafe.ecpri.msg_type);
+	} else if (psr->word3.fafe.ibth_vxlan.ibth) {
 		DPAA2_PR_PRINT("FAFE ROCEV2 present\r\n");
-	} else if (psr->fafe.ibth_vxlan.vxlan_vlan) {
+	} else if (psr->word3.fafe.ibth_vxlan.vxlan_vlan) {
 		DPAA2_PR_PRINT("FAFE vXLAN vLAN present\r\n");
-	} else if (psr->fafe.ibth_vxlan.vxlan_ipv4) {
+	} else if (psr->word3.fafe.ibth_vxlan.vxlan_ipv4) {
 		DPAA2_PR_PRINT("FAFE vXLAN IPv4\r\n");
-	} else if (psr->fafe.ibth_vxlan.vxlan_ipv6) {
+	} else if (psr->word3.fafe.ibth_vxlan.vxlan_ipv6) {
 		DPAA2_PR_PRINT("FAFE vXLAN IPv6\r\n");
-	} else if (psr->fafe.ibth_vxlan.vxlan_udp) {
+	} else if (psr->word3.fafe.ibth_vxlan.vxlan_udp) {
 		DPAA2_PR_PRINT("FAFE vXLAN UDP\r\n");
-	} else if (psr->fafe.ibth_vxlan.vxlan_tcp) {
+	} else if (psr->word3.fafe.ibth_vxlan.vxlan_tcp) {
 		DPAA2_PR_PRINT("FAFE vXLAN TCP\r\n");
 	}
 
 	/** FAF popular protocol dump.*/
-	if (psr->faf_l_be.arp)
+	if (psr->word3.faf_l_be.arp)
 		DPAA2_PR_PRINT("FAF ARP Present\r\n");
-	if (psr->faf_l_be.mac)
+	if (psr->word3.faf_l_be.mac)
 		DPAA2_PR_PRINT("FAF Ethernet MAC Present\r\n");
-	if (psr->faf_l_be.vxlan)
+	if (psr->word3.faf_l_be.vxlan)
 		DPAA2_PR_PRINT("FAF VXLan Present\r\n");
-	if (psr->faf_l_be.ike)
+	if (psr->word3.faf_l_be.ike)
 		DPAA2_PR_PRINT("FAF IKE Present\r\n");
-	if (psr->faf_l_be.ptp)
+	if (psr->word3.faf_l_be.ptp)
 		DPAA2_PR_PRINT("FAF PTP Present\r\n");
-	if (psr->faf_h_be.gtp)
+	if (psr->word4.faf_h_be.gtp)
 		DPAA2_PR_PRINT("FAF GTP Present\r\n");
-	if (psr->faf_h_be.sctp)
+	if (psr->word4.faf_h_be.sctp)
 		DPAA2_PR_PRINT("FAF SCTP Present\r\n");
-	if (psr->faf_h_be.ipsec)
+	if (psr->word4.faf_h_be.ipsec)
 		DPAA2_PR_PRINT("FAF IPSec Present\r\n");
-	if (psr->faf_h_be.ipsec_esp)
+	if (psr->word4.faf_h_be.ipsec_esp)
 		DPAA2_PR_PRINT("FAF IPSec ESP Present\r\n");
-	if (psr->faf_h_be.ipsec_ah)
+	if (psr->word4.faf_h_be.ipsec_ah)
 		DPAA2_PR_PRINT("FAF IPSec AH Present\r\n");
-	if (psr->faf_h_be.gre)
+	if (psr->word4.faf_h_be.gre)
 		DPAA2_PR_PRINT("FAF GRE Present\r\n");
-	if (psr->faf_h_be.icmp)
+	if (psr->word4.faf_h_be.icmp)
 		DPAA2_PR_PRINT("FAF ICMP Present\r\n");
-	if (psr->faf_h_be.ipv6_1)
+	if (psr->word4.faf_h_be.ipv6_1)
 		DPAA2_PR_PRINT("FAF IPv6 Present\r\n");
-	if (psr->faf_h_be.ipv6_n)
+	if (psr->word4.faf_h_be.ipv6_n)
 		DPAA2_PR_PRINT("FAF last IPv6 Present\r\n");
-	if (psr->faf_h_be.ipv4_1)
+	if (psr->word4.faf_h_be.ipv4_1)
 		DPAA2_PR_PRINT("FAF IPv4 Present\r\n");
-	if (psr->faf_h_be.ipv4_n)
+	if (psr->word4.faf_h_be.ipv4_n)
 		DPAA2_PR_PRINT("FAF last IPv4 Present\r\n");
-	if (psr->faf_h_be.ip_1_opt)
+	if (psr->word4.faf_h_be.ip_1_opt)
 		DPAA2_PR_PRINT("FAF IP Present\r\n");
-	if (psr->faf_h_be.ip_1_init_frag)
+	if (psr->word4.faf_h_be.ip_1_init_frag)
 		DPAA2_PR_PRINT("FAF IP first fragment Present\r\n");
-	if (psr->faf_h_be.ip_1_frag)
+	if (psr->word4.faf_h_be.ip_1_frag)
 		DPAA2_PR_PRINT("FAF IP fragment Present\r\n");
-	if (psr->faf_h_be.tcp)
+	if (psr->word4.faf_h_be.tcp)
 		DPAA2_PR_PRINT("FAF TCP Present\r\n");
-	if (psr->faf_h_be.udp)
+	if (psr->word4.faf_h_be.udp)
 		DPAA2_PR_PRINT("FAF UDP Present\r\n");
 
 	DPAA2_PR_PRINT("Parser result eth header offset: %02x\r\n",
-		psr->eth_off);
+		psr->word5.eth_off);
 	DPAA2_PR_PRINT("Parser result TCI1 offset: %02x\r\n",
-		psr->vlan_tci_1_off);
+		psr->word5.vlan_tci_1_off);
 	DPAA2_PR_PRINT("Parser result last eth type offset: %02x\r\n",
-		psr->last_etype_off);
+		psr->word5.last_etype_off);
 	DPAA2_PR_PRINT("Parser result l3 header offset: %02x\r\n",
-		psr->l3_off);
+		psr->word6.l3_off);
 	DPAA2_PR_PRINT("Parser result l4 header offset: %02x\r\n",
-		psr->l4_off);
+		psr->word6.l4_off);
 	DPAA2_PR_PRINT("Parser result l5 header offset: %02x\r\n",
-		psr->l5_off);
+		psr->word6.l5_off);
 	DPAA2_PR_PRINT("Parser result next header offset: %02x\r\n",
-		psr->nxthdr_off);
+		psr->word7.nxthdr_off);
 
-	if (psr->faf_l_be.vxlan)
+	if (psr->word3.faf_l_be.vxlan)
 		dpaa2_print_vxlan_parse_result(psr);
-	if (psr->fafe.ecpri.ecpri)
+	if (psr->word3.fafe.ecpri.ecpri)
 		dpaa2_print_ecpri_parse_result(psr);
-	if (!psr->fafe.ecpri.ecpri && !psr->faf_l_be.vxlan &&
-		psr->fafe.ibth_vxlan.ibth)
+	if (!psr->word3.fafe.ecpri.ecpri &&
+		!psr->word3.faf_l_be.vxlan &&
+		psr->word3.fafe.ibth_vxlan.ibth)
 		dpaa2_print_rocev2_parse_result(psr);
 }
 

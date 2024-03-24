@@ -72,6 +72,13 @@ static uint64_t dev_tx_offloads_nodis =
 bool dpaa2_enable_ts[RTE_MAX_ETHPORTS];
 uint64_t dpaa2_timestamp_rx_dynflag;
 int dpaa2_timestamp_dynfield_offset = -1;
+int dpaa2_rx_protocol_pos_mbuf_offset = -1;
+
+static const struct rte_mbuf_dynfield s_dpaa2_rx_protocol_pos_dyn = {
+	.name = "dpaa2_rx_protocol_pos_dyn",
+	.size = sizeof(struct dpaa2_dyn_rx_protocol_pos),
+	.align = __alignof__(struct dpaa2_dyn_rx_protocol_pos),
+};
 
 /* Enable error queue */
 bool dpaa2_enable_err_queue;
@@ -2004,9 +2011,9 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 		dev->data->dev_link.link_duplex = RTE_ETH_LINK_FULL_DUPLEX;
 
 	if (state.up)
-		DPAA2_PMD_INFO("Port %d Link is Up", dev->data->port_id);
+		DPAA2_PMD_DEBUG("Port %d Link is Up", dev->data->port_id);
 	else
-		DPAA2_PMD_INFO("Port %d Link is Down", dev->data->port_id);
+		DPAA2_PMD_DEBUG("Port %d Link is Down", dev->data->port_id);
 	return ret;
 }
 
@@ -2836,6 +2843,18 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	if (getenv("DPAA2_TX_CGR_OFF"))
 		priv->flags |= DPAA2_TX_CGR_OFF;
+
+	penv = getenv("DPAA2_RX_GET_PROTOCOL_OFFSET");
+	if (penv) {
+		ret = rte_mbuf_dynfield_register(&s_dpaa2_rx_protocol_pos_dyn);
+		if (ret < 0) {
+			DPAA2_PMD_ERR("Failed to register for protocol pos");
+			goto init_err;
+		}
+		DPAA2_PMD_INFO("Register mbuf offset(%d) for protocol pos",
+			ret);
+		dpaa2_rx_protocol_pos_mbuf_offset = ret;
+	}
 
 	/* Packets with parse error to be dropped in hw */
 	if (getenv("DPAA2_PARSE_ERR_DROP")) {
