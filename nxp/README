@@ -947,6 +947,9 @@ Steps to cross compile libpcap:
 
 Steps to cross compile dpdk-pdump:
 ------------------------------------------------
+	Meson depends on pkgconfig to find the dependencies. The package pkg-config-aarch64-linux-gnu
+	is required for aarch64. To install it in Ubuntu:
+	$ sudo apt install pkg-config-aarch64-linux-gnu
 
 	$ export PKG_CONFIG_LIBDIR=$PKG_CONFIG_LIBDIR:<Path to installed pcap directory>/lib
 	$ export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:<Path to installed pcap directory>/lib/pkgconfig
