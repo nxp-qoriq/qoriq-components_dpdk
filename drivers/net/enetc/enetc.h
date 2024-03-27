@@ -8,8 +8,10 @@
 #include <rte_time.h>
 #include "compat.h"
 #include "base/enetc_hw.h"
+#include "base/enetc4_hw.h"
 #include "enetc_logs.h"
 #include <linux/types.h>
+#include "ntmp.h"
 
 #define PCI_VENDOR_ID_FREESCALE 0x1957
 
@@ -50,6 +52,19 @@
 #define ENETC4_TX_CKSUM_OFFLOAD_MASK (RTE_MBUF_F_TX_IP_CKSUM | \
 				    RTE_MBUF_F_TX_TCP_CKSUM | \
 				    RTE_MBUF_F_TX_UDP_CKSUM)
+
+#define ENETC_CBD(R, i)	(&(((struct enetc_cbd *)((R).bd_base))[i]))
+#define ENETC_CBDR_TIMEOUT	1000 /* In multiple of ENETC_CBDR_DELAY */
+#define ENETC_CBDR_DELAY	100 /* usecs */
+#define ENETC_CBDR_SIZE		64
+#define ENETC_CBDR_ALIGN	128
+
+/* supported RSS */
+#define ENETC_RSS_OFFLOAD_ALL ( \
+	RTE_ETH_RSS_IP | \
+	RTE_ETH_RSS_UDP | \
+	RTE_ETH_RSS_TCP)
+
 struct enetc_swbd {
 	struct rte_mbuf *buffer_addr;
 };
@@ -74,6 +89,21 @@ struct enetc_bdr {
 	struct rte_eth_dev *ndev;
 	const struct rte_memzone *mz;
 	uint64_t ierrors;
+};
+
+struct enetc_eth_hw {
+	struct rte_eth_dev *ndev;
+	struct enetc_hw hw;
+	uint16_t device_id;
+	uint16_t vendor_id;
+	uint8_t revision_id;
+	struct enetc_eth_mac_info mac;
+	struct netc_cbdr cbdr;
+	bool uc_promisc;
+	bool mc_promisc;
+	uint32_t num_rss;
+	uint32_t max_rx_queues;
+	uint32_t max_tx_queues;
 };
 
 /*
@@ -194,4 +224,12 @@ enetc_bd_unused(struct enetc_bdr *bdr)
 
 	return bdr->bd_count + bdr->next_to_clean - bdr->next_to_use - 1;
 }
+
+/* CBDR prototypes */
+int enetc4_setup_cbdr(struct rte_eth_dev *dev, struct enetc_hw *hw,
+			int bd_count, struct netc_cbdr *cbdr);
+void netc_free_cbdr(struct netc_cbdr *cbdr);
+int ntmp_rsst_query_or_update_entry(struct netc_cbdr *cbdr, uint32_t *table,
+			int count, bool query);
+
 #endif /* _ENETC_H_ */

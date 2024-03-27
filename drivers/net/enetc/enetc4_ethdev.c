@@ -7,7 +7,6 @@
 #include <rte_random.h>
 #include <dpaax_iova_table.h>
 #include <kpage_ncache_api.h>
-#include "base/enetc4_hw.h"
 #include "enetc_logs.h"
 #include "enetc.h"
 
@@ -177,10 +176,14 @@ enetc4_mac_init(struct enetc_eth_hw *hw, struct rte_eth_dev *eth_dev)
 }
 
 int
-enetc4_dev_infos_get(struct rte_eth_dev *dev __rte_unused,
+enetc4_dev_infos_get(struct rte_eth_dev *dev,
 		    struct rte_eth_dev_info *dev_info)
 {
+	struct enetc_eth_hw *hw =
+		ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+
 	PMD_INIT_FUNC_TRACE();
+
 	dev_info->rx_desc_lim = (struct rte_eth_desc_lim) {
 		.nb_max = MAX_BD_COUNT,
 		.nb_min = MIN_BD_COUNT,
@@ -191,11 +194,12 @@ enetc4_dev_infos_get(struct rte_eth_dev *dev __rte_unused,
 		.nb_min = MIN_BD_COUNT,
 		.nb_align = BD_ALIGN,
 	};
-	dev_info->max_rx_queues = MAX_RX_RINGS;
-	dev_info->max_tx_queues = MAX_TX_RINGS;
+	dev_info->max_rx_queues = hw->max_rx_queues;
+	dev_info->max_tx_queues = hw->max_tx_queues;
 	dev_info->max_rx_pktlen = ENETC4_MAC_MAXFRM_SIZE;
 	dev_info->rx_offload_capa = dev_rx_offloads_sup;
 	dev_info->tx_offload_capa = dev_tx_offloads_sup;
+	dev_info->flow_type_rss_offloads = ENETC_RSS_OFFLOAD_ALL;
 
 	return 0;
 }
@@ -271,7 +275,7 @@ enetc4_alloc_txbdr(uint16_t port_id, struct enetc_bdr *txr, uint16_t nb_desc)
 	if (txr->q_swbd == NULL)
 		return -ENOMEM;
 
-	snprintf(mz_name, sizeof(mz_name), "bdt_addr_%d", port_id);
+	snprintf(mz_name, sizeof(mz_name), "bdt_addr_%d_%d", port_id, txr->index);
 	if (mark_memory_ncache(txr, mz_name, bd_total)) {
 		ENETC_PMD_ERR("Failed to mark BD memory non-cacheable!");
 		rte_free(txr->q_swbd);
@@ -341,11 +345,11 @@ enetc4_tx_queue_setup(struct rte_eth_dev *dev,
 		return -1;
 	}
 
+	tx_ring->index = queue_idx;
 	err = enetc4_alloc_txbdr(data->port_id, tx_ring, nb_desc);
 	if (err)
 		goto fail;
 
-	tx_ring->index = queue_idx;
 	tx_ring->ndev = dev;
 	enetc4_setup_txbdr(&priv->hw.hw, tx_ring);
 	data->tx_queues[queue_idx] = tx_ring;
@@ -420,7 +424,7 @@ enetc4_alloc_rxbdr(uint16_t port_id, struct enetc_bdr *rxr,
 	if (rxr->q_swbd == NULL)
 		return -ENOMEM;
 
-	snprintf(mz_name, sizeof(mz_name), "bdr_addr_%d", port_id);
+	snprintf(mz_name, sizeof(mz_name), "bdr_addr_%d_%d", port_id, rxr->index);
 	if (mark_memory_ncache(rxr, mz_name, bd_total)) {
 		ENETC_PMD_ERR("Failed to mark BD memory non-cacheable!");
 		rte_free(rxr->q_swbd);
@@ -489,11 +493,11 @@ enetc4_rx_queue_setup(struct rte_eth_dev *dev,
 		return err;
 	}
 
+	rx_ring->index = rx_queue_id;
 	err = enetc4_alloc_rxbdr(data->port_id, rx_ring, nb_rx_desc);
 	if (err)
 		goto fail;
 
-	rx_ring->index = rx_queue_id;
 	rx_ring->ndev = dev;
 	enetc4_setup_rxbdr(&adapter->hw.hw, rx_ring, mb_pool);
 	data->rx_queues[rx_queue_id] = rx_ring;
@@ -598,10 +602,22 @@ enetc4_stats_reset(struct rte_eth_dev *dev)
 	return 0;
 }
 
+static void
+enetc4_rss_configure(struct enetc_hw *hw, int enable)
+{
+	uint32_t reg;
+
+	reg = enetc4_rd(hw, ENETC_SIMR);
+	reg &= ~ENETC_SIMR_RSSE;
+	reg |= (enable) ? ENETC_SIMR_RSSE : 0;
+	enetc4_wr(hw, ENETC_SIMR, reg);
+}
+
 int
 enetc4_dev_close(struct rte_eth_dev *dev)
 {
 	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct enetc_hw *enetc_hw = &hw->hw;
 	uint16_t i;
 	int ret;
 
@@ -613,6 +629,13 @@ enetc4_dev_close(struct rte_eth_dev *dev)
 		ret = enetc4_vf_dev_stop(dev);
 	else
 		ret = enetc4_dev_stop(dev);
+
+	if (dev->data->nb_rx_queues > 1) {
+		/* Disable RSS */
+		enetc4_rss_configure(enetc_hw, false);
+		/* Free CBDR */
+		netc_free_cbdr(&hw->cbdr);
+	}
 
 	for (i = 0; i < dev->data->nb_rx_queues; i++) {
 		enetc4_rx_queue_release(dev, i);
@@ -681,7 +704,9 @@ enetc4_dev_configure(struct rte_eth_dev *dev)
 	uint32_t checksum = L3_CKSUM | L4_CKSUM;
 	struct enetc_hw *enetc_hw = &hw->hw;
 	uint32_t max_len;
-	uint32_t val;
+	uint32_t val, num_rss;
+	uint32_t ret = 0, i;
+	uint32_t *rss_table;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -715,6 +740,62 @@ enetc4_dev_configure(struct rte_eth_dev *dev)
 		checksum &= ~L4_CKSUM;
 
 	enetc4_port_wr(enetc_hw, ENETC4_PARCSCR, checksum);
+
+	if (dev->data->nb_rx_queues <= 1)
+		return 0;
+
+	/* Setup RSS */
+	/* Setup control BDR */
+	ret = enetc4_setup_cbdr(dev, enetc_hw, ENETC_CBDR_SIZE, &hw->cbdr);
+	if (ret) {
+		/* Disable RSS */
+		enetc4_rss_configure(enetc_hw, false);
+		return ret;
+	}
+
+	/* Reset CIR again after enable CBDR*/
+	rte_delay_us(ENETC_CBDR_DELAY);
+	ENETC_PMD_DEBUG("CIR %x after CBDR enable\n", rte_read32(hw->cbdr.regs.cir));
+	rte_write32(0, hw->cbdr.regs.cir);
+	ENETC_PMD_DEBUG("CIR %x after reset\n", rte_read32(hw->cbdr.regs.cir));
+
+	val = enetc_rd(enetc_hw, ENETC_SIPCAPR0);
+	if (val & ENETC_SIPCAPR0_RSS) {
+		num_rss = enetc_rd(enetc_hw, ENETC_SIRSSCAPR);
+		hw->num_rss = ENETC_SIRSSCAPR_GET_NUM_RSS(num_rss);
+		ENETC_PMD_DEBUG("num_rss = %d\n", hw->num_rss);
+
+		/* Add number of BDR groups */
+		enetc4_wr(enetc_hw, ENETC_SIRBGCR, dev->data->nb_rx_queues);
+
+
+		/* Configuring indirecton table with default values
+		 * Hash algorithm and RSS secret key to be filled by PF
+		 */
+		rss_table = rte_malloc(NULL, hw->num_rss * sizeof(*rss_table), ENETC_CBDR_ALIGN);
+		if (!rss_table) {
+			enetc4_rss_configure(enetc_hw, false);
+			netc_free_cbdr(&hw->cbdr);
+			return -ENOMEM;
+		}
+
+		ENETC_PMD_DEBUG("Enabling RSS for port %s with queues = %d\n", dev->device->name,
+							dev->data->nb_rx_queues);
+		for (i = 0; i < hw->num_rss; i++)
+			rss_table[i] = i % dev->data->nb_rx_queues;
+
+		ret = ntmp_rsst_query_or_update_entry(&hw->cbdr, rss_table, hw->num_rss, false);
+		if (ret) {
+			ENETC_PMD_WARN("RSS indirection table update fails,"
+					"Scaling behaviour is undefined");
+			enetc4_rss_configure(enetc_hw, false);
+			netc_free_cbdr(&hw->cbdr);
+		}
+		rte_free(rss_table);
+
+		/* Enable RSS */
+		enetc4_rss_configure(enetc_hw, true);
+	}
 
 	return 0;
 }
@@ -895,11 +976,19 @@ enetc4_dev_init(struct rte_eth_dev *eth_dev)
 		ENETC_DEV_PRIVATE_TO_HW(eth_dev->data->dev_private);
 	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
 	int error = 0;
+	uint32_t si_cap;
+	struct enetc_hw *enetc_hw = &hw->hw;
 
 	PMD_INIT_FUNC_TRACE();
 	eth_dev->dev_ops = &enetc4_ops;
 	enetc4_dev_hw_init(eth_dev);
 
+	si_cap = enetc_rd(enetc_hw, ENETC_SICAPR0);
+	hw->max_tx_queues = si_cap & ENETC_SICAPR0_BDR_MASK;
+	hw->max_rx_queues = (si_cap >> 16) & ENETC_SICAPR0_BDR_MASK;
+
+	ENETC_PMD_DEBUG("Max RX queues = %d Max TX queues = %d\n",
+			hw->max_rx_queues, hw->max_tx_queues);
 	error = enetc4_mac_init(hw, eth_dev);
 	if (error != 0) {
 		ENETC_PMD_ERR("MAC initialization failed");

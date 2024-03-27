@@ -6,8 +6,6 @@
 #include <ethdev_pci.h>
 #include <rte_random.h>
 #include <dpaax_iova_table.h>
-#include "base/enetc4_hw.h"
-#include "base/enetc_hw.h"
 #include "enetc_logs.h"
 #include "enetc.h"
 
@@ -377,6 +375,8 @@ enetc4_vf_dev_init(struct rte_eth_dev *eth_dev)
 			    ENETC_DEV_PRIVATE_TO_HW(eth_dev->data->dev_private);
 	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
 	int error = 0;
+	uint32_t si_cap;
+	struct enetc_hw *enetc_hw = &hw->hw;
 
 	PMD_INIT_FUNC_TRACE();
 	eth_dev->dev_ops = &enetc4_vf_ops;
@@ -384,6 +384,12 @@ enetc4_vf_dev_init(struct rte_eth_dev *eth_dev)
 	hw->mc_promisc = false;
 	enetc4_dev_hw_init(eth_dev);
 
+	si_cap = enetc_rd(enetc_hw, ENETC_SICAPR0);
+	hw->max_tx_queues = si_cap & ENETC_SICAPR0_BDR_MASK;
+	hw->max_rx_queues = (si_cap >> 16) & ENETC_SICAPR0_BDR_MASK;
+
+	ENETC_PMD_DEBUG("Max RX queues = %d Max TX queues = %d\n",
+			hw->max_rx_queues, hw->max_tx_queues);
 	error = enetc4_vf_mac_init(hw, eth_dev);
 	if (error != 0) {
 		ENETC_PMD_ERR("MAC initialization failed!!");
