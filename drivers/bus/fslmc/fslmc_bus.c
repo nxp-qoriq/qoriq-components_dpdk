@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016,2018-2021,2023 NXP
+ *   Copyright 2016,2018-2024 NXP
  *
  */
 
@@ -654,6 +654,15 @@ fslmc_bus_dev_iterate(const void *start, const char *str,
 
 	free(dup);
 	return NULL;
+}
+
+int
+rte_fslmc_bus_available(void)
+{
+	if (TAILQ_EMPTY(&rte_fslmc_bus.device_list))
+		return false;
+
+	return true;
 }
 
 struct rte_fslmc_bus rte_fslmc_bus = {

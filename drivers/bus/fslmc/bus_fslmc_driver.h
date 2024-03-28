@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2016,2021-2023 NXP
+ *   Copyright 2016,2021-2024 NXP
  *
  */
 
@@ -163,6 +163,8 @@ uint64_t
 rte_fslmc_io_vaddr_to_iova(void *vaddr);
 void *
 rte_fslmc_io_iova_to_vaddr(uint64_t iova);
+int
+rte_fslmc_bus_available(void);
 
 /**
  * Register a DPAA2 driver.
