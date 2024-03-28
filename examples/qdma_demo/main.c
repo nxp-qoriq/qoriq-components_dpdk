@@ -47,7 +47,6 @@
 #include <rte_pmd_lsxinic.h>
 
 static int qdma_dev_id;
-static int qdma_is_dpaa2;
 static float s_ns_per_cyc;
 static rte_atomic32_t synchro;
 static struct rte_eth_conf port_conf = {
@@ -625,6 +624,12 @@ lcore_qdma_iova_seg_to_continue(void)
 	uint32_t seg_size, seg_num, total_size, i, j, src_idx;
 	uint64_t page_size = sysconf(_SC_PAGESIZE);
 
+	if (!rte_fslmc_bus_available()) {
+		RTE_LOG(ERR, qdma_demo,
+			"DPAA2 platform support only\n");
+		return -ENOTSUP;
+	}
+
 	if (rte_eal_iova_mode() != RTE_IOVA_PA) {
 		RTE_LOG(ERR, qdma_demo,
 			"IOVA PA mode support only\n");
@@ -669,16 +674,14 @@ lcore_qdma_iova_seg_to_continue(void)
 
 		vir = vir_base + i * seg_size;
 		iova[i] = iova_base + iova_offset;
-		if (qdma_is_dpaa2) {
-			ret = rte_fslmc_vfio_mem_dmamap((uint64_t)vir,
-				iova[i], seg_size);
-			if (ret) {
-				RTE_LOG(ERR, qdma_demo,
-					"IOVA map(va:%p, iova:0x%lx, size:%d) failed(%d)\n",
-					vir, iova[i], seg_size, ret);
-				iova[i] = 0;
-				goto quit;
-			}
+		ret = rte_fslmc_vfio_mem_dmamap((uint64_t)vir,
+			iova[i], seg_size);
+		if (ret) {
+			RTE_LOG(ERR, qdma_demo,
+				"IOVA map(va:%p, iova:0x%lx, size:%d) failed(%d)\n",
+				vir, iova[i], seg_size, ret);
+			iova[i] = 0;
+			goto quit;
 		}
 		iova_offset += seg_size;
 	}
@@ -686,10 +689,7 @@ lcore_qdma_iova_seg_to_continue(void)
 	src = rte_zmalloc(NULL, iova_offset, RTE_CACHE_LINE_SIZE);
 	for (i = 0; i < iova_offset; i++)
 		src[i] = i;
-	if (qdma_is_dpaa2)
-		src_iova = rte_fslmc_mem_vaddr_to_iova(src);
-	else
-		src_iova = (uint64_t)src;
+	src_iova = rte_fslmc_mem_vaddr_to_iova(src);
 
 	ret = rte_dma_copy(qdma_dev_id,
 			g_vqid[rte_lcore_id()],
@@ -737,7 +737,7 @@ lcore_qdma_iova_seg_to_continue(void)
 
 quit:
 	for (i = 0; i < seg_num; i++) {
-		if (iova[i] & qdma_is_dpaa2) {
+		if (iova[i]) {
 			ret = rte_fslmc_vfio_mem_dmaunmap(iova[i], seg_size);
 			if (ret) {
 				RTE_LOG(ERR, qdma_demo,
@@ -1130,19 +1130,6 @@ qdma_demo_job_ring_init(uint32_t max_desc)
 	uint64_t pci_src_iova = RTE_BAD_IOVA, pci_dst_iova = RTE_BAD_IOVA;
 	char *pci_vir = NULL;
 	char *pci_src_vir = NULL, *pci_dst_vir = NULL;
-	struct rte_dma_info local_dma_info;
-
-	ret = rte_dma_info_get(qdma_dev_id, &local_dma_info);
-	if (ret) {
-			RTE_LOG(ERR, qdma_demo,
-				"Failed to get DMA[%d] info(%d)\n",
-				qdma_dev_id, ret);
-			return ret;
-	}
-
-	if (strstr(local_dma_info.dev_name, "dpaa2") != NULL) {
-		qdma_is_dpaa2 = 1;
-	}
 
 	if (g_test_path != MEM_TO_MEM && g_pci_phy == RTE_BAD_IOVA) {
 		RTE_LOG(ERR, qdma_demo,
@@ -1177,16 +1164,23 @@ qdma_demo_job_ring_init(uint32_t max_desc)
 			else
 				pci_iova = g_pci_phy;
 		} else {
-			if (rte_eal_iova_mode() == RTE_IOVA_PA)
+			if (rte_eal_iova_mode() == RTE_IOVA_PA) {
 				pci_iova = g_pci_phy;
-			else
+			} else {
+				if (!rte_fslmc_bus_available()) {
+					RTE_LOG(ERR, qdma_demo,
+						"IOVA spuuort on DPAA2 platform only\n");
+					return -ENOTSUP;
+				}
 				pci_iova = (uint64_t)pci_vir;
-			if (qdma_is_dpaa2) {
+			}
+			if (rte_fslmc_bus_available()) {
 				ret = rte_fslmc_vfio_mem_dmamap((uint64_t)pci_vir,
 					pci_iova, g_pci_size);
 				if (ret) {
-					RTE_LOG(WARNING, qdma_demo,
+					RTE_LOG(ERR, qdma_demo,
 						"VFIO map failed(%d)\n", ret);
+					return ret;
 				}
 			}
 		}
