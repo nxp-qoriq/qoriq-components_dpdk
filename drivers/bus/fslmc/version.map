@@ -9,6 +9,7 @@ DPDK_23 {
 	rte_fslmc_mem_iova_to_vaddr;
 	rte_fslmc_io_vaddr_to_iova;
 	rte_fslmc_io_iova_to_vaddr;
+	rte_fslmc_bus_available;
 
 	local: *;
 };
