@@ -134,7 +134,7 @@ enetc4_tx_offload_checksum(struct rte_mbuf *mbuf, struct enetc_tx_bd *txbd)
 		txbd->ipcs = ENETC4_TXBD_IPCS;
 		txbd->l3_start = mbuf->l2_len;
 		txbd->l3_hdr_size = mbuf->l3_len / 4;
-		txbd->flags = rte_cpu_to_le_16(ENETC4_TXBD_FLAGS_L_TX_CKSUM);
+		txbd->flags |= rte_cpu_to_le_16(ENETC4_TXBD_FLAGS_L_TX_CKSUM);
 		if ((mbuf->ol_flags & RTE_MBUF_F_TX_UDP_CKSUM) == RTE_MBUF_F_TX_UDP_CKSUM) {
 			txbd->l4t = rte_cpu_to_le_16(ENETC4_TXBD_L4T_UDP);
 			txbd->flags |= rte_cpu_to_le_16(ENETC4_TXBD_FLAGS_L4CS);
@@ -173,13 +173,13 @@ enetc_xmit_pkts_nc(void *tx_queue,
 			dcbf(data + j);
 
 		txbd = ENETC_TXBD(*tx_ring, i);
+		txbd->flags = rte_cpu_to_le_16(ENETC4_TXBD_FLAGS_F);
 		if (tx_ring->q_swbd[i].buffer_addr->ol_flags & ENETC4_TX_CKSUM_OFFLOAD_MASK)
 			enetc4_tx_offload_checksum(tx_ring->q_swbd[i].buffer_addr, txbd);
 
 		tx_swbd = &tx_ring->q_swbd[i];
 		txbd->frm_len = buflen;
 		txbd->buf_len = txbd->frm_len;
-		txbd->flags |= rte_cpu_to_le_16(ENETC4_TXBD_FLAGS_F);
 		txbd->addr = (uint64_t)(uintptr_t)
 		rte_cpu_to_le_64((size_t)tx_swbd->buffer_addr->buf_iova +
 				 tx_swbd->buffer_addr->data_off);
