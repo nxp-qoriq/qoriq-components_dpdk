@@ -535,24 +535,112 @@ fsl_qdma_reg_init(struct fsl_qdma_engine *fsl_qdma)
 	return 0;
 }
 
+static uint16_t
+dpaa_qdma_block_dequeue(struct fsl_qdma_engine *fsl_qdma,
+	uint8_t block_id)
+{
+	struct fsl_qdma_status_queue *stat_queue;
+	struct fsl_qdma_queue *cmd_queue;
+	struct fsl_qdma_comp_cmd_desc *cq;
+	uint16_t start, count = 0;
+	uint8_t qid = 0;
+	uint32_t reg;
+	int ret;
+	uint8_t *block;
+	uint16_t *dq_complete;
+	struct fsl_qdma_desc *desc[FSL_QDMA_SG_MAX_ENTRY];
+
+	stat_queue = &fsl_qdma->stat_queues[block_id];
+	cq = stat_queue->cq;
+	start = stat_queue->complete;
+
+	block = fsl_qdma->block_base +
+		FSL_QDMA_BLOCK_BASE_OFFSET(fsl_qdma, block_id);
+
+	do {
+		reg = qdma_readl_be(block + FSL_QDMA_BSQSR);
+		if (reg & FSL_QDMA_BSQSR_QE_BE)
+			break;
+
+		qdma_writel_be(FSL_QDMA_BSQMR_DI, block + FSL_QDMA_BSQMR);
+		ret = qdma_ccdf_get_queue(&cq[start], &qid);
+		if (ret == true) {
+			cmd_queue = &fsl_qdma->cmd_queues[block_id][qid];
+
+			ret = rte_ring_dequeue(cmd_queue->complete_burst,
+				(void **)&dq_complete);
+			if (ret)
+				rte_panic("DQ desc number failed!\n");
+
+			ret = rte_ring_dequeue_bulk(cmd_queue->complete_desc,
+				(void **)desc, *dq_complete, NULL);
+			if (ret != (*dq_complete)) {
+				rte_panic("DQ %d descs failed!(%d)\n",
+					*dq_complete, ret);
+			}
+
+			fsl_qdma_data_validation(desc, *dq_complete, cmd_queue);
+
+			ret = rte_ring_enqueue_bulk(cmd_queue->complete_pool,
+				(void **)desc, (*dq_complete), NULL);
+			if (ret != (*dq_complete)) {
+				rte_panic("Failed desc eq %d!=%d to %s\n",
+					ret, *dq_complete,
+					cmd_queue->complete_pool->name);
+			}
+
+			cmd_queue->complete_start =
+				(cmd_queue->complete_start + (*dq_complete)) &
+				(cmd_queue->pending_max - 1);
+			cmd_queue->stats.completed++;
+
+			start++;
+			if (unlikely(start == stat_queue->n_cq))
+				start = 0;
+			count++;
+		} else {
+			DPAA_QDMA_ERR("Block%d not empty but dq-queue failed!",
+				block_id);
+			break;
+		}
+	} while (1);
+	stat_queue->complete = start;
+
+	return count;
+}
+
 static int
 fsl_qdma_enqueue_desc_to_ring(struct fsl_qdma_queue *fsl_queue,
 	int is_burst)
 {
-	uint16_t i, num = fsl_queue->pending_num, idx, start;
-	int ret;
+	uint16_t i, num = fsl_queue->pending_num, idx, start, dq;
+	int ret, dq_cnt;
 
 	num = is_burst ? fsl_queue->pending_num : 1;
 
 	fsl_queue->desc_in_hw[fsl_queue->ci] = num;
+eq_again:
 	ret = rte_ring_enqueue(fsl_queue->complete_burst,
 			&fsl_queue->desc_in_hw[fsl_queue->ci]);
 	if (ret) {
-		DPAA_QDMA_ERR("%s: Queue is full, try dequeue first",
+		DPAA_QDMA_DP_DEBUG("%s: Queue is full, try dequeue first",
 			__func__);
-		DPAA_QDMA_ERR("%s: submitted:%ld, completed:%ld",
+		DPAA_QDMA_DP_DEBUG("%s: submitted:%ld, completed:%ld",
 			__func__, fsl_queue->stats.submitted,
 			fsl_queue->stats.completed);
+		dq_cnt = 0;
+dq_again:
+		dq = dpaa_qdma_block_dequeue(fsl_queue->engine,
+			fsl_queue->block_id);
+		dq_cnt++;
+		if (dq > 0) {
+			goto eq_again;
+		} else {
+			if (dq_cnt < 100)
+				goto dq_again;
+			DPAA_QDMA_ERR("%s: Dq block%d failed!",
+				__func__, fsl_queue->block_id);
+		}
 		return ret;
 	}
 	start = fsl_queue->pending_start;
@@ -602,81 +690,6 @@ fsl_qdma_enqueue_desc_single(struct fsl_qdma_queue *fsl_queue,
 	return 0;
 }
 
-static uint16_t
-dpaa_qdma_block_dequeue(struct fsl_qdma_engine *fsl_qdma,
-	uint8_t block_id)
-{
-	struct fsl_qdma_status_queue *stat_queue;
-	struct fsl_qdma_queue *cmd_queue;
-	struct fsl_qdma_comp_cmd_desc *cq;
-	uint16_t start, count = 0;
-	uint8_t qid = 0;
-	uint32_t reg;
-	int ret;
-	uint8_t *block;
-	uint16_t *dq_complete;
-	struct fsl_qdma_desc *desc[FSL_QDMA_SG_MAX_ENTRY];
-
-	stat_queue = &fsl_qdma->stat_queues[block_id];
-	cq = stat_queue->cq;
-	start = stat_queue->complete;
-
-	block = fsl_qdma->block_base +
-		FSL_QDMA_BLOCK_BASE_OFFSET(fsl_qdma, block_id);
-
-	do {
-		reg = qdma_readl_be(block + FSL_QDMA_BSQSR);
-		if (reg & FSL_QDMA_BSQSR_QE_BE)
-			break;
-
-		qdma_writel_be(FSL_QDMA_BSQMR_DI, block + FSL_QDMA_BSQMR);
-		ret = qdma_ccdf_get_queue(&cq[start], &qid);
-		if (ret == true) {
-			cmd_queue = &fsl_qdma->cmd_queues[block_id][qid];
-			cmd_queue->stats.completed++;
-
-			ret = rte_ring_dequeue(cmd_queue->complete_burst,
-				(void **)&dq_complete);
-			if (ret)
-				rte_panic("DQ desc number failed!\n");
-
-			ret = rte_ring_dequeue_bulk(cmd_queue->complete_desc,
-				(void **)desc, *dq_complete, NULL);
-			if (ret != (*dq_complete)) {
-				rte_panic("DQ %d descs failed!(%d)\n",
-					*dq_complete, ret);
-			}
-
-			fsl_qdma_data_validation(desc, *dq_complete, cmd_queue);
-
-			ret = rte_ring_enqueue_bulk(cmd_queue->complete_pool,
-				(void **)desc, (*dq_complete), NULL);
-			if (ret != (*dq_complete)) {
-				rte_panic("Failed desc eq %d!=%d to %s\n",
-					ret, *dq_complete,
-					cmd_queue->complete_pool->name);
-			}
-
-			cmd_queue->complete_start =
-				(cmd_queue->complete_start + (*dq_complete)) &
-				(cmd_queue->pending_max - 1);
-			cmd_queue->stats.completed++;
-
-			start++;
-			if (unlikely(start == stat_queue->n_cq))
-				start = 0;
-			count++;
-		} else {
-			DPAA_QDMA_ERR("Block%d not empty but dq-queue failed!",
-				block_id);
-			break;
-		}
-	} while (1);
-	stat_queue->complete = start;
-
-	return count;
-}
-
 static int
 fsl_qdma_enqueue_overflow(struct fsl_qdma_queue *fsl_queue)
 {
@@ -702,7 +715,7 @@ overflow_check:
 	if (likely(!overflow))
 		return 0;
 
-	DPAA_QDMA_ERR("TC%d/Q%d submitted(%ld)-completed(%ld) >= %d",
+	DPAA_QDMA_DP_DEBUG("TC%d/Q%d submitted(%ld)-completed(%ld) >= %d",
 		fsl_queue->block_id, fsl_queue->queue_id,
 		st->submitted, st->completed, QDMA_QUEUE_CR_WM);
 	drain_num = 0;
@@ -712,7 +725,7 @@ drain_again:
 		fsl_queue->block_id);
 	if (!blk_drain) {
 		drain_num++;
-		if (drain_num > 100) {
+		if (drain_num > 1000) {
 			DPAA_QDMA_ERR("TC%d failed drain, Q%d's %ld bd in HW.",
 				fsl_queue->block_id, fsl_queue->queue_id,
 				st->submitted - st->completed);
@@ -721,8 +734,8 @@ drain_again:
 		goto drain_again;
 	}
 	check_num++;
-	if (check_num > 10) {
-		DPAA_QDMA_ERR("TC%d failed drain, Q%d's %ld bd in HW.",
+	if (check_num > 1000) {
+		DPAA_QDMA_ERR("TC%d failed check, Q%d's %ld bd in HW.",
 			fsl_queue->block_id, fsl_queue->queue_id,
 			st->submitted - st->completed);
 		return -ENOSPC;
