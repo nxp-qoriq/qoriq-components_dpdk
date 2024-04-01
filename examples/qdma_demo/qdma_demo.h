@@ -7,10 +7,12 @@
 #define PAGE_SIZE	(sysconf(_SC_PAGESIZE))
 #define PAGE_MASK	(~(PAGE_SIZE - 1))
 
-#define PCI_TO_PCI 1
-#define MEM_TO_PCI 2
-#define PCI_TO_MEM 3
-#define MEM_TO_MEM 4
+#define INVALID_TEST_CASE 0
+#define PCI_TO_PCI (1 << 0)
+#define MEM_TO_PCI (1 << 1)
+#define PCI_TO_MEM (1 << 2)
+#define MEM_TO_MEM (1 << 3)
+#define MAX_TEST_CASES 4
 
 #define BURST_NB_MAX 256
 
@@ -38,8 +40,6 @@ struct dma_job {
 	uint32_t dma_len;
 	uint32_t cpu_len;
 	uint32_t idx;
-	/** Flags corresponding to an DMA operation */
-	uint32_t flags;
 };
 
 #define TEST_ARG_NAME_SIZE 30
@@ -50,14 +50,13 @@ struct dma_job {
 #define ARG_TEST_MODE (1 << 4)
 #define ARG_SCATTER_GATHER (1 << 5)
 #define ARG_BURST (1 << 6)
-#define ARG_NUM (1 << 7)
-#define ARG_VALIDATE (1 << 8)
-#define ARG_SEG_IOVA (1 << 9)
-#define ARG_PCI_SIZE (1 << 10)
-#define ARG_PCI_EP (1 << 11)
-#define ARG_PCI_EP_RBP (1 << 12)
-#define ARG_SILENT (1 << 13)
-#define ARG_DMA_LATENCY (1 << 14)
-#define ARG_CPU_SIZE (1 << 15)
+#define ARG_VALIDATE (1 << 7)
+#define ARG_SEG_IOVA (1 << 8)
+#define ARG_PCI_SIZE (1 << 9)
+#define ARG_PCI_EP (1 << 10)
+#define ARG_PCI_DMA_RBP (1 << 11)
+#define ARG_SILENT (1 << 12)
+#define ARG_DMA_LATENCY (1 << 13)
+#define ARG_CPU_SIZE (1 << 14)
 
 #endif
