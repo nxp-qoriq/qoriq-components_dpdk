@@ -319,8 +319,13 @@ lsx_pciep_scan(void)
 		return 0;
 
 	ret = lsx_pciep_primary_init();
-	if (ret)
+	if (ret) {
+		if (ret == -ENOTSUP) {
+			LSX_PCIEP_BUS_DBG("LSX PCIEP bus is not available");
+			return 0;
+		}
 		return ret;
+	}
 
 	while (1) {
 		if (!lsx_pciep_ctl_idx_validated(pcie_idx))
