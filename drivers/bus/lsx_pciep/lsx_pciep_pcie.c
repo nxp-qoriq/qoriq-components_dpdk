@@ -716,11 +716,11 @@ lsx_pciep_hw_set_type(void)
 	svr_file = fopen("/sys/devices/soc0/soc_id", "r");
 	if (!svr_file) {
 		LSX_PCIEP_BUS_ERR("Unable to open SoC device.");
-		return -1;
+		return -ENODEV;
 	}
 	if (fscanf(svr_file, "svr:%x", &svr_ver) < 0) {
 		LSX_PCIEP_BUS_ERR("PCIe EP unable to read SoC device");
-		return -1;
+		return -ENODEV;
 	}
 
 	if ((svr_ver & SVR_MASK) == SVR_LX2160A) {
@@ -731,7 +731,7 @@ lsx_pciep_hw_set_type(void)
 	} else if ((svr_ver & SVR_MASK) == SVR_LS2088A) {
 		type = PEX_LS208X;
 	} else {
-		LSX_PCIEP_BUS_ERR("SoC(0x%08x) not supported",
+		LSX_PCIEP_BUS_DBG("SoC(0x%08x) not supported",
 			(svr_ver & SVR_MASK));
 		return -ENOTSUP;
 	}
@@ -1476,10 +1476,9 @@ lsx_pciep_primary_init(void)
 	lsx_pciep_parse_general_env();
 	lsx_pciep_hw_set_by_general_env();
 	ret = lsx_pciep_hw_set_type();
-	if (ret) {
-		ret = -ENODEV;
+	if (ret)
 		goto init_exit;
-	}
+
 	lsx_pciep_hw_enable_clear_win();
 
 	lsx_pciep_ctl_set_ops();
