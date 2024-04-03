@@ -253,7 +253,7 @@ The setup is as given below:
             $ export LSINIC_PCIE_TO_PCIE_LOOPBACK=1
             $ ./dpdk-qdma_demo -c 0xc -- --test_case=mem_to_pci --pci_ep
      Note:
-         add "--pci_ep_rbp" to use bus address to start DMA with route by PCIe port and functions.
+         add "--pci_dma_rbp" to use bus address to start DMA with route by PCIe port and functions.
 
 LATENCY_TEST
 ------------
@@ -281,3 +281,9 @@ One can use --validate option to validate data after DMA or memcpy is performed.
 SILENT mode
 -----------
 One can use --silent option to check DMA complete by value in destination address instead of DMA complete notification.
+
+Multiple test cases
+-----------
+One can run multiple cases in parallel with multiple threads, each thread processes one test case respectively.
+Example:
+--test_case=mem_to_pci,pci_to_mem
