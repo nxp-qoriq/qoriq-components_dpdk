@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2016 Intel Corporation
+ * Copyright 2024 NXP
  */
 
 #include <sys/queue.h>
@@ -41,13 +42,15 @@
 #include <rte_net.h>
 #include <rte_string_fns.h>
 
+#if RTE_USE_NON_CACHE_MEM
+#include <kpage_ncache_api.h>
+#include <compat.h>
+#endif
+
 #include "e1000_logs.h"
 #include "base/e1000_api.h"
 #include "e1000_ethdev.h"
 #include "base/e1000_osdep.h"
-#if RTE_USE_NON_CACHE_MEM
-#include <kpage_ncache_api.h>
-#endif
 
 #define	E1000_TXD_VLAN_SHIFT	16
 
@@ -389,6 +392,10 @@ eth_em_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 	uint32_t ctx;
 	uint32_t new_ctx;
 	union em_vlan_macip hdrlen;
+#if RTE_USE_NON_CACHE_MEM
+	unsigned int j;
+	uint8_t *data;
+#endif
 
 	txq = tx_queue;
 	sw_ring = txq->sw_ring;
@@ -562,6 +569,11 @@ eth_em_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 			 * Set up Transmit Data Descriptor.
 			 */
 			slen = m_seg->data_len;
+#if RTE_USE_NON_CACHE_MEM
+			data = rte_pktmbuf_mtod(m_seg, void *);
+			for (j = 0; j <= slen; j += RTE_CACHE_LINE_SIZE)
+				dcbf(data + j);
+#endif
 			buf_dma_addr = rte_mbuf_data_iova(m_seg);
 
 			txd->buffer_addr = rte_cpu_to_le_64(buf_dma_addr);
@@ -695,7 +707,10 @@ eth_em_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 	uint16_t nb_rx;
 	uint16_t nb_hold;
 	uint8_t status;
-
+#if RTE_USE_NON_CACHE_MEM
+	uint8_t *data;
+	uint32_t j;
+#endif
 	rxq = rx_queue;
 
 	nb_rx = 0;
@@ -817,7 +832,11 @@ eth_em_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 
 		/* Only valid if RTE_MBUF_F_RX_VLAN set in pkt_flags */
 		rxm->vlan_tci = rte_le_to_cpu_16(rxd.special);
-
+#if RTE_USE_NON_CACHE_MEM
+		data = rte_pktmbuf_mtod(rxm, void *);
+		for (j = 0; j <= rxm->data_len; j += RTE_CACHE_LINE_SIZE)
+			dccivac(data + j);
+#endif
 		/*
 		 * Store the mbuf address into the next entry of the array
 		 * of returned packets.
@@ -871,7 +890,10 @@ eth_em_recv_scattered_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 	uint16_t nb_hold;
 	uint16_t data_len;
 	uint8_t status;
-
+#if RTE_USE_NON_CACHE_MEM
+	uint8_t *data;
+	uint32_t j;
+#endif
 	rxq = rx_queue;
 
 	nb_rx = 0;
@@ -993,6 +1015,11 @@ eth_em_recv_scattered_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 			last_seg->next = rxm;
 		}
 
+#if RTE_USE_NON_CACHE_MEM
+		data = rte_pktmbuf_mtod(first_seg, void *);
+		for (j = 0; j <= data_len; j += RTE_CACHE_LINE_SIZE)
+			dccivac(data + j);
+#endif
 		/*
 		 * If this is not the last buffer of the received packet,
 		 * update the pointer to the last mbuf of the current scattered
@@ -1198,6 +1225,63 @@ em_get_tx_queue_offloads_capa(struct rte_eth_dev *dev)
 	return tx_queue_offload_capa;
 }
 
+#if RTE_USE_NON_CACHE_MEM
+static int
+mark_memory_ncache(const char *mz_name, uint32_t size, unsigned int socket_id)
+{
+	void *addr;
+	const struct rte_memzone *mz;
+	struct rte_memseg *memseg;
+	uint64_t non_alloc_diff;
+	uint64_t huge_page;
+
+	mz = rte_memzone_reserve(mz_name, size, socket_id, 0);
+	if (mz) {
+		addr = mz->addr;
+		memseg = rte_mem_virt2memseg((void *)((uintptr_t)mz->addr + size - 1), NULL);
+		non_alloc_diff = (uintptr_t)memseg->addr - (uintptr_t)mz->addr;
+
+		if (non_alloc_diff != 0) {
+			rte_memzone_free(mz);
+			mz = rte_memzone_reserve(mz_name, size + non_alloc_diff, socket_id, 0);
+			if (mz) {
+				if (addr == mz->addr) {
+					addr =
+						(void *)((uintptr_t)mz->addr + non_alloc_diff);
+				} else {
+					/* If the memzone allocation after freeing it is different
+					* from the previous allocated, system will reserve
+					* a 2MB aligned hugepage for BD memory.
+					*/
+					rte_memzone_free(mz);
+					mz = rte_memzone_reserve_aligned(mz_name,
+							SIZE_2MB, socket_id,
+							0, SIZE_2MB);
+					if (mz) {
+						addr = mz->addr;
+					} else {
+						printf("Failed to allocate memzone!!!!\n");
+						return -ENOMEM;
+					}
+				}
+			} else {
+				printf("Failed to allocate memzone!!!\n");
+				return -ENOMEM;
+			}
+		}
+	} else {
+		printf("Failed to allocate memzone!!\n");
+		return -ENOMEM;
+	}
+
+	/* Mark memory NON-CACHEABLE */
+	huge_page =
+		(uint64_t)RTE_PTR_ALIGN_FLOOR(addr, size);
+	mark_kpage_ncache(huge_page);
+
+	return 0;
+}
+#endif
 
 int
 eth_em_tx_queue_setup(struct rte_eth_dev *dev,
@@ -1212,7 +1296,9 @@ eth_em_tx_queue_setup(struct rte_eth_dev *dev,
 	uint32_t tsize;
 	uint16_t tx_rs_thresh, tx_free_thresh;
 	uint64_t offloads;
-
+#if RTE_USE_NON_CACHE_MEM
+	char mz_name[RTE_MEMZONE_NAMESIZE];
+#endif
 	hw = E1000_DEV_PRIVATE_TO_HW(dev->data->dev_private);
 
 	offloads = tx_conf->offloads | dev->data->dev_conf.txmode.offloads;
@@ -1277,28 +1363,11 @@ eth_em_tx_queue_setup(struct rte_eth_dev *dev,
 		dev->data->tx_queues[queue_idx] = NULL;
 	}
 
-	/*
-	 * Allocate TX ring hardware descriptors. A memzone large enough to
-	 * handle the maximum ring size is allocated in order to allow for
-	 * resizing in later calls to the queue setup function.
-	 */
-	tsize = sizeof(txq->tx_ring[0]) * E1000_MAX_RING_DESC;
-	tz = rte_eth_dma_zone_reserve(dev, "tx_ring", queue_idx, tsize,
-				      RTE_CACHE_LINE_SIZE, socket_id);
-	if (tz == NULL)
-		return -ENOMEM;
-
-/* Mark memory NON-CACHEABLE */
-#if RTE_USE_NON_CACHE_MEM
-	uint64_t huge_page = (uint64_t)RTE_PTR_ALIGN_FLOOR(tz->addr, tz->hugepage_sz);
-	mark_kpage_ncache(huge_page);
-#endif
 	/* Allocate the tx queue data structure. */
 	if ((txq = rte_zmalloc("ethdev TX queue", sizeof(*txq),
 			RTE_CACHE_LINE_SIZE)) == NULL)
 		return -ENOMEM;
 
-	txq->mz = tz;
 	/* Allocate software ring */
 	if ((txq->sw_ring = rte_zmalloc("txq->sw_ring",
 			sizeof(txq->sw_ring[0]) * nb_desc,
@@ -1307,6 +1376,25 @@ eth_em_tx_queue_setup(struct rte_eth_dev *dev,
 		return -ENOMEM;
 	}
 
+#if RTE_USE_NON_CACHE_MEM
+	tsize = SIZE_2MB;
+	snprintf(mz_name, sizeof(mz_name), "tx_ring_%d_%d", dev->data->port_id, queue_idx);
+	mark_memory_ncache(mz_name, tsize, socket_id);
+	tz = rte_memzone_lookup(mz_name);
+#else
+	/*
+	 * Allocate TX ring hardware descriptors. A memzone large enough to
+	 * handle the maximum ring size is allocated in order to allow for
+	 * resizing in later calls to the queue setup function.
+	 */
+	tsize = sizeof(txq->tx_ring[0]) * E1000_MAX_RING_DESC;
+	tz = rte_eth_dma_zone_reserve(dev, "tx_ring", queue_idx, tsize,
+				      RTE_CACHE_LINE_SIZE, socket_id);
+#endif
+	if (tz == NULL)
+		return -ENOMEM;
+
+	txq->mz = tz;
 	txq->nb_tx_desc = nb_desc;
 	txq->tx_free_thresh = tx_free_thresh;
 	txq->tx_rs_thresh = tx_rs_thresh;
@@ -1417,7 +1505,9 @@ eth_em_rx_queue_setup(struct rte_eth_dev *dev,
 	struct e1000_hw     *hw;
 	uint32_t rsize;
 	uint64_t offloads;
-
+#if RTE_USE_NON_CACHE_MEM
+	char mz_name[RTE_MEMZONE_NAMESIZE];
+#endif
 	hw = E1000_DEV_PRIVATE_TO_HW(dev->data->dev_private);
 
 	offloads = rx_conf->offloads | dev->data->dev_conf.rxmode.offloads;
@@ -1449,25 +1539,11 @@ eth_em_rx_queue_setup(struct rte_eth_dev *dev,
 		dev->data->rx_queues[queue_idx] = NULL;
 	}
 
-	/* Allocate RX ring for max possible mumber of hardware descriptors. */
-	rsize = sizeof(rxq->rx_ring[0]) * E1000_MAX_RING_DESC;
-	rz = rte_eth_dma_zone_reserve(dev, "rx_ring", queue_idx, rsize,
-				      RTE_CACHE_LINE_SIZE, socket_id);
-	if (rz == NULL)
-		return -ENOMEM;
-
-/* Mark memory NON-CACHEABLE */
-#if RTE_USE_NON_CACHE_MEM
-	uint64_t huge_page = (uint64_t)RTE_PTR_ALIGN_FLOOR(rz->addr, rz->hugepage_sz);
-	mark_kpage_ncache(huge_page);
-#endif
-
 	/* Allocate the RX queue data structure. */
 	if ((rxq = rte_zmalloc("ethdev RX queue", sizeof(*rxq),
 			RTE_CACHE_LINE_SIZE)) == NULL)
 		return -ENOMEM;
 
-	rxq->mz = rz;
 	/* Allocate software ring. */
 	if ((rxq->sw_ring = rte_zmalloc("rxq->sw_ring",
 			sizeof (rxq->sw_ring[0]) * nb_desc,
@@ -1475,7 +1551,21 @@ eth_em_rx_queue_setup(struct rte_eth_dev *dev,
 		em_rx_queue_release(rxq);
 		return -ENOMEM;
 	}
+#if RTE_USE_NON_CACHE_MEM
+	rsize = SIZE_2MB;
+	snprintf(mz_name, sizeof(mz_name), "rx_ring_%d_%d", dev->data->port_id, queue_idx);
+	mark_memory_ncache(mz_name, rsize, socket_id);
+	rz = rte_memzone_lookup(mz_name);
+#else
+	/* Allocate RX ring for max possible mumber of hardware descriptors. */
+	rsize = sizeof(rxq->rx_ring[0]) * E1000_MAX_RING_DESC;
+	rz = rte_eth_dma_zone_reserve(dev, "rx_ring", queue_idx, rsize,
+				      RTE_CACHE_LINE_SIZE, socket_id);
+#endif
+	if (rz == NULL)
+		return -ENOMEM;
 
+	rxq->mz = rz;
 	rxq->mb_pool = mp;
 	rxq->nb_rx_desc = nb_desc;
 	rxq->pthresh = rx_conf->rx_thresh.pthresh;
