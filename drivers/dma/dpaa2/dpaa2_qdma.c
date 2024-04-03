@@ -700,11 +700,11 @@ dpaa2_qdma_copy_sg(void *dev_private,
 		ret = dpaa2_qdma_multi_eq(qdma_vq);
 		if (likely(ret == expected)) {
 			qdma_vq->copy_num += nb_src;
-			return qdma_vq->copy_num - 1;
+			return (qdma_vq->copy_num - 1) & UINT16_MAX;
 		}
 	} else {
 		qdma_vq->copy_num += nb_src;
-		return qdma_vq->copy_num - 1;
+		return (qdma_vq->copy_num - 1) & UINT16_MAX;
 	}
 
 	return ret;
@@ -820,11 +820,11 @@ dpaa2_qdma_short_copy(struct qdma_virt_queue *qdma_vq,
 		ret = dpaa2_qdma_multi_eq(qdma_vq);
 		if (likely(ret == expected)) {
 			qdma_vq->copy_num++;
-			return qdma_vq->copy_num - 1;
+			return (qdma_vq->copy_num - 1) & UINT16_MAX;
 		}
 	} else {
 		qdma_vq->copy_num++;
-		return qdma_vq->copy_num - 1;
+		return (qdma_vq->copy_num - 1) & UINT16_MAX;
 	}
 
 	return ret;
@@ -891,11 +891,11 @@ dpaa2_qdma_long_copy(struct qdma_virt_queue *qdma_vq,
 		ret = dpaa2_qdma_multi_eq(qdma_vq);
 		if (likely(ret == expected)) {
 			qdma_vq->copy_num++;
-			return qdma_vq->copy_num - 1;
+			return (qdma_vq->copy_num - 1) & UINT16_MAX;
 		}
 	} else {
 		qdma_vq->copy_num++;
-		return qdma_vq->copy_num - 1;
+		return (qdma_vq->copy_num - 1) & UINT16_MAX;
 	}
 
 	return ret;
