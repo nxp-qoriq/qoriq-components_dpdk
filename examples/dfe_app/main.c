@@ -23,7 +23,7 @@
 #include "cmd_line.h"
 #include "ipc.h"
 
-#define APP_VERSION       "0.2.2"
+#define APP_VERSION       "0.3"
 
 int log_level = APP_DBG_LOG_ERROR;
 int rte_log_level = RTE_LOGTYPE_EAL;
@@ -77,7 +77,9 @@ static void print_help(char *s)
 	printf("Example:\n"
 		"\t%s -c \"config qec iq_taps [ 0 1.0 0 0 0 0 0 0 0 0 1.0 1.0 ]\"\n"
 		"\t%s -c \"vspa benchmark size 4096 mode read dma 1 iter 1\"\n"
-		"\t%s -c \"tdd start\"\n\n", s, s, s);
+		"\t%s -c \"tdd config_pattern_fr1fr2 3,6,1,4,0,0\"\n"
+		"\t%s -c \"tdd config_pattern D,D,D,S[0:5:10:13],U\"\n"
+		"\t%s -c \"tdd start\"\n\n", s, s, s, s, s);
 
 }
 
@@ -261,9 +263,38 @@ void cmd_do_tx_rx_sym_nr_config(int msg_type_tx_rx_sym_nr, uint32_t num_syms_in_
 		app_print_err("Failed to send IPC message\n");
 }
 
-/* pattern */
-void cmd_do_config_pattern(uint32_t p0, uint32_t p1, uint32_t p2,
-			uint32_t p3, uint32_t p4, uint32_t p5, uint32_t p6)
+/* scs */
+void cmd_do_config_scs(uint32_t scs)
+{
+	struct dfe_msg *msg;
+	int ret;
+
+	app_print_info("Send scs config command\n");
+
+	msg = (struct dfe_msg *)get_tx_buf(BBDEV_IPC_H2M_QUEUE);
+	if (!msg)
+		return;
+
+	msg->type = DFE_CFG_SCS;
+	msg->payload[0] = scs; /* SCS */
+
+	/* user wants his answer */
+	wait_response = 1;
+
+	ret = send_dfe_command(msg);
+	if (ret < 0)
+		app_print_err("Failed to send IPC message\n");
+}
+
+/* pattern_new */
+void cmd_do_config_pattern_new(uint32_t p0,
+			       uint32_t p1,
+			       uint32_t p2,
+			       uint32_t p3,
+			       uint32_t p4,
+			       uint32_t p5,
+			       uint32_t p6,
+			       uint32_t p7)
 {
 	struct dfe_msg *msg;
 	int ret;
@@ -274,14 +305,22 @@ void cmd_do_config_pattern(uint32_t p0, uint32_t p1, uint32_t p2,
 	if (!msg)
 		return;
 
-	msg->type = DFE_TDD_CFG_PATTERN;
-	msg->payload[0] = p0; /* SCS */
+	msg->type = DFE_TDD_CFG_PATTERN_NEW;
+	msg->payload[0] = p0;
 	msg->payload[1] = p1;
 	msg->payload[2] = p2;
 	msg->payload[3] = p3;
 	msg->payload[4] = p4;
 	msg->payload[5] = p5;
 	msg->payload[6] = p6;
+	msg->payload[7] = p7;
+
+#if 0
+	printf("\n");
+	for (int k = 0; k < 8; k++)
+		printf("%2d | ", msg->payload[k]);
+	printf("\n");
+#endif
 
 	/* user wants his answer */
 	wait_response = 1;

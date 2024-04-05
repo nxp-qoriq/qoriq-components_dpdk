@@ -82,20 +82,205 @@ cmd_tdd_stop_parsed(__attribute__((unused)) void *parsed_result,
 }
 
 void
-cmd_tdd_config_pattern_parsed(void *parsed_result,
-			      __attribute__((unused)) struct cmdline *cl,
-			      __attribute__((unused)) void *data)
+cmd_config_scs_parsed(void *parsed_result,
+		      __attribute__((unused)) struct cmdline *cl,
+		      __attribute__((unused)) void *data)
 {
-	struct cmd_tdd_config_pattern_result *res = parsed_result;
+	struct cmd_config_scs_result *res = parsed_result;
 
-	cmd_do_config_pattern(res->scs,
-			res->dl1,
-			res->g1,
-			res->ul1,
-			res->dl2,
-			res->g2,
-			res->ul2);
+	/* res->scs_value = {15,30} */
+	cmd_do_config_scs(atoi(res->scs_value));
+}
 
+void
+cmd_tdd_config_pattern_new_parsed(void *parsed_result,
+				  __attribute__((unused)) struct cmdline *cl,
+				  __attribute__((unused)) void *data)
+{
+	struct cmd_tdd_config_pattern_new_result *res = parsed_result;
+	int i;
+
+	char *slots_config[MAX_SLOTS];
+	int total_slots = rte_strsplit(res->args, strlen(res->args), slots_config, MAX_SLOTS, ',');
+
+	for (i = 0; i < total_slots; i++) {
+		printf("slots_config[%d] = {%s}\n", i, slots_config[i]);
+		char *syms_config[5];
+		int syms = rte_strsplit(slots_config[i], strlen(slots_config[i]), syms_config, 4, ':');
+		uint32_t payload[8] = {
+			0,  //slot_no
+			0,  //is_dl
+			0,  //is_ul
+			0,  //start_sym_dl
+			13, //end_sym_dl
+			0,  //start_sym_ul
+			13, //end_sym_ul
+			0,  //not_used
+		};
+
+		payload[0] = i; /* slot_no */
+		switch (slots_config[i][0]) {
+			case 'D':
+				payload[1] = 1; /* is_dl */
+				break;
+			case 'U':
+				payload[2] = 1; /* is_ul */
+				break;
+			case 'S':
+				payload[1] = 1; /* is_dl */
+				payload[2] = 1; /* is_ul */
+				break;
+			case 'G':
+			default:
+				break;
+		}
+
+		/* no custom allocation[ ] nor mixed slot */
+		if (syms < 2)
+			goto _send_slot_info;
+
+		/* populate custom allocation if specified */
+		switch (slots_config[i][0]) {
+			case 'D':
+				payload[3] = atoi((char *) &syms_config[0][2]); /* remove prefix 'X[' */
+				payload[4] = atoi(syms_config[1]);
+				break;
+			case 'U':
+				payload[5] = atoi((char *) &syms_config[0][2]); /* remove prefix 'X[' */
+				payload[6] = atoi(syms_config[1]);
+				break;
+			case 'S':
+				payload[3] = atoi((char *) &syms_config[0][2]); /* remove prefix 'X[' */
+				payload[4] = atoi(syms_config[1]);
+				payload[5] = atoi(syms_config[2]);
+				payload[6] = atoi(syms_config[3]);
+				break;
+			case 'G':
+			default:
+				break;
+		}
+
+#if 0 /* debug */
+		for (int j = 0; j < syms; j++) {
+			if (j == 0) {
+				printf("\tsyms_config[%d] = {%s}\n", j, (char *) &syms_config[j][2]);
+			} else if (j == (syms - 1)) {
+				syms_config[j][strlen(syms_config[j]) - 1] = '\0';
+				printf("\tsyms_config[%d] = {%s}\n", j, syms_config[j]);
+			} else {
+				printf("\tsyms_config[%d] = {%s}\n", j, syms_config[j]);
+			}
+		}
+#endif
+
+_send_slot_info:
+		/* prevent flooding M4 with messages */
+		cmd_do_wait_response();
+
+		cmd_do_config_pattern_new(payload[0],
+					  payload[1],
+					  payload[2],
+					  payload[3],
+					  payload[4],
+					  payload[5],
+					  payload[6],
+					  payload[7]);
+	}
+
+
+}
+
+void
+cmd_tdd_config_pattern_fr1fr2_parsed(void *parsed_result,
+				     __attribute__((unused)) struct cmdline *cl,
+				     __attribute__((unused)) void *data)
+{
+	struct cmd_tdd_config_pattern_fr1fr2_result *res = parsed_result;
+	struct slot_cfg {
+		uint16_t is_dl;
+		uint16_t is_ul;
+		uint16_t start_dl, stop_dl;
+		uint16_t start_ul, stop_ul;
+	} s[MAX_SLOTS];
+	uint16_t slot_count = 0;
+
+	memset(s, 0, sizeof(s));
+
+	char *tokens[12];
+	int total_tokens = rte_strsplit(res->args, strlen(res->args), tokens, 12, ',');
+
+	if ((total_tokens != 6) && (total_tokens != 12)) {
+		printf("expected 6 or 12 params\r\n");
+		return;
+	}
+
+	for (int j = 0, k = 0; j < (total_tokens / 6); j++, k = j * 6)
+	{
+		// D - fill non-zero fields
+		for (int i = 0; i < atoi(tokens[0+k]); i++)
+		{
+			s[slot_count].is_dl = 1;
+			s[slot_count].stop_dl = 13;
+			slot_count++;
+		}
+
+		// G after D
+		for (int i = 0; i < atoi(tokens[4+k]); i++)
+		{
+			slot_count++;
+		}
+
+		// S
+		if ((atoi(tokens[1+k]) != 0) || (atoi(tokens[3+k]) != 0))
+		{
+			s[slot_count].is_dl = !!atoi(tokens[1+k]);
+			s[slot_count].is_ul = !!atoi(tokens[3+k]);
+			s[slot_count].stop_dl = atoi(tokens[1+k]) - 1;
+			s[slot_count].start_ul = 13 - atoi(tokens[3+k]) + 1;
+			s[slot_count].stop_ul = 13;
+			slot_count++;
+		}
+
+		// U - fill non-zero fields
+		for (int i = 0; i < atoi(tokens[2+k]); i++)
+		{
+			s[slot_count].is_ul = 1;
+			s[slot_count].stop_ul = 13;
+			slot_count++;
+		}
+
+		// G after U - fill non-zero fields
+		for (int i = 0; i < atoi(tokens[5+k]); i++)
+		{
+			slot_count++;
+		}
+	}
+
+	for (int j = 0; j < slot_count; j++)
+	{
+		uint32_t payload[8] = {
+			j,              //slot_no
+			s[j].is_dl,     //is_dl
+			s[j].is_ul,     //is_ul
+			s[j].start_dl,  //start_sym_dl
+			s[j].stop_dl,   //end_sym_dl
+			s[j].start_ul,  //start_sym_ul
+			s[j].stop_ul,   //end_sym_ul
+			0,  //not_used
+		};
+
+		/* prevent flooding M4 with messages */
+		cmd_do_wait_response();
+
+		cmd_do_config_pattern_new(payload[0],
+					payload[1],
+					payload[2],
+					payload[3],
+					payload[4],
+					payload[5],
+					payload[6],
+					payload[7]);
+	}
 }
 
 void

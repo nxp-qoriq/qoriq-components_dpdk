@@ -26,7 +26,9 @@
 	"\thelp\n" \
 	"\tfdd start/stop\n" \
 	"\ttdd start/stop\n" \
-	"\ttdd config pattern <scs> <dl1> <g1> <ul1> <dl2> <g2> <ul2>\n" \
+	"\ttdd config pattern <D/U>[start_sym:stop_sym],S[start_sym_dl:stop_sym_dl:start_sym_ul:stop_sym_ul],G,...\n" \
+	"\ttdd config pattern_fr1fr2 <dl_slots,dl_syms,ul_slots,ul_syms,g_after_d,g_after_u> ...\n" \
+	"\tconfig scs <scs>\n" \
 	"\tconfig symbol_size <sym_size/128>\n" \
 	"\tconfig rx ant <1-4>\n" \
 	"\tconfig rx addr <rx_addr>\n" \
@@ -49,7 +51,7 @@ extern void cmd_fdd_start_parsed(void *parsed_result, struct cmdline *cl, void *
 extern void cmd_fdd_stop_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_start_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_stop_parsed(void *parsed_result, struct cmdline *cl, void *data);
-extern void cmd_tdd_config_pattern_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_config_scs_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_symbol_size_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_rx_ant_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_rx_addr_parsed(void *parsed_result, struct cmdline *cl, void *data);
@@ -65,6 +67,8 @@ extern void cmd_config_qec_pt_parsed(void *parsed_result, struct cmdline *cl, vo
 extern void cmd_config_qec_dco_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_qec_fdelay_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_qec_iqtaps_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_tdd_config_pattern_new_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_tdd_config_pattern_fr1fr2_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_wait_response_parsed(void *parsed_result, struct cmdline *cl, void *data);
 
 struct cmd_wait_response_result {
@@ -202,55 +206,28 @@ static cmdline_parse_inst_t cmd_tdd_stop = {
 	}
 };
 
-struct cmd_tdd_config_pattern_result {
-	cmdline_fixed_string_t tdd;
+struct cmd_config_scs_result {
 	cmdline_fixed_string_t config;
-	cmdline_fixed_string_t pattern;
-	uint16_t scs;
-	uint16_t dl1;
-	uint16_t g1;
-	uint16_t ul1;
-	uint16_t dl2;
-	uint16_t g2;
-	uint16_t ul2;
+	cmdline_fixed_string_t scs;
+	cmdline_fixed_string_t scs_value;
+
 };
 
-static cmdline_parse_token_string_t cmd_tdd_config_pattern_tdd_tok =
-	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_pattern_result, tdd, "tdd");
-static cmdline_parse_token_string_t cmd_tdd_config_pattern_config_tok =
-	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_pattern_result, config, "config");
-static cmdline_parse_token_string_t cmd_tdd_config_pattern_pattern_tok =
-	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_pattern_result, pattern, "pattern");
-static cmdline_parse_token_num_t cmd_tdd_config_pattern_scs_tok =
-	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, scs, RTE_UINT16);
-static cmdline_parse_token_num_t cmd_tdd_config_pattern_dl1_tok =
-	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, dl1, RTE_UINT16);
-static cmdline_parse_token_num_t cmd_tdd_config_pattern_g1_tok =
-	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, g1, RTE_UINT16);
-static cmdline_parse_token_num_t cmd_tdd_config_pattern_ul1_tok =
-	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, ul1, RTE_UINT16);
-static cmdline_parse_token_num_t cmd_tdd_config_pattern_dl2_tok =
-	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, dl2, RTE_UINT16);
-static cmdline_parse_token_num_t cmd_tdd_config_pattern_g2_tok =
-	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, g2, RTE_UINT16);
-static cmdline_parse_token_num_t cmd_tdd_config_pattern_ul2_tok =
-	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_pattern_result, ul2, RTE_UINT16);
+static cmdline_parse_token_string_t cmd_config_scs_config_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_config_scs_result, config, "config");
+static cmdline_parse_token_string_t cmd_config_scs_scs_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_config_scs_result, scs, "scs");
+static cmdline_parse_token_string_t cmd_config_scs_scs_value_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_config_scs_result, scs_value, "15#30");
 
-static cmdline_parse_inst_t cmd_tdd_config_pattern = {
-	.f = cmd_tdd_config_pattern_parsed,
+static cmdline_parse_inst_t cmd_config_scs = {
+	.f = cmd_config_scs_parsed,
 	.data = NULL,
 	.help_str = "",
 	.tokens = {
-		(void *)&cmd_tdd_config_pattern_tdd_tok,
-		(void *)&cmd_tdd_config_pattern_config_tok,
-		(void *)&cmd_tdd_config_pattern_pattern_tok,
-		(void *)&cmd_tdd_config_pattern_scs_tok,
-		(void *)&cmd_tdd_config_pattern_dl1_tok,
-		(void *)&cmd_tdd_config_pattern_g1_tok,
-		(void *)&cmd_tdd_config_pattern_ul1_tok,
-		(void *)&cmd_tdd_config_pattern_dl2_tok,
-		(void *)&cmd_tdd_config_pattern_g2_tok,
-		(void *)&cmd_tdd_config_pattern_ul2_tok,
+		(void *)&cmd_config_scs_config_tok,
+		(void *)&cmd_config_scs_scs_tok,
+		(void *)&cmd_config_scs_scs_value_tok,
 		NULL,
 	}
 };
@@ -744,6 +721,64 @@ static cmdline_parse_inst_t cmd_config_qec_iqtaps = {
 	}
 };
 
+struct cmd_tdd_config_pattern_new_result {
+	cmdline_fixed_string_t tdd;
+	cmdline_fixed_string_t config;
+	cmdline_fixed_string_t pattern_new;
+	cmdline_fixed_string_t args;
+};
+
+static cmdline_parse_token_string_t cmd_tdd_config_pattern_new_tdd_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_pattern_new_result, tdd, "tdd");
+static cmdline_parse_token_string_t cmd_tdd_config_pattern_new_config_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_pattern_new_result, config, "config");
+static cmdline_parse_token_string_t cmd_tdd_config_pattern_pattern_new_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_pattern_new_result, pattern_new, "pattern");
+static cmdline_parse_token_string_t cmd_tdd_config_pattern_new_args_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_pattern_new_result, args, NULL);
+
+static cmdline_parse_inst_t cmd_tdd_config_pattern_new = {
+	.f = cmd_tdd_config_pattern_new_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_tdd_config_pattern_new_tdd_tok,
+		(void *)&cmd_tdd_config_pattern_new_config_tok,
+		(void *)&cmd_tdd_config_pattern_pattern_new_tok,
+		(void *)&cmd_tdd_config_pattern_new_args_tok,
+		NULL,
+	}
+};
+
+struct cmd_tdd_config_pattern_fr1fr2_result {
+	cmdline_fixed_string_t tdd;
+	cmdline_fixed_string_t config;
+	cmdline_fixed_string_t pattern_fr1fr2;
+	cmdline_fixed_string_t args;
+};
+
+static cmdline_parse_token_string_t cmd_tdd_config_pattern_fr1fr2_tdd_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_pattern_fr1fr2_result, tdd, "tdd");
+static cmdline_parse_token_string_t cmd_tdd_config_pattern_fr1fr2_config_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_pattern_fr1fr2_result, config, "config");
+static cmdline_parse_token_string_t cmd_tdd_config_pattern_pattern_fr1fr2_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_pattern_fr1fr2_result, pattern_fr1fr2, "pattern_fr1fr2");
+static cmdline_parse_token_string_t cmd_tdd_config_pattern_fr1fr2_args_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_pattern_fr1fr2_result, args, NULL);
+
+static cmdline_parse_inst_t cmd_tdd_config_pattern_fr1fr2 = {
+	.f = cmd_tdd_config_pattern_fr1fr2_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_tdd_config_pattern_fr1fr2_tdd_tok,
+		(void *)&cmd_tdd_config_pattern_fr1fr2_config_tok,
+		(void *)&cmd_tdd_config_pattern_pattern_fr1fr2_tok,
+		(void *)&cmd_tdd_config_pattern_fr1fr2_args_tok,
+		NULL,
+	}
+};
+
 static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_quit,
 	&cmd_help,
@@ -752,7 +787,7 @@ static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_fdd_stop,
 	&cmd_tdd_start,
 	&cmd_tdd_stop,
-	&cmd_tdd_config_pattern,
+	&cmd_config_scs,
 	&cmd_config_symbol_size,
 	&cmd_config_rx_ant,
 	&cmd_config_rx_addr,
@@ -768,6 +803,8 @@ static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_config_qec_dco,
 	&cmd_config_qec_fdelay,
 	&cmd_config_qec_iqtaps,
+	&cmd_tdd_config_pattern_new,
+	&cmd_tdd_config_pattern_fr1fr2,
 	NULL
 };
 
