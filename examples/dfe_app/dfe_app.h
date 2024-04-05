@@ -39,7 +39,8 @@ void signal_ipc_reset(void);
 
 void cmd_do_wait_response(void);
 void cmd_do_simple(int msg_type, const char *desc);
-void cmd_do_config_pattern(uint32_t p0, uint32_t p1, uint32_t p2, uint32_t p3, uint32_t p4, uint32_t p5, uint32_t p6);
+void cmd_do_config_pattern_new(uint32_t p0, uint32_t p1, uint32_t p2, uint32_t p3, uint32_t p4, uint32_t p5, uint32_t p6, uint32_t p7);
+void cmd_do_config_scs(uint32_t scs);
 void cmd_do_vspa_benchmark(uint32_t size_bytes, uint32_t mode, uint32_t parallel_dma_num, uint32_t iterations);
 void cmd_do_vspa_fr1fr2_tool(uint16_t param);
 void cmd_do_tx_rx_sym_nr_config(int msg_type_tx_rx_sym_nr, uint32_t num_syms_in_buffer);
@@ -47,6 +48,7 @@ void cmd_do_tx_rx_addr_config(int msg_type_tx_rx_addr, uint32_t addr);
 void cmd_do_sym_size_config(uint32_t sym_size);
 void cmd_do_rx_antenna_config(uint32_t rx_antenna);
 void cmd_do_qec_config(uint32_t tx_rx, uint32_t mode, uint32_t index, uint32_t value);
+
 
 
 
