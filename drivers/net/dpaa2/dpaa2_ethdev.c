@@ -371,9 +371,8 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 	uint8_t num_rxqueue_per_tc;
 	struct dpaa2_queue *mc_q, *mcq;
 	uint32_t tot_queues;
-	int i, j, ret = 0;
+	int i, ret = 0;
 	struct dpaa2_queue *dpaa2_q;
-	struct queue_storage_info_t *per_cqst;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -393,38 +392,10 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 		mc_q->eth_data = dev->data;
 		priv->rx_vq[i] = mc_q++;
 		dpaa2_q = priv->rx_vq[i];
-		dpaa2_q->q_storage = rte_malloc("dq_storage",
-			sizeof(struct queue_storage_info_t),
-			RTE_CACHE_LINE_SIZE);
-		if (!dpaa2_q->q_storage) {
-			ret = -ENOBUFS;
-			goto fail;
-		}
-		for (j = 0; j < RTE_MAX_LCORE; j++) {
-			dpaa2_q->per_core_q_storage[j] = rte_malloc(NULL,
-				sizeof(struct queue_storage_info_t),
-				RTE_CACHE_LINE_SIZE);
-			if (!dpaa2_q->per_core_q_storage[j]) {
-				ret = -ENOBUFS;
-				goto fail;
-			}
-		}
-
-		memset(dpaa2_q->q_storage, 0,
-			sizeof(struct queue_storage_info_t));
-		for (j = 0; j < RTE_MAX_LCORE; j++)
-			memset(dpaa2_q->per_core_q_storage[j], 0,
-				sizeof(struct queue_storage_info_t));
-		ret = dpaa2_alloc_dq_storage(dpaa2_q->q_storage);
+		ret = dpaa2_queue_storage_alloc(dpaa2_q,
+			RTE_MAX_LCORE);
 		if (ret)
 			goto fail;
-
-		for (j = 0; j < RTE_MAX_LCORE; j++) {
-			per_cqst = dpaa2_q->per_core_q_storage[j];
-			ret = dpaa2_alloc_dq_storage(per_cqst);
-			if (ret)
-				goto fail;
-		}
 	}
 
 	if (dpaa2_enable_err_queue) {
@@ -436,22 +407,10 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 		}
 
 		dpaa2_q = priv->rx_err_vq;
-		dpaa2_q->q_storage = rte_malloc("err_dq_storage",
-			sizeof(struct queue_storage_info_t) *
-			RTE_MAX_LCORE,
-			RTE_CACHE_LINE_SIZE);
-		if (!dpaa2_q->q_storage) {
-			ret = -ENOBUFS;
+		ret = dpaa2_queue_storage_alloc(dpaa2_q,
+			RTE_MAX_LCORE);
+		if (ret)
 			goto fail;
-		}
-
-		memset(dpaa2_q->q_storage, 0,
-			sizeof(struct queue_storage_info_t));
-		for (i = 0; i < RTE_MAX_LCORE; i++) {
-			ret = dpaa2_alloc_dq_storage(&dpaa2_q->q_storage[i]);
-			if (ret)
-				goto fail;
-		}
 	}
 
 	for (i = 0; i < priv->nb_tx_queues; i++) {
@@ -459,7 +418,8 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 		mc_q->flow_id = DPAA2_INVALID_FLOW_ID;
 		priv->tx_vq[i] = mc_q++;
 		dpaa2_q = priv->tx_vq[i];
-		dpaa2_q->cscn = rte_malloc(NULL, sizeof(struct qbman_result),
+		dpaa2_q->cscn = rte_malloc(NULL,
+			sizeof(struct qbman_result),
 			RTE_CACHE_LINE_SIZE);
 		if (!dpaa2_q->cscn) {
 			ret = -ENOBUFS;
@@ -475,40 +435,10 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 			mc_q->flow_id = 0;
 			priv->tx_conf_vq[i] = mc_q++;
 			dpaa2_q = priv->tx_conf_vq[i];
-			dpaa2_q->q_storage = rte_malloc("dq_storage",
-				sizeof(struct queue_storage_info_t),
-				RTE_CACHE_LINE_SIZE);
-			if (!dpaa2_q->q_storage) {
-				ret = -ENOBUFS;
-				goto fail_tx_conf;
-			}
-			for (j = 0; j < RTE_MAX_LCORE; j++) {
-				dpaa2_q->per_core_q_storage[j] =
-					rte_malloc(NULL,
-					sizeof(struct queue_storage_info_t),
-					RTE_CACHE_LINE_SIZE);
-				if (!dpaa2_q->per_core_q_storage[j]) {
-					ret = -ENOBUFS;
-					goto fail_tx_conf;
-				}
-			}
-
-			memset(dpaa2_q->q_storage, 0,
-				sizeof(struct queue_storage_info_t));
-			for (j = 0; j < RTE_MAX_LCORE; j++) {
-				memset(dpaa2_q->per_core_q_storage[j], 0,
-					sizeof(struct queue_storage_info_t));
-			}
-			ret = dpaa2_alloc_dq_storage(dpaa2_q->q_storage);
+			ret = dpaa2_queue_storage_alloc(dpaa2_q,
+					RTE_MAX_LCORE);
 			if (ret)
 				goto fail_tx_conf;
-
-			for (j = 0; j < RTE_MAX_LCORE; j++) {
-				per_cqst = dpaa2_q->per_core_q_storage[j];
-				ret = dpaa2_alloc_dq_storage(per_cqst);
-				if (ret)
-					goto fail_tx_conf;
-			}
 		}
 	}
 
@@ -525,7 +455,7 @@ fail_tx_conf:
 	i -= 1;
 	while (i >= 0) {
 		dpaa2_q = priv->tx_conf_vq[i];
-		rte_free(dpaa2_q->q_storage);
+		dpaa2_queue_storage_free(dpaa2_q, RTE_MAX_LCORE);
 		priv->tx_conf_vq[i--] = NULL;
 	}
 	i = priv->nb_tx_queues;
@@ -542,16 +472,13 @@ fail:
 	mc_q = priv->rx_vq[0];
 	while (i >= 0) {
 		dpaa2_q = priv->rx_vq[i];
-		dpaa2_free_dq_storage(dpaa2_q->q_storage);
-		rte_free(dpaa2_q->q_storage);
+		dpaa2_queue_storage_free(dpaa2_q, RTE_MAX_LCORE);
 		priv->rx_vq[i--] = NULL;
 	}
 
 	if (dpaa2_enable_err_queue) {
 		dpaa2_q = priv->rx_err_vq;
-		if (dpaa2_q->q_storage)
-			dpaa2_free_dq_storage(dpaa2_q->q_storage);
-		rte_free(dpaa2_q->q_storage);
+		dpaa2_queue_storage_free(dpaa2_q, RTE_MAX_LCORE);
 	}
 
 	rte_free(mc_q);
@@ -572,7 +499,8 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 		/* cleaning up queue storage */
 		for (i = 0; i < priv->nb_rx_queues; i++) {
 			dpaa2_q = priv->rx_vq[i];
-			rte_free(dpaa2_q->q_storage);
+			dpaa2_queue_storage_free(dpaa2_q,
+				RTE_MAX_LCORE);
 		}
 		/* cleanup tx queue cscn */
 		for (i = 0; i < priv->nb_tx_queues; i++) {
@@ -583,7 +511,8 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 			/* cleanup tx conf queue storage */
 			for (i = 0; i < priv->nb_tx_queues; i++) {
 				dpaa2_q = priv->tx_conf_vq[i];
-				rte_free(dpaa2_q->q_storage);
+				dpaa2_queue_storage_free(dpaa2_q,
+					RTE_MAX_LCORE);
 			}
 		}
 		/*free memory for all queues (RX+TX) */
