@@ -17,9 +17,15 @@ sources = files(
 
 cmd = run_command('sh', '-c', 'echo $LA9310_COMMON_HEADERS')
 LA9310_COMMON_HEADERS = cmd.stdout().strip()
+
+if LA9310_COMMON_HEADERS != ''
 message('LA9310_COMMON_HEADERS=' + LA9310_COMMON_HEADERS)
 includes += [include_directories(LA9310_COMMON_HEADERS)]
-
+else
+    build = false
+    reason = 'missing LA9310_COMMON_HEADERS'
+    subdir_done()
+endif
 
 rtdep = dependency('librt', required: false)
 if not rtdep.found()
