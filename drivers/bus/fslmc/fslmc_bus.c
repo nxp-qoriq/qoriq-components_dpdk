@@ -312,7 +312,7 @@ err_out:
 static int
 rte_fslmc_scan(void)
 {
-	int ret;
+	int ret = 0;
 	char fslmc_dirpath[PATH_MAX];
 	DIR *dir;
 	struct dirent *entry;
@@ -330,11 +330,13 @@ rte_fslmc_scan(void)
 	group_name = getenv("DPRC");
 	if (!group_name) {
 		DPAA2_BUS_DEBUG("DPAA2: DPRC not available");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto scan_fail;
 	}
 	if (strlen(group_name) >= FSLMC_CONTAINER_MAX_LEN) {
 		DPAA2_BUS_ERR("Invalid container name: %s", group_name);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto scan_fail;
 	}
 
 	ret = fslmc_get_container_group(group_name, &groupid);
