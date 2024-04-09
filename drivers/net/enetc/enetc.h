@@ -42,6 +42,9 @@
 
 #define ENETC_DEFAULT_MSG_SIZE  1024    /* max size */
 
+/* Message length is in multiple of 32 bytes */
+#define ENETC_VSI_PSI_MSG_SIZE  32
+
 /* size for marking hugepage non-cacheable */
 #define SIZE_2MB	0x200000
 
@@ -99,8 +102,6 @@ struct enetc_eth_hw {
 	uint8_t revision_id;
 	struct enetc_eth_mac_info mac;
 	struct netc_cbdr cbdr;
-	bool uc_promisc;
-	bool mc_promisc;
 	uint32_t num_rss;
 	uint32_t max_rx_queues;
 	uint32_t max_tx_queues;
@@ -126,43 +127,103 @@ struct enetc_eth_adapter {
 #define ENETC_DEV_PRIVATE_TO_INTR(adapter) \
 	(&((struct enetc_eth_adapter *)adapter)->intr)
 
-/* Command completion status */
-enum enetc_msg_cmd_status {
-	ENETC_MSG_CMD_STATUS_OK,
-	ENETC_MSG_CMD_STATUS_FAIL,
-	ENETC_MSG_CMD_NOT_SUPPORT
+/* Class ID for PSI-TO-VSI messages */
+#define ENETC_MSG_CLASS_ID_CMD_SUCCESS          0x1
+#define ENETC_MSG_CLASS_ID_PERMISSION_DENY      0x2
+#define ENETC_MSG_CLASS_ID_CMD_NOT_SUPPORT      0x3
+#define ENETC_MSG_CLASS_ID_PSI_BUSY             0x4
+#define ENETC_MSG_CLASS_ID_CRC_ERROR            0x5
+#define ENETC_MSG_CLASS_ID_PROTO_NOT_SUPPORT    0x6
+#define ENETC_MSG_CLASS_ID_INVALID_MSG_LEN      0x7
+#define ENETC_MSG_CLASS_ID_CMD_TIMEOUT          0x8
+#define ENETC_MSG_CLASS_ID_CMD_DEFERED          0xf
+
+#define ENETC_PROMISC_DISABLE			0x40
+#define ENETC_PROMISC_ENABLE			0x42
+#define ENETC_ALLMULTI_PROMISC_DIS		0x80
+#define ENETC_ALLMULTI_PROMISC_EN		0x82
+
+/* Enum for class IDs */
+enum enetc_msg_cmd_class_id {
+	ENETC_CLASS_ID_MAC_FILTER = 0x20,
+	ENETC_CLASS_ID_LINK_STATUS = 0x80,
+	ENETC_CLASS_ID_LINK_SPEED = 0x81
 };
 
-/* VSI-PSI command message types */
-enum enetc_msg_cmd_type {
-	ENETC_MSG_CMD_MNG_MAC = 1, /* manage MAC address */
-	ENETC_MSG_CMD_MNG_RX_MAC_FILTER,/* manage RX MAC table */
-	ENETC_MSG_CMD_MNG_RX_VLAN_FILTER /* manage RX VLAN table */
+/* Enum for command IDs */
+enum enetc_msg_cmd_id {
+	ENETC_CMD_ID_SET_PRIMARY_MAC = 0,
+	ENETC_CMD_ID_SET_MAC_PROMISCUOUS = 5,
+	ENETC_CMD_ID_GET_LINK_STATUS = 0,
+	ENETC_CMD_ID_GET_LINK_SPEED = 0
 };
 
-/* VSI-PSI command action types */
-enum enetc_msg_cmd_action_type {
-	ENETC_MSG_CMD_MNG_ADD = 1,
-	ENETC_MSG_CMD_MNG_REMOVE
+enum mac_addr_status {
+	ENETC_INVALID_MAC_ADDR = 0x0,
+	ENETC_DUPLICATE_MAC_ADDR = 0X1,
+	ENETC_MAC_ADDR_NOT_FOUND = 0X2,
+};
+
+enum link_status {
+	ENETC_LINK_UP = 0x0,
+	ENETC_LINK_DOWN = 0x1
+};
+
+enum speed {
+	ENETC_SPEED_UNKNOWN = 0x0,
+	ENETC_SPEED_10_HALF_DUPLEX = 0x1,
+	ENETC_SPEED_10_FULL_DUPLEX = 0x2,
+	ENETC_SPEED_100_HALF_DUPLEX = 0x3,
+	ENETC_SPEED_100_FULL_DUPLEX = 0x4,
+	ENETC_SPEED_1000 = 0x5,
+	ENETC_SPEED_2500 = 0x6,
+	ENETC_SPEED_5000 = 0x7,
+	ENETC_SPEED_10G = 0x8,
+	ENETC_SPEED_25G = 0x9,
+	ENETC_SPEED_50G = 0xA,
+	ENETC_SPEED_100G = 0xB,
+	ENETC_SPEED_NOT_SUPPORTED = 0xF
 };
 
 /* PSI-VSI command header format */
 struct enetc_msg_cmd_header {
-	uint16_t type;       /* command class type */
-	uint16_t id;         /* denotes the specific required action */
+	uint16_t csum;		/* INET_CHECKSUM */
+	uint8_t class_id;       /* Command class type */
+	uint8_t cmd_id;         /* Denotes the specific required action */
+	uint8_t proto_ver;	/* Supported VSI-PSI command protocol version */
+	uint8_t len;		/* Extended message body length */
+	uint8_t reserved_1;
+	uint8_t cookie;	/* Control command execution asynchronously on PSI side */
+	uint64_t reserved_2;
 };
 
 /* VF-PF set primary MAC address message format */
 struct enetc_msg_cmd_set_primary_mac {
 	struct enetc_msg_cmd_header header;
-	struct sockaddr mac;
+	uint8_t count;	/* number of MAC addresses */
+	uint8_t reserved_1;
+	uint16_t reserved_2;
+	struct rte_ether_addr addr;
 };
 
-/* VSI-to-PSI Messaging: set MAC filter message format */
-struct enetc_msg_config_mac_filter {
-        struct enetc_msg_cmd_header header;
-        uint8_t uc_promisc;
-        uint8_t mc_promisc;
+struct enetc_msg_cmd_set_promisc {
+	struct enetc_msg_cmd_header header;
+	uint8_t op_type;
+};
+
+struct enetc_msg_cmd_get_link_status {
+	//no operation specific params
+	struct enetc_msg_cmd_header header;
+};
+
+struct enetc_msg_cmd_get_link_speed {
+	//no operation specific params
+	 struct enetc_msg_cmd_header header;
+};
+
+struct enetc_psi_reply_msg {
+	uint8_t class_id;
+	uint8_t status;
 };
 
 /* msg size encoding: default and max msg value of 1024B encoded as 0 */
