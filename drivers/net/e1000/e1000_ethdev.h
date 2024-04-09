@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2015 Intel Corporation
+ * Copyright 2024 NXP
  */
 
 #ifndef _E1000_ETHDEV_H_
@@ -14,6 +15,10 @@
 
 #define E1000_INTEL_VENDOR_ID 0x8086
 
+#if RTE_USE_NON_CACHE_MEM
+/* size for marking hugepage non-cacheable */
+#define SIZE_2MB 	0x200000
+#endif
 /* need update link, bit flag */
 #define E1000_FLAG_NEED_LINK_UPDATE (uint32_t)(1 << 0)
 #define E1000_FLAG_MAILBOX          (uint32_t)(1 << 1)
