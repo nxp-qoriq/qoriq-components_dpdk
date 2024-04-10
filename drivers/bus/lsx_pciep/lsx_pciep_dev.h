@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2024 NXP
  */
 
 #ifndef _LSX_PCIEP_DEV_H_
@@ -39,14 +39,6 @@
 
 #define LSX_PCIE_SIM_IDX 0
 
-struct lsx_pciep_inbound_bar {
-	char name[RTE_DEV_NAME_MAX_LEN];
-	uint8_t *inbound_virt;
-	uint64_t inbound_iova; /*Used for EP DMA*/
-	uint64_t inbound_phy; /*Used for PCIe inbound*/
-	uint64_t size;
-};
-
 /** Provide outbound space shared policy
  * for multiple functions of each PCIe controller.
  */
@@ -60,19 +52,6 @@ enum sriov_fun_idx {
 	PF_IDX,
 	VF_IDX,
 	SRIOV_FUN_MAX
-};
-
-struct lsx_pciep_ib_mem {
-	const struct rte_memzone *
-		pf_mz[PF_MAX_NB][PCI_MAX_RESOURCE];
-	/* All the VFs of PF share one mz.*/
-	const struct rte_memzone *
-		vf_mz[PF_MAX_NB][PCIE_MAX_VF_NUM][PCI_MAX_RESOURCE];
-
-	struct lsx_pciep_inbound_bar
-		pf_ib_bar[PF_MAX_NB][PCI_MAX_RESOURCE];
-	struct lsx_pciep_inbound_bar
-		vf_ib_bar[PF_MAX_NB][PCIE_MAX_VF_NUM][PCI_MAX_RESOURCE];
 };
 
 /**
@@ -134,8 +113,6 @@ struct lsx_pciep_ctl_hw {
 	uint64_t out_size_per_fun;
 	uint32_t out_win_per_fun;
 	int share_vfio_map;
-
-	struct lsx_pciep_ib_mem ib_mem;
 };
 
 int
