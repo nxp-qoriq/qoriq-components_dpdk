@@ -12,18 +12,17 @@
 #include <sys/ioctl.h>
 
 #include <rte_log.h>
-
+#include "la9310_host_if.h"
 #include "bbdev_la93xx_wdog.h"
 #include "bbdev_la93xx_pmd_logs.h"
-
-#define LA9310_WDOG_DEVNAME_PREFIX "la9310wdog"
 
 static inline int open_devwdog(int modem_id)
 {
 	char wdog_dev_name[50];
 	int devwdog;
 
-	sprintf(wdog_dev_name, "/dev/%s%d", LA9310_WDOG_DEVNAME_PREFIX, modem_id);
+	sprintf(wdog_dev_name, "/dev/%s%s%d",
+		 LA9310_DEV_NAME_PREFIX, LA9310_WDOG_DEVNAME_PREFIX, modem_id);
 	BBDEV_LA93XX_PMD_INFO("%s:Trying to open device : %s",
 			      __func__, wdog_dev_name);
 	devwdog = open(wdog_dev_name, O_RDWR);
