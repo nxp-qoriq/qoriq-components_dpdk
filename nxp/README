@@ -6,7 +6,7 @@ NXP DPDK README
 Supported Platforms (and their derivatives):
 1. DPAA2 : LS108x, LS208x, LX216x
 2. DPAA  : LS1043, LS1046
-3. ENETC : LS1028
+3. ENETC : LS1028, i.MX95
 4. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX93
 5. QOS   : i.MX 8MP, i.MX93
 ===============================================================================
@@ -41,11 +41,10 @@ Following information can be used to obtain these components:
     Use following command to get the DPDK code
 
     - Internal git repository:
-      $ git clone ssh://git@bitbucket.sw.nxp.com/gitam/dpdk.git -b 21.11-qoriq
+      $ git clone ssh://git@bitbucket.sw.nxp.com/gitam/dpdk.git -b 22.11-qoriq-lf-rel
       OR,
      - External Github Repository:
-      $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/dpdk -b github.qoriq-os/21.11-qoriq
-
+      $ git clone https://github.com/NXP/dpdk.git -b 22.11-qoriq-lf-rel
 
       $ cd dpdk # Change directory to cloned DPDK source code
 
@@ -60,7 +59,7 @@ Following information can be used to obtain these components:
       $ git clone https://source.codeaurora.org/external/qoriq/qoriq-components/linux -b github.qoriq-os/linux-5.10
 
     More than one kernel are available on the above link. Of those, currently
-    Linux-4.19, 5.4, 5.10 has been verified with DPDK. Other kernels may work but
+    Linux-4.19, 5.4, 5.10, 5.15, 6.1, 6.6 has been verified with DPDK. Other kernels may work but
     they have not been tested.
 
     NOTE: While building DPDK on NXP boards, Linux Kernel headers might already
@@ -70,9 +69,8 @@ Following information can be used to obtain these components:
     Cross compiled toolchain For ARM64
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Get the `gcc-7.5` or earlier toolchain from Linaro. e.g.
-
-    # https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/
+    Get the `gcc-13.2` for latest LF6.6 releases:
+    # https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
 
     Thereafter, set the environment variable:
 
@@ -160,8 +158,8 @@ Pre requisite: Install pkg-config-aarch64-linux-gnu package on your machine
 Execute the following commands for cross compilation of dpdk libraries and
 application:
 
-  1. export CROSS_PATH=<path to toolchain>/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/
-
+  1. export CROSS_PATH=/opt/arm-gnu-toolchain-13.2.Rel1-x86_64-aarch64-none-linux-gnu/bin
+  
   2. export PATH=$PATH:$CROSS_PATH
 
   3. Optional: To compile using external library(eg: libcrypto), export these
@@ -170,16 +168,20 @@ application:
                export PKG_CONFIG_LIBDIR="<path to libcrypto>/lib/"
                export PKG_CONFIG_PATH=$PKG_CONFIG_LIBDIR/pkgconfig
 
-  4. meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dexamples=<list of example applications separated by commas>
+  4. meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gnu_gcc -Dexamples=<list of example applications separated by commas>
 
      Example: To compile l2fwd and l3fwd applications, execute this command:
-              meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dexamples=l2fwd,l3fwd
+              meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gnu_gcc -Dexamples=l2fwd,l3fwd
+
+     NOTE: For i.MX-95 & i.MX-93 [A55 platforms]:
+		meson arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc -Dexamples=all
 
      NOTE: By default, both Static and Shared compilation is done by DPDK.
 
      NOTE: If installation is required in a specific directory, use following:
 
-           meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dexamples=all -Dprefix=<location to install DPDK>
+           meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gnu_gcc -Dexamples=all -Dprefix=<location to install DPDK>
+
 
   5. ninja -C arm64-build install
 
@@ -189,10 +191,10 @@ arm64-build/examples directory.
 
   6. If you are changing configuration, you may need to reconfigure meson
   e.g.
-        meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dexamples=all --reconfigure
+        meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gnu_gcc -Dexamples=all --reconfigure
 
  or with docs and debug mode
-        meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dexamples=all -Dbuildtype=debug
+        meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gnu_gcc -Dexamples=all -Dbuildtype=debug
 
 
     NOTE: If installation is required in a specific directory, use following:
@@ -214,7 +216,7 @@ arm64-build/examples directory.
 
     b) Build all applications
 
-      $ meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc -Dexamples=all
+      $ meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gnu_gcc -Dexamples=all
 
 ===============================================================================
 
@@ -222,12 +224,12 @@ Executing DPDK Applications
 -------------------------
 
 There are some pre-requisites for running DPDK applications on the DPAA,
-DPAA2 or ENETC boards.
+DPAA2, ENETC and i.MX boards.
 
 Following are some pre-requisites:
 
-  For ENETC Platform:
-  ~~~~~~~~~~~~~~~~~~
+  For ENETC Platform (LS1028):
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
   1. Bring up the board with proper images using below "othbootargs":
 	setenv othbootargs default_hugepagesz=2m hugepagesz=2m hugepages=256 isolcpus=1 iommu.passthrough=1
@@ -265,13 +267,9 @@ Following are some pre-requisites:
 	1. For QDS board:
 		echo 1 > /sys/bus/pci/devices/0000\:00\:00.1/sriov_numvfs
 		echo 1 > /sys/bus/pci/devices/0000\:00\:00.0/sriov_numvfs
-		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:01.2/driver_override
-		echo 0000:00:01.2 > /sys/bus/pci/drivers/fsl_enetc_vf/unbind
-		echo 0000:00:01.2 > /sys/bus/pci/drivers/vfio-pci/bind
 
-		echo vfio-pci > /sys/bus/pci/devices/0000\:00\:01.0/driver_override
-		echo 0000:00:01.0 > /sys/bus/pci/drivers/fsl_enetc_vf/unbind
-		echo 0000:00:01.0 > /sys/bus/pci/drivers/vfio-pci/bind
+		/usr/bin/dpdk-devbind.py -b vfio-pci 0000:00:01.2
+		/usr/bin/dpdk-devbind.py -b vfio-pci 0000:00:01.0
 
 		ifconfig eno0 up
 		ifconfig eno1 up
@@ -562,7 +560,127 @@ Below steps are for running DPDK applications on i.MX8MP and i.MX93 boards.
 	which is connected to the port.
 
 ===============================================================================
+ENETC-4 with i.mx95
+~~~~~~~~~~~~~~~~~~~~~
 
+Linux kernel on ARM core owned ENETC PF interface
+=================================================
+
+Note: For i.MX95 use 13.2 gcc (See details in cross-compilation section)
+	$ meson arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc -Dexamples=all
+	$ ninja -C arm64-build
+
+Steps to run VF(s) in dpdk:
+----------------------------
+1. Bring up the board with proper images and set "iommu.passthrough=1" in mmcargs:
+        setenv mmcargs <user-specific-params> isolcpus=1-5 iommu.passthrough=1;
+2. Set "fdtfile" on uboot with default dtb:
+	setenv fdtfile imx95-19x19-evk.dtb
+3. Boot the board
+	boot
+4. Load the non-cacheable module.
+	insmod kpage_ncache.ko
+	Note: Refer ENET-QOS section for detailed compilation info about this module.
+5. Manually allocate hugepages
+	echo 512 > /proc/sys/vm/nr_hugepages
+
+6. Running VFs in dpdk:
+
+	Run the below steps to bind VFs to dpdk:
+	a. Run below command to create a VF:
+		$ echo 1 > /sys/bus/pci/devices/0002\:00\:00.0/sriov_numvfs
+		Note: Use 'dpdk-devbind.py -s' to identify the PCI address of 1g and 10g ports
+		      like 0002:00:00.0 in the above example.
+	b. Check dmesg logs to identify the PCI address of VF created
+		Example kernel logs for VF:
+		[ 2002.156985] fsl_enetc_vf 0002:00:12.0: enabling device (0000 -> 0002)
+		[ 2002.517997] uio_pci_generic 0002:00:12.0: enabling device (0000 -> 0002)
+		[ 2002.543684] uio_pci_generic 0002:00:12.0: No IRQ assigned to device: no support for interrupts?		
+	c. Use dpdk-devbind.py to bind VF to dpdk:
+		dpdk-devbind.py -b uio_pci_generic <vf-pci-addr>
+		As per the above logs, 0002:00:12.0 will be the <vf-pci-addr>
+7. Enable trust for the specified VF user by specifying the PF eth interface.
+	ip link set <eth-interface> vf 0 trust on
+	Note: Check eth interface using:
+              eg. ./dpdk-devbind.py -s [In below o/p eth0 is the PF eth interface]
+                0002:00:00.0 'Device e101' if=eth0 drv=fsl_enetc4 unused=vfio-pci,uio_pci_generic
+8. Run:
+	$ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1
+	$ ./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 -P --config="(0,0,1)"
+	$ ./dpdk-testpmd -c 0x3 -n 1 -- -i --portmask=0x1
+
+PSI-VSI messaging:
+------------------
+The hardware supports VF to send messages to PF by the VSI-TO-PSI
+messaging mechanism for supporting features not under VF's control.
+
+Currently the following features have been supportd for VF using kernel PF using this mechanism:
+    * VF primary MAC based filtering
+    * Enable/Disable promiscuous mode
+    * Enable/Disable allmulti MAC mode
+    * Get link status
+    * Get link speed
+
+1. Follow the above steps to run dpdk-testpmd.
+2. Users can control the timeout and delay time counters with env. variables [optional]
+	export ENETC4_VSI_WAIT_DELAY_UPDATE=<val>
+	export ENETC4_VSI_WAIT_TIMEOUT_UPDATE=<val>
+	Note: Using this user has control over waiting time for PSI to process message
+	      sent by VSI.
+3. Enable trust for the specified VF user by specifying the PF eth interface.
+	ip link set <eth-interface> vf 0 trust on
+	Note: Check eth interface using:
+              eg. ./dpdk-devbind.py -s [In below o/p eth0 will be the PF eth interface]
+		0002:00:00.0 'Device e101' if=eth0 drv=fsl_enetc4 unused=vfio-pci,uio_pci_generic
+4. These features can be tested using dpdk-testpmd using its below runtime functions:
+	-> mac_addr set <port_id> <valid_mac_address> /* Set Primary MAC */
+	-> set promisc <port_id> off/on		      /* Enable/Disable promiscuous mode */
+	-> set allmulti <port_id> off/on	      /* Enable/Disable allmulti MAC mode */
+	-> show port info <port_id>		      /* Get link status/speed */
+
+VF1 validation:
+---------------
+DPDK support ENETC0(1G RGMII) VF1 and ENETC2(10G UXSGMII) VF1 interfaces.
+PF and VF0 must be owned by kernel while testing.
+
+1. Refer 'Steps to run VF(s) in dpdk' step 1-5.
+2. Run devbind.py script for device id
+	$ ./dpdk-devbind.py -s
+3. Create 2 VFs, one for dpdk and one for kernel
+	$  echo 2 > /sys/bus/pci/devices/0002\:00\:10.0/sriov_numvfs
+4. Check dmesg logs to identify the PCI address of VF1 created
+	Example kernel logs for VF:
+        	[ 107.122861] pci 0002:00:12.0: [1131:ef00] type 00 class 0x020001
+		[ 107.230531] fsl_enetc_vf 0002:00:12.0: enabling device (0000 -> 0002)
+		[ 107.232173] pci 0002:00:14.0: [1131:ef00] type 00 class 0x020001
+		[ 107.342547] fsl_enetc_vf 0002:00:14.0: enabling device (0000 -> 0002)
+5. Use dpdk-devbind.py to bind VF1 to dpdk:
+	$ dpdk-devbind.py -b uio_pci_generic <vf1-pci-addr>
+	As per the above logs, 0002:00:14.0 will be the <vf1-pci-addr>
+6. Enable trust for the specified VF user by specifying the PF eth interface.
+	ip link set <eth-interface> vf 0 trust on
+	Note: Check eth interface using:
+              eg. ./dpdk-devbind.py -s [In below o/p eth0 is the PF eth interface]
+                   0002:00:00.0 'Device e101' if=eth0 drv=fsl_enetc4 unused=vfio-pci,uio_pci_generic
+7. Run:
+	$ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1
+	$ ./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 -P --config="(0,0,1)"
+
+Notes:
+======
+-> i.MX95 supports jumbo frame, device supports maximum frame size to 2000 Bytes.
+-> Application can receive up to 2000 Bytes size frames.
+-> Availability of Multiple queues is dependent on ENETC PF driver (Arm core kernel driver/M7 core driver).
+-> RSS will be enabled on using multiple queues.
+	=> RSS secret key is random key.
+	=> Enabled RSS hash functions are IP source address, IP destination address, UDP/TCP source port and UDP/TCP destination port.
+	=> Receive queues are equally configured in RSS indirection table to receive flows.
+-> Hardware Packet type parsing for supported packets is enabled by default.
+-> Checksum validation offload is enabled by default.
+-> Only 1G Intel Gigabit PCI-E Network Adapter EXPI9301CTBLK is supported.
+-> Only ENETC 10G interface is supported with M7 image
+
+===============================================================================
   'dpdk-testpmd' Application
   ~~~~~~~~~~~~~~~~~~~~~
 
@@ -954,8 +1072,11 @@ Steps to cross compile dpdk-pdump:
 	$ export PKG_CONFIG_LIBDIR=$PKG_CONFIG_LIBDIR:<Path to installed pcap directory>/lib
 	$ export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:<Path to installed pcap directory>/lib/pkgconfig
 	$ pkg-config --modversion libpcap	#Verify pcap libraries can be used using pkgconfig.
-	$ meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gcc
+	$ meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gnu_gcc
+	NOTE: For i.MX-95 & i.MX-93 [A55 platforms]:
+		meson arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc
 	$ ninja -C arm64-build
+
 
 	NOTE: "--reconfigure" in meson may not work after updating
 	      PKG_CONFIG_PATH and PKG_CONFIG_LIBDIR. Better you delete the meson
@@ -1225,7 +1346,7 @@ nxp/
 
 ================================================================================
 
-Applications validated DPAA/DPAA2 Platforms
+Applications validated DPAA/DPAA2 Platform
 -------------------------------------------
 
  1. l2fwd
@@ -1472,8 +1593,8 @@ On non-root user:
 
 ======================================================================================================================================================
 
-Minimum NXP LSDK version supported: LSDK2004 (https://lsdk.github.io/)
-DPDK base version used: Release 20.11
+Minimum NXP LSDK version supported: LSDK2108 (https://lsdk.github.io/)
+DPDK base version used: Release 22.11
 More info on DPDK :  www.dpdk.org
 
 NXP contact: hemant.agrawal@nxp.com, dpdk-team@nxp1.onmicrosoft.com

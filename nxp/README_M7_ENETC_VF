@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2024 NXP
+
+===============================================================================
+ENETC-4 with i.mx95
+~~~~~~~~~~~~~~~~~~~~~
+
+M7 core owned ENETC PF interface
+================================
+
+Below steps are to be followed for M7 setup:
+
+1. Program wic firmware to SD card
+2. Change the switch settings to SW7 [1:4] : 1011 (SD boot)
+3. Flash the bootloader image on the SD card
+        dd if=<sd.bin> of=/dev/mmcblk1 bs=1k seek=32 conv=fsync,sync
+        Note: Refer the i.MX release RM steps for more details.
+4. Use imx95-19x19-evk-netc-rpmsg.dtb dtb file.
+5. Follow the below steps for running VF in dpdk.
+6. Check for M7 logs on other port consoles than linux.
+
+Note: For i.MX95 use 13.2 gcc
+        $ meson arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc -Dexamples=all
+        $ ninja -C arm64-build
+
+Steps to run VF(s) in dpdk:
+----------------------------
+1. Bring up the board with proper images and set "iommu.passthrough=1" in mmcargs:
+        setenv mmcargs <user-specific-params> isolcpus=1-5 iommu.passthrough=1;
+2. Set "fdtfile" on uboot:
+        setenv fdtfile imx95-19x19-evk-netc-rpmsg.dtb
+3. Boot the board
+        boot
+
+Run below steps on A core:
+4. Load the non-cacheable module.
+        insmod kpage_ncache.ko
+5. Manually allocate hugepages
+        echo 512 > /proc/sys/vm/nr_hugepages
+6. Running VFs in dpdk:
+        Run the below steps to bind VFs to dpdk:
+        a. Run below command to create a VF:
+                $ echo 1 > /sys/bus/pci/devices/0002\:00\:00.0/sriov_numvfs
+                Note: Use 'dpdk-devbind.py -s' to identify the PCI address of device
+		      for 1g and 10g ports like 0002:00:00.0 in the above example.
+        b. Check dmesg logs to identify the PCI address of VF created
+                Example kernel logs for VF:
+                [ 2002.156985] fsl_enetc_vf 0002:00:12.0: enabling device (0000 -> 0002)
+                [ 2002.517997] uio_pci_generic 0002:00:12.0: enabling device (0000 -> 0002)
+                [ 2002.543684] uio_pci_generic 0002:00:12.0: No IRQ assigned to device: no support for interrupts?
+        c. Use dpdk-devbind.py to bind VF to dpdk:
+                dpdk-devbind.py -b uio_pci_generic <vf-pci-addr>
+		As per the above logs, 0002:00:12.0 will be the <vf-pci-addr>
+7. Run:
+
+        $ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1
+        $ ./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 -P --config="(0,0,1)"
+        $ ./dpdk-testpmd -c 0x3 -n 1 -- -i --portmask=0x1
+
+PSI-VSI messaging:
+------------------
+The hardware supports VF to send messages to PF by the VSI-TO-PSI
+messaging mechanism for supporting features not under VF's control.
+
+Currently the following features have been supportd for VF using kernel PF using this mechanism:
+    * VF primary MAC based filtering
+    * Enable/Disable promiscuous mode
+    * Enable/Disable allmulti MAC mode
+    * Get link status
+    * Get link speed
+
+1. Follow the above steps to run dpdk-testpmd.
+2. Users can control the timeout and delay time counters with env. variables [optional]
+        export ENETC4_VSI_WAIT_DELAY_UPDATE=<val>
+        export ENETC4_VSI_WAIT_TIMEOUT_UPDATE=<val>
+        Note: Using this user has control over waiting time for PSI to process message
+              sent by VSI.
+3. These features can be tested using dpdk-testpmd using its below runtime functions:
+        -> mac_addr set <port_id> <valid_mac_address> /* Set Primary MAC */
+        -> set promisc <port_id> off/on               /* Enable/Disable promiscuous mode */
+        -> set allmulti <port_id> off/on              /* Enable/Disable allmulti MAC mode */
+        -> show port info <port_id>                   /* Get link status/speed */
+
+Notes:
+======
+-> Application can receive up to 2000 Bytes size frames.
+-> Availability of Multiple queues is dependent on ENETC M7 PF driver.
+-> RSS will be enabled on using multiple queues.
+        => RSS secret key is random key.
+        => Enabled RSS hash functions are IP source address, IP destination address, UDP/TCP source port and UDP/TCP destination port.
+        => Receive queues are equally configured in RSS indirection table to receive flows.
+-> Hardware Packet type parsing for supported packets is enabled by default.
+-> Checksum validation offload is enabled by default.
+-> Only ENETC 10G interface is supported with M7 image
+
