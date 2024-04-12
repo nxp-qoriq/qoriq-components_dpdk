@@ -1358,6 +1358,8 @@ lsinic_dev_start(struct rte_eth_dev *eth_dev)
 #ifdef RTE_ARCH_ARM64
 #define dccivac(p) \
 	{ asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
+#else
+#define dccivac(p) RTE_SET_USED(p)
 #endif
 
 #define PCI_WRITE_CODE 0x12
