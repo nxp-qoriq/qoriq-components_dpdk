@@ -6067,7 +6067,7 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	if (adapter->cap & LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM &&
 		!lsinic_dev->virt_addr[LSX_PCIEP_XFER_MEM_BAR_IDX]) {
 		const struct rte_memzone *mz;
-		int ret;
+		int ret, bar;
 		uint64_t mask;
 
 		mz = lsinic_dev_mempool_continue_mz(mp);
@@ -6081,8 +6081,12 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			return -EINVAL;
 		}
 
-		ret = rte_lsx_pciep_set_ib_win_mz(lsinic_dev,
-			LSX_PCIEP_XFER_MEM_BAR_IDX, mz, 0);
+		bar = LSX_PCIEP_XFER_MEM_BAR_IDX;
+		lsinic_dev->virt_addr[bar] = mz->addr;
+		lsinic_dev->iov_addr[bar] = mz->iova;
+		lsinic_dev->phy_addr[bar] = rte_mem_virt2phy(mz->addr);
+
+		ret = rte_lsx_pciep_set_ib_win(lsinic_dev, bar, mz->len);
 		if (ret)
 			return ret;
 		if (rte_lsx_pciep_hw_sim_get(adapter->pcie_idx) &&
