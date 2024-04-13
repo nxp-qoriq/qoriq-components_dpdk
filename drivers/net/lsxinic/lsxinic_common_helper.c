@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2024 NXP
  */
 
 #include <rte_mbuf.h>
@@ -12,7 +12,6 @@
 #include "lsxinic_common_helper.h"
 #include "lsxinic_common_reg.h"
 
-#include "lsxinic_ep_tool.h"
 #include "lsxinic_ep_ethdev.h"
 #include "lsxinic_ep_rxtx.h"
 #include "lsxinic_ep_ethtool.h"

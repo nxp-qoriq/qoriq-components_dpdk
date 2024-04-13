@@ -480,7 +480,8 @@ struct lsinic_dev_reg {  /* offset 0x000-0x1FF */
 	uint32_t pf_idx;		/* 0x010 */
 	uint32_t vf_idx;		/* 0x014 */
 	uint32_t init_flag;		/* 0x018 */
-	uint32_t cap[63];		/* 0x01c - 0x114 */
+	uint32_t snoop;			/* 0x01c */
+	uint32_t cap[62];		/* 0x020 - 0x114 */
 	uint32_t rx_ring_max_num;	/* 0x118 */
 	uint32_t rx_entry_max_num;	/* 0x11c */
 	uint32_t tx_ring_max_num;	/* 0x120 */

@@ -49,7 +49,6 @@
 #include <rte_lsx_pciep_bus.h>
 #include <portal/dpaa2_hw_pvt.h>
 
-#include "lsxinic_ep_tool.h"
 #include "lsxinic_common_pmd.h"
 #include "lsxinic_common.h"
 #include "lsxinic_common_reg.h"

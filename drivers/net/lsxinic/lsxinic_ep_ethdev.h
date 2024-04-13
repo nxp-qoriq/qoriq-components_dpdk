@@ -52,6 +52,11 @@ static inline void lsinic_write_reg64(void *addr, uint64_t val)
 	rte_write64((rte_cpu_to_be_64(val)), addr);
 }
 
+#ifndef ALIGN
+#define ALIGN(x, a) \
+	(((x) + ((typeof(x))(a) - 1)) & ~((typeof(x))(a) - 1))
+#endif
+
 /* Structure to store private data for each driver instance (for each port).
  */
 #define LSINIC_EP_CAP_TXQ_DMA_NO_RSP RTE_BIT32(0)
@@ -189,6 +194,18 @@ int lsinic_dma_config_fromrc(struct lsinic_adapter *adapter);
 int lsinic_reset_config_fromrc(struct lsinic_adapter *adapter);
 
 int lsinic_remove_config_fromrc(struct lsinic_adapter *adapter);
+
+static inline void
+lsinic_byte_memset(void *s, uint8_t ch, size_t n)
+{
+	size_t i = 0;
+	uint8_t *ps = s;
+
+	for (i = 0; i < n; i++) {
+		ps[i] = ch;
+		asm volatile ("" : : : "memory");
+	}
+}
 
 #ifdef RTE_LSINIC_PKT_MERGE_ACROSS_PCIE
 int

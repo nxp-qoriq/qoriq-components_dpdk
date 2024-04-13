@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2016 Intel Corporation
- * Copyright 2022-2023 NXP
+ * Copyright 2022-2024 NXP
  */
 
 #include <stdint.h>
@@ -37,6 +37,7 @@
 #include "virtio_rxtx.h"
 #include "virtio_rxtx_simple.h"
 #include "lsxinic_vio_common.h"
+#include "lsxinic_rc_hw.h"
 
 #ifndef PAGE_SIZE
 #define PAGE_SIZE (sysconf(_SC_PAGESIZE))
@@ -3546,8 +3547,19 @@ static int
 lsxvio_rc_eth_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 	struct rte_pci_device *pci_dev)
 {
+	int snoop;
+
 	if (s_lsxvio_rc_sim)
 		lsxvio_rc_sim_pci_resource_set(pci_dev);
+
+	snoop = lxsnic_br_of_dev_snoop(pci_dev);
+	if (snoop < 0) {
+		LSXVIO_PMD_ERR("Read snoop attr of bridge failed(%d)",
+			snoop);
+		return snoop;
+	}
+	if (!snoop)
+		LSXVIO_PMD_WARN("NoSnoop+ TBD.");
 
 	if (s_lsxvio_rc_2nd_proc_standalone)
 		return lsxvio_rc_eth_2nd_proc_probe(pci_dev);

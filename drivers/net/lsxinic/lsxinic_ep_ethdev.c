@@ -62,7 +62,6 @@
 #include "lsxinic_common_pmd.h"
 #include "lsxinic_common_reg.h"
 #include "lsxinic_common_helper.h"
-#include "lsxinic_ep_tool.h"
 #include "lsxinic_ep_ethdev.h"
 #include "lsxinic_ep_rxtx.h"
 #include "lsxinic_ep_dma.h"
@@ -262,6 +261,8 @@ lsinic_init_bar_addr(struct rte_lsx_pciep_device *lsinic_dev)
 
 		return ret;
 	}
+	/**Always mark reg bar noncache.*/
+	rte_lsx_pciep_ib_cache_mark(lsinic_dev, LSX_PCIEP_REG_BAR_IDX, 0);
 
 	size = LSINIC_RING_PAIR_SIZE(adapter->max_qpairs);
 	size += LSINIC_RING_BD_OFFSET;
@@ -1723,16 +1724,25 @@ lsinic_reset_config_fromrc(struct lsinic_adapter *adapter)
 {
 	uint64_t rc_reg_addr = 0;
 	struct rte_lsx_pciep_device *lsinic_dev = adapter->lsinic_dev;
+	struct lsinic_dev_reg *dev_reg =
+		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_DEV_REG_OFFSET);
 	struct lsinic_eth_reg *eth_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_ETH_REG_OFFSET);
 	struct lsinic_rcs_reg *rcs_reg =
 		LSINIC_REG_OFFSET(adapter->hw_addr, LSINIC_RCS_REG_OFFSET);
 	int sim, ret = 0;
-	uint32_t i;
+	uint32_t i, snoop;
 	struct lsinic_queue *q;
 	struct lsx_pciep_outbound *ob_win;
 	uint64_t ob_base;
 
+	snoop = LSINIC_READ_REG(&dev_reg->snoop);
+	if (!snoop) {
+		LSXINIC_PMD_WARN("NoSnoop TLP impacts performance.");
+		/**Mark ring bar noncache.*/
+		rte_lsx_pciep_ib_cache_mark(lsinic_dev,
+			LSX_PCIEP_RING_BAR_IDX, 0);
+	}
 	sim = rte_lsx_pciep_hw_sim_get(adapter->pcie_idx);
 	/* get ring setting */
 	if (1) {
