@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2014 Intel Corporation
+ * Copyright 2024 NXP
  */
 
 #ifndef _RTE_MEMORY_H_
@@ -597,6 +598,11 @@ void rte_mem_set_dma_mask(uint8_t maskbits);
  */
 int rte_eal_using_phys_addrs(void);
 
+__rte_experimental struct rte_memseg *
+rte_eal_memalloc_alloc_seg(size_t page_sz, int socket);
+
+__rte_experimental int
+rte_eal_memalloc_free_seg(struct rte_memseg *ms);
 
 /**
  * Enum indicating which kind of memory event has happened. Used by callbacks to

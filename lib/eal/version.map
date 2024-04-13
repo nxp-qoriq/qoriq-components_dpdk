@@ -442,6 +442,8 @@ EXPERIMENTAL {
 	rte_thread_detach;
 	rte_thread_equal;
 	rte_thread_join;
+	rte_eal_memalloc_alloc_seg;
+	rte_eal_memalloc_free_seg;
 };
 
 INTERNAL {
