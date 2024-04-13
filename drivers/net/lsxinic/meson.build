@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2022 NXP
+# Copyright 2022-2024 NXP
 
 if not is_linux
     build = false
@@ -13,7 +13,6 @@ sources = files(
 	'lsxinic_ep_rxtx.c',
 	'lsxinic_ep_dma.c',
 	'lsxinic_ep_ethtool.c',
-	'lsxinic_ep_tool.c',
 	'lsxinic_rc_ethdev.c',
 	'lsxinic_rc_rxtx.c',
 	'lsxinic_rc_pf.c',
@@ -21,7 +20,8 @@ sources = files(
 	'lsxinic_ep_vio.c',
 	'lsxinic_ep_vio_net.c',
 	'lsxinic_ep_vio_rxtx.c',
-	'lsxinic_rc_vio.c'
+	'lsxinic_rc_vio.c',
+	'lsxinic_rc_pci.c'
 )
 
 includes += include_directories(

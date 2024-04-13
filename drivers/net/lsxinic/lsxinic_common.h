@@ -283,6 +283,11 @@ lsinic_pcie_memcp_align(void *vdst,
 	}
 }
 
+#define PCI_CONFIG_CAP_CTL_OFFSET 0x78
+#define PCI_CONFIG_LINK_CAP_OFFSET 0x80
+#define PCI_CONFIG_SPACE_SIZE 0x1000
+#define PCI_DEVCTL_NOSNOOP	0x0800
+
 #define LSINIC_EP_MAP_MEM_ENV \
 	"LSINIC_XFER_HOST_ACCESS_EP_MEM"
 
