@@ -1252,18 +1252,12 @@ lxsnic_dev_stats_reset(struct rte_eth_dev *dev)
 			continue;
 		rx_queue->packets = 0;
 		rx_queue->bytes = 0;
-		tx_queue->errors = 0;
-		rx_queue->packets = 0;
-		tx_queue->bytes = 0;
 		rx_queue->errors = 0;
 	}
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		tx_queue = dev->data->tx_queues[i];
 		if (!tx_queue)
 			continue;
-		tx_queue->packets = 0;
-		tx_queue->bytes = 0;
-		tx_queue->errors = 0;
 		tx_queue->packets = 0;
 		tx_queue->bytes = 0;
 		tx_queue->errors = 0;
