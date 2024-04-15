@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
- *   Copyright 2022 NXP
+ *   Copyright 2022-2024 NXP
  *
  */
 
@@ -30,7 +30,9 @@
 #define KWHT  "\x1B[37m"
 
 static void mark_kpage_ncache(uint64_t huge_page);
+#if defined(RTE_ARCH_ARM) && defined(RTE_ARCH_64)
 static void flush_tlb(void *p);
+#endif
 
 static
 void mark_kpage_ncache(uint64_t huge_page)
@@ -45,12 +47,15 @@ void mark_kpage_ncache(uint64_t huge_page)
     printf(KCYN "%s: Huge_Page addr =" KNRM " 0x%lX\n",
 										__func__, huge_page);
     ioctl(fd, KPG_NC_IOCTL_UPDATE, (size_t)&huge_page);
+#if defined(RTE_ARCH_ARM) && defined(RTE_ARCH_64)
 	flush_tlb((void *)huge_page);
+#endif
 	printf(KYEL "Page should be non-cachable now\n"KNRM);
 
 	close(fd);
 }
 
+#if defined(RTE_ARCH_ARM) && defined(RTE_ARCH_64)
 static
 void flush_tlb(void *p)
 {
@@ -58,5 +63,6 @@ void flush_tlb(void *p)
 	asm volatile("dsb ish");
 	asm volatile("isb");
 }
+#endif
 
 #endif // KPG_NC_MODULE_H
