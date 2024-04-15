@@ -137,6 +137,9 @@ struct enetc_msg_swbd {
 #define ENETC4_VSIMSGSNDAR0      0x210
 #define ENETC4_VSIMSGSNDAR1      0x214
 
+#define ENETC4_VSIMSGRR		 0x208
+#define ENETC4_VSIMSGRR_MR       BIT(0)
+
 #define ENETC_SIMSGSR_SET_MC(val) ((val) << 16)
 #define ENETC_SIMSGSR_GET_MC(val) ((val) >> 16)
 
