@@ -375,17 +375,20 @@ void
 enetc4_tx_queue_release(struct rte_eth_dev *dev, uint16_t qid)
 {
 	void *txq = dev->data->tx_queues[qid];
-
-	if (txq == NULL)
-		return;
-
-	struct enetc_bdr *tx_ring = (struct enetc_bdr *)txq;
-	struct enetc_eth_hw *eth_hw =
-		ENETC_DEV_PRIVATE_TO_HW(tx_ring->ndev->data->dev_private);
 	struct enetc_hw *hw;
 	struct enetc_swbd *tx_swbd;
 	int i;
 	uint32_t val;
+	struct enetc_bdr *tx_ring;
+	struct enetc_eth_hw *eth_hw;
+
+	PMD_INIT_FUNC_TRACE();
+	if (txq == NULL)
+		return;
+
+	tx_ring = (struct enetc_bdr *)txq;
+	eth_hw =
+		ENETC_DEV_PRIVATE_TO_HW(tx_ring->ndev->data->dev_private);
 
 	/* Disable the ring */
 	hw = &eth_hw->hw;
@@ -526,17 +529,20 @@ void
 enetc4_rx_queue_release(struct rte_eth_dev *dev, uint16_t qid)
 {
 	void *rxq = dev->data->rx_queues[qid];
-
-	if (rxq == NULL)
-		return;
-
-	struct enetc_bdr *rx_ring = (struct enetc_bdr *)rxq;
-	struct enetc_eth_hw *eth_hw =
-		ENETC_DEV_PRIVATE_TO_HW(rx_ring->ndev->data->dev_private);
 	struct enetc_swbd *q_swbd;
 	struct enetc_hw *hw;
 	uint32_t val;
 	int i;
+	struct enetc_bdr *rx_ring;
+	struct enetc_eth_hw *eth_hw;
+
+	PMD_INIT_FUNC_TRACE();
+	if (rxq == NULL)
+		return;
+
+	rx_ring = (struct enetc_bdr *)rxq;
+	eth_hw =
+		ENETC_DEV_PRIVATE_TO_HW(rx_ring->ndev->data->dev_private);
 
 	/* Disable the ring */
 	hw = &eth_hw->hw;
@@ -808,6 +814,7 @@ enetc4_rx_queue_start(struct rte_eth_dev *dev, uint16_t qidx)
 	struct enetc_bdr *rx_ring;
 	uint32_t rx_data;
 
+	PMD_INIT_FUNC_TRACE();
 	rx_ring = dev->data->rx_queues[qidx];
 	if (dev->data->rx_queue_state[qidx] == RTE_ETH_QUEUE_STATE_STOPPED) {
 		rx_data = enetc4_rxbdr_rd(&priv->hw.hw, rx_ring->index,
@@ -829,6 +836,7 @@ enetc4_rx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx)
 	struct enetc_bdr *rx_ring;
 	uint32_t rx_data;
 
+	PMD_INIT_FUNC_TRACE();
 	rx_ring = dev->data->rx_queues[qidx];
 	if (dev->data->rx_queue_state[qidx] == RTE_ETH_QUEUE_STATE_STARTED) {
 		rx_data = enetc4_rxbdr_rd(&priv->hw.hw, rx_ring->index,
@@ -850,6 +858,7 @@ enetc4_tx_queue_start(struct rte_eth_dev *dev, uint16_t qidx)
 	struct enetc_bdr *tx_ring;
 	uint32_t tx_data;
 
+	PMD_INIT_FUNC_TRACE();
 	tx_ring = dev->data->tx_queues[qidx];
 	if (dev->data->tx_queue_state[qidx] == RTE_ETH_QUEUE_STATE_STOPPED) {
 		tx_data = enetc4_txbdr_rd(&priv->hw.hw, tx_ring->index,
@@ -871,6 +880,7 @@ enetc4_tx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx)
 	struct enetc_bdr *tx_ring;
 	uint32_t tx_data;
 
+	PMD_INIT_FUNC_TRACE();
 	tx_ring = dev->data->tx_queues[qidx];
 	if (dev->data->tx_queue_state[qidx] == RTE_ETH_QUEUE_STATE_STARTED) {
 		tx_data = enetc4_txbdr_rd(&priv->hw.hw, tx_ring->index,
@@ -887,6 +897,7 @@ enetc4_tx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx)
 const uint32_t *
 enetc4_supported_ptypes_get(struct rte_eth_dev *dev __rte_unused)
 {
+	PMD_INIT_FUNC_TRACE();
 	static const uint32_t ptypes[] = {
 		RTE_PTYPE_L2_ETHER,
 		RTE_PTYPE_L3_IPV4,
