@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 
+#include <rte_log.h>
 
 #define KPG_NC_DEVICE_NAME "page_ncache"
 #define KPG_NC_DEVICE_PATH "/dev/" KPG_NC_DEVICE_NAME
@@ -48,7 +49,7 @@ static inline void mark_kpage_ncache(uint64_t huge_page)
 			KPG_NC_DEVICE_PATH);
 		return;
 	}
-	fprintf(stdout, KCYN "%s: Huge_Page addr =" KNRM " 0x%lX\n",
+	RTE_LOG(DEBUG, EAL, KCYN "%s: Huge_Page addr =" KNRM " 0x%lX\n",
 		__func__, huge_page);
 	ret = ioctl(fd, KPG_NC_IOCTL_UPDATE, (size_t)&huge_page);
 	if (ret) {
@@ -59,7 +60,7 @@ static inline void mark_kpage_ncache(uint64_t huge_page)
 #if defined(RTE_ARCH_ARM) && defined(RTE_ARCH_64)
 	flush_tlb((void *)huge_page);
 #endif
-	fprintf(stdout, KYEL "Page should be non-cachable now" KNRM "\n");
+	RTE_LOG(DEBUG, EAL, KYEL "Page should be non-cachable now" KNRM "\n");
 
 	close(fd);
 }
