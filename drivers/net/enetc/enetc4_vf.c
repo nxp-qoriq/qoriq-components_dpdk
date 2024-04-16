@@ -57,12 +57,16 @@ enetc_crc_calc(uint16_t crc, const uint8_t *buffer, size_t len)
 int
 enetc4_vf_dev_stop(struct rte_eth_dev *dev __rte_unused)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	return 0;
 }
 
 static int
 enetc4_vf_dev_start(struct rte_eth_dev *dev __rte_unused)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	return 0;
 }
 
@@ -76,6 +80,7 @@ enetc4_vf_stats_get(struct rte_eth_dev *dev,
 	struct enetc_bdr *rx_ring;
 	uint8_t i;
 
+	PMD_INIT_FUNC_TRACE();
 	stats->ipackets = enetc4_rd(enetc_hw, ENETC4_SIRFRM0);
 	stats->opackets = enetc4_rd(enetc_hw, ENETC4_SITFRM0);
 	stats->ibytes = enetc4_rd(enetc_hw, ENETC4_SIROCT0);
@@ -228,6 +233,7 @@ enetc4_vf_set_mac_addr(struct rte_eth_dev *dev, struct rte_ether_addr *addr)
 	int msg_size;
 	int err = 0;
 
+	PMD_INIT_FUNC_TRACE();
 	reply_msg = rte_zmalloc(NULL, sizeof(*reply_msg), RTE_CACHE_LINE_SIZE);
 	if (!reply_msg) {
 		ENETC_PMD_ERR("Failed to alloc memory for reply_msg");
@@ -420,6 +426,7 @@ enetc4_vf_multicast_enable(struct rte_eth_dev *dev)
 {
 	int err;
 
+	PMD_INIT_FUNC_TRACE();
 	err = enetc4_vf_allmulti_send_message(dev, true);
 	if(err) {
 		ENETC_PMD_ERR("Failed to enable multicast promiscuous mode");
@@ -434,6 +441,7 @@ enetc4_vf_multicast_disable(struct rte_eth_dev *dev)
 {
 	int err;
 
+	PMD_INIT_FUNC_TRACE();
 	err = enetc4_vf_allmulti_send_message(dev, false);
 	if(err) {
 		ENETC_PMD_ERR("Failed to disable multicast promiscuous mode");
@@ -448,6 +456,7 @@ enetc4_vf_promisc_enable(struct rte_eth_dev *dev)
 {
 	int err;
 
+	PMD_INIT_FUNC_TRACE();
 	err = enetc4_vf_promisc_send_message(dev, true);
 	if(err) {
 		ENETC_PMD_ERR("Failed to enable promiscuous mode");
@@ -462,6 +471,7 @@ enetc4_vf_promisc_disable(struct rte_eth_dev *dev)
 {
 	int err;
 
+	PMD_INIT_FUNC_TRACE();
 	err = enetc4_vf_promisc_send_message(dev, false);
 	if(err) {
 		ENETC_PMD_ERR("Failed to disable promiscuous mode");
@@ -566,6 +576,7 @@ enetc4_vf_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused
 	struct rte_eth_link link;
 	int err;
 
+	PMD_INIT_FUNC_TRACE();
 	reply_msg = rte_zmalloc(NULL, sizeof(*reply_msg), RTE_CACHE_LINE_SIZE);
 	if (!reply_msg) {
 		ENETC_PMD_ERR("Failed to alloc memory for reply_msg");
