@@ -570,6 +570,13 @@ end:
 }
 
 static int
+enetc4_vf_link_update_dummy(struct rte_eth_dev *dev __rte_unused,
+		int wait_to_complete __rte_unused)
+{
+	return 0;
+}
+
+static int
 enetc4_vf_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused)
 {
 	struct enetc_psi_reply_msg *reply_msg;
@@ -697,28 +704,48 @@ static const struct rte_pci_id pci_vf_id_enetc4_map[] = {
 
 /* Features supported by this driver */
 static const struct eth_dev_ops enetc4_vf_ops = {
-.dev_configure        = enetc4_dev_configure,
-.dev_start            = enetc4_vf_dev_start,
-.dev_stop             = enetc4_vf_dev_stop,
-.dev_close            = enetc4_dev_close,
-.stats_get            = enetc4_vf_stats_get,
-.dev_infos_get        = enetc4_dev_infos_get,
-.mac_addr_set         = enetc4_vf_set_mac_addr,
-.promiscuous_enable   = enetc4_vf_promisc_enable,
-.promiscuous_disable  = enetc4_vf_promisc_disable,
-.allmulticast_enable  = enetc4_vf_multicast_enable,
-.allmulticast_disable = enetc4_vf_multicast_disable,
-.link_update	      = enetc4_vf_link_update,
-.rx_queue_setup       = enetc4_rx_queue_setup,
-.rx_queue_start       = enetc4_rx_queue_start,
-.rx_queue_stop        = enetc4_rx_queue_stop,
-.rx_queue_release     = enetc4_rx_queue_release,
-.tx_queue_setup       = enetc4_tx_queue_setup,
-.tx_queue_start       = enetc4_tx_queue_start,
-.tx_queue_stop        = enetc4_tx_queue_stop,
-.tx_queue_release     = enetc4_tx_queue_release,
-.dev_supported_ptypes_get = enetc4_supported_ptypes_get,
+	.dev_configure        = enetc4_dev_configure,
+	.dev_start            = enetc4_vf_dev_start,
+	.dev_stop             = enetc4_vf_dev_stop,
+	.dev_close            = enetc4_dev_close,
+	.stats_get            = enetc4_vf_stats_get,
+	.dev_infos_get        = enetc4_dev_infos_get,
+	.mac_addr_set         = enetc4_vf_set_mac_addr,
+	.promiscuous_enable   = enetc4_vf_promisc_enable,
+	.promiscuous_disable  = enetc4_vf_promisc_disable,
+	.allmulticast_enable  = enetc4_vf_multicast_enable,
+	.allmulticast_disable = enetc4_vf_multicast_disable,
+	.link_update	      = enetc4_vf_link_update,
+	.rx_queue_setup       = enetc4_rx_queue_setup,
+	.rx_queue_start       = enetc4_rx_queue_start,
+	.rx_queue_stop        = enetc4_rx_queue_stop,
+	.rx_queue_release     = enetc4_rx_queue_release,
+	.tx_queue_setup       = enetc4_tx_queue_setup,
+	.tx_queue_start       = enetc4_tx_queue_start,
+	.tx_queue_stop        = enetc4_tx_queue_stop,
+	.tx_queue_release     = enetc4_tx_queue_release,
+	.dev_supported_ptypes_get = enetc4_supported_ptypes_get,
 };
+
+static const struct eth_dev_ops enetc4_vf_ops_no_vsi_m = {
+	.dev_configure        = enetc4_dev_configure,
+	.dev_start            = enetc4_vf_dev_start,
+	.dev_stop             = enetc4_vf_dev_stop,
+	.dev_close            = enetc4_dev_close,
+	.stats_get            = enetc4_vf_stats_get,
+	.dev_infos_get        = enetc4_dev_infos_get,
+	.link_update	      = enetc4_vf_link_update_dummy,
+	.rx_queue_setup       = enetc4_rx_queue_setup,
+	.rx_queue_start       = enetc4_rx_queue_start,
+	.rx_queue_stop        = enetc4_rx_queue_stop,
+	.rx_queue_release     = enetc4_rx_queue_release,
+	.tx_queue_setup       = enetc4_tx_queue_setup,
+	.tx_queue_start       = enetc4_tx_queue_start,
+	.tx_queue_stop        = enetc4_tx_queue_stop,
+	.tx_queue_release     = enetc4_tx_queue_release,
+	.dev_supported_ptypes_get = enetc4_supported_ptypes_get,
+};
+
 
 static int
 enetc4_vf_mac_init(struct enetc_eth_hw *hw, struct rte_eth_dev *eth_dev)
@@ -788,7 +815,11 @@ enetc4_vf_dev_init(struct rte_eth_dev *eth_dev)
 	struct enetc_hw *enetc_hw = &hw->hw;
 
 	PMD_INIT_FUNC_TRACE();
-	eth_dev->dev_ops = &enetc4_vf_ops;
+	if (getenv("ENETC4_VSI_MSG_DISABLE"))
+		eth_dev->dev_ops = &enetc4_vf_ops_no_vsi_m;
+	else
+		eth_dev->dev_ops = &enetc4_vf_ops;
+
 	enetc4_dev_hw_init(eth_dev);
 
 	si_cap = enetc_rd(enetc_hw, ENETC_SICAPR0);
