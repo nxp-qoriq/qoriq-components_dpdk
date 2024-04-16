@@ -58,6 +58,13 @@ dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 	struct dpaa2_annot_hdr *annotation = hw_annot_addr;
 	uint32_t flc_lo, tc, flow;
 
+#if defined(RTE_LIBRTE_IEEE1588)
+	if (BIT_ISSET_AT_POS(annotation->word1, DPAA2_ETH_FAS_PTP)) {
+		m->ol_flags |= RTE_MBUF_F_RX_IEEE1588_PTP;
+		m->ol_flags |= RTE_MBUF_F_RX_IEEE1588_TMST;
+	}
+#endif
+
 	if (unlikely(dpaa2_print_parser_result)) {
 		dpaa2_print_fd_frc(fd);
 		dpaa2_print_parse_result(annotation);

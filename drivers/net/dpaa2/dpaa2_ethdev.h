@@ -377,6 +377,9 @@ struct dpaa2_dev_priv {
 	rte_spinlock_t lpbk_qp_lock;
 
 	uint8_t channel_inuse;
+	/* Stores correction offset for one step timestamping */
+	uint16_t ptp_correction_offset;
+
 	struct dpaa2_dev_flow *curr;
 	LIST_HEAD(, dpaa2_dev_flow) flows;
 	LIST_HEAD(nodes, dpaa2_tm_node) nodes;
