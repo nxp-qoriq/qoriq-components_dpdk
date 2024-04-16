@@ -44,6 +44,7 @@
 #include <linux/virtio_blk.h>
 #include <rte_lsx_pciep_bus.h>
 #include <rte_spinlock.h>
+#include <kpage_ncache_api.h>
 
 #include <bus_fslmc_driver.h>
 #include "lsx_pciep_dev.h"
@@ -89,6 +90,8 @@ static uint32_t s_pciep_init_flag;
 #define LSX_PCIEP_DEFAULT_RBP_ENABLE 1
 #define LSX_PCIEP_DEFAULT_SIM_ENABLE 0
 #define LSX_PCIEP_DEFAULT_VIO_ENABLE 0
+#define LSX_PCIEP_DEFAULT_NONSNOOP_ENABLE 0
+
 #define LSX_PCIEP_DEFAULT_OB_FUN_SIZE CFG_8G_SIZE
 
 struct lsx_pciep_env {
@@ -97,6 +100,7 @@ struct lsx_pciep_env {
 	uint64_t ob_fun_size;
 	uint8_t rbp;
 	uint8_t sim;
+	uint8_t nonsnoop;
 
 	uint8_t pf_enable[PF_MAX_NB];
 	uint8_t vf_enable[PF_MAX_NB][PCIE_MAX_VF_NUM];
@@ -111,12 +115,19 @@ struct lsx_pciep_env {
 
 static struct lsx_pciep_env s_pciep_env[LSX_MAX_PCIE_NB];
 
-#define OB_MAP_DUMP_FORMAT(pci_id, size, phy, vir) \
-	"PCIe%d map outbound size(0x%lx) from (0x%lx) to %p", \
-	(int)pci_id, \
-	(unsigned long)size, \
-	(unsigned long)phy, \
-	(void *)vir
+struct lsx_pciep_ib_mem_seg {
+	struct rte_memseg *ib_seg[PCI_MAX_RESOURCE];
+	uint64_t offset[PCI_MAX_RESOURCE];
+	uint64_t used[PCI_MAX_RESOURCE];
+	int cached[PCI_MAX_RESOURCE];
+};
+
+static struct lsx_pciep_ib_mem_seg s_ib_seg;
+
+#define IB_HUGE_PAGE_DUMP_FORMAT(bar, iova, phy, vir, size) \
+	"BAR[%d] new page iova(%lx), phy(%lx), vir(%p), size(%lx)", \
+	bar, (uint64_t)iova, (uint64_t)phy, (void *)vir, \
+	(uint64_t)size
 
 static int
 lsx_pciep_ctl_set_ops(void)
@@ -276,6 +287,7 @@ lsx_pciep_general_env_default_set(void)
 		s_pciep_env[i].ob_fun_size = LSX_PCIEP_DEFAULT_OB_FUN_SIZE;
 		s_pciep_env[i].sim = LSX_PCIEP_DEFAULT_SIM_ENABLE;
 		s_pciep_env[i].rbp = LSX_PCIEP_DEFAULT_RBP_ENABLE;
+		s_pciep_env[i].nonsnoop = LSX_PCIEP_DEFAULT_NONSNOOP_ENABLE;
 	}
 }
 
@@ -440,6 +452,15 @@ lsx_pciep_ob_fun_size_env_set(uint8_t pciep_idx,
 	s_pciep_env[pciep_idx].ob_fun_size = g_size * CFG_1G_SIZE;
 }
 
+static void
+lsx_pciep_nonsnoop_env_set(uint8_t pciep_idx,
+	int nonsnoop)
+{
+	RTE_ASSERT(pciep_idx < LSX_MAX_PCIE_NB);
+
+	s_pciep_env[pciep_idx].nonsnoop = nonsnoop;
+}
+
 static int
 lsx_pciep_fun_env_get(uint8_t pciep_idx,
 	uint8_t pf_idx, int vf_idx)
@@ -496,6 +517,14 @@ lsx_pciep_ob_fun_size_env_get(uint8_t pciep_idx)
 	return s_pciep_env[pciep_idx].ob_fun_size;
 }
 
+static int
+lsx_pciep_nonsnoop_env_get(uint8_t pciep_idx)
+{
+	RTE_ASSERT(pciep_idx < LSX_MAX_PCIE_NB);
+
+	return s_pciep_env[pciep_idx].nonsnoop;
+}
+
 static void
 lsx_pciep_parse_general_env(void)
 {
@@ -510,6 +539,11 @@ lsx_pciep_parse_general_env(void)
 		penv = getenv(env_name);
 		if (penv)
 			lsx_pciep_policy_env_set(i, atoi(penv));
+
+		sprintf(env_name, "LSX_PCIE%d_NONSNOOP", i);
+		penv = getenv(env_name);
+		if (penv)
+			lsx_pciep_nonsnoop_env_set(i, atoi(penv));
 
 		sprintf(env_name, "LSX_PCIE%d_OB_POLICY", i);
 		penv = getenv(env_name);
@@ -1081,7 +1115,7 @@ rte_lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 	char file_link_name[128];
 	char buf[1024];
 	int status, fd, i, idx = 0, pf = ep_dev->pf;
-	uint64_t flag = IORESOURCE_MEM;
+	uint64_t flag = IORESOURCE_MEM, start, end;
 	int ret;
 	char *penv;
 	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[ep_dev->pcie_id];
@@ -1232,35 +1266,18 @@ rte_lsx_pciep_sim_dev_map_inbound(struct rte_lsx_pciep_device *ep_dev)
 
 	snprintf(file_name, sizeof(file_name), "%s/resource", dir_name);
 	for (i = 0; i < PCI_MAX_RESOURCE; i++) {
-		if (ctlhw->ib_mem.pf_ib_bar[pf][i].size) {
-			sprintf(&buf[idx], "0x%016lx",
-				ctlhw->ib_mem.pf_ib_bar[pf][i].inbound_iova);
-			idx += 18;
-			sprintf(&buf[idx], " ");
-			idx++;
-
-			sprintf(&buf[idx], "0x%016lx",
-				ctlhw->ib_mem.pf_ib_bar[pf][i].inbound_iova +
-				ctlhw->ib_mem.pf_ib_bar[pf][i].size - 1);
-
-			idx += 18;
-			sprintf(&buf[idx], " ");
-			idx++;
-
-			sprintf(&buf[idx], "0x%016lx\r\n", flag);
-			idx += 20;
+		if (ep_dev->ib_size[i]) {
+			start = ep_dev->iov_addr[i];
+			end = start + ep_dev->ib_size[i] - 1;
+			flag = IORESOURCE_MEM;
 		} else {
-			sprintf(&buf[idx], "0x%016lx", (uint64_t)0);
-			idx += 18;
-			sprintf(&buf[idx], " ");
-			idx++;
-			sprintf(&buf[idx], "0x%016lx", (uint64_t)0);
-			idx += 18;
-			sprintf(&buf[idx], " ");
-			idx++;
-			sprintf(&buf[idx], "0x%016lx\r\n", (uint64_t)0);
-			idx += 20;
+			start = 0;
+			end = 0;
+			flag = 0;
 		}
+		idx += sprintf(&buf[idx], "0x%016lx ", start);
+		idx += sprintf(&buf[idx], "0x%016lx ", end);
+		idx += sprintf(&buf[idx], "0x%016lx\r\n", flag);
 	}
 
 	fd = open(file_name, O_RDWR | O_CREAT, 0660);
@@ -1564,6 +1581,63 @@ lsx_pciep_free_shared_mem(void)
 	}
 }
 
+#include <rte_memory.h>
+
+static uint64_t
+lsx_get_hugepage_size(void)
+{
+	static const char sys_dir_path[] = "/sys/kernel/mm/hugepages";
+	static const char dirent_start_text[] = "hugepages-";
+	const size_t dirent_start_len = sizeof(dirent_start_text) - 1;
+	uint64_t hugepage_sz, ret;
+	DIR *dir;
+	struct dirent *dirent;
+	int fd, free_num;
+	char free_huge_pages_nm[PATH_MAX];
+	char buf[4096];
+
+	dir = opendir(sys_dir_path);
+	if (dir == NULL) {
+		LSX_PCIEP_BUS_ERR("%s Open directory %s failed!",
+			__func__, sys_dir_path);
+		return 0;
+	}
+
+	for (dirent = readdir(dir); dirent != NULL; dirent = readdir(dir)) {
+		if (strncmp(dirent->d_name, dirent_start_text,
+			    dirent_start_len) != 0)
+			continue;
+
+		hugepage_sz =
+			rte_str_to_size(&dirent->d_name[dirent_start_len]);
+		sprintf(free_huge_pages_nm,
+			"%s/%s/free_hugepages", sys_dir_path, dirent->d_name);
+		fd = open(free_huge_pages_nm, O_RDONLY);
+		ret = read(fd, buf, 1024);
+		if (ret < 1) {
+			LSX_PCIEP_BUS_WARN("%s Read %s failed!",
+				__func__, free_huge_pages_nm);
+			close(fd);
+			continue;
+		}
+		free_num = atoi(buf);
+		if (free_num > 0) {
+			LSX_PCIEP_BUS_INFO("%s %s:%d",
+				__func__, free_huge_pages_nm, free_num);
+			close(fd);
+			closedir(dir);
+			return hugepage_sz;
+		}
+		close(fd);
+	}
+	closedir(dir);
+
+	LSX_PCIEP_BUS_ERR("%s: No free pages found!",
+		__func__);
+
+	return 0;
+}
+
 int
 rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	uint8_t bar_idx, uint64_t size)
@@ -1573,22 +1647,20 @@ rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	int vf = ep_dev->vf;
 	int is_vf = ep_dev->is_vf, ret;
 	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
-	struct lsx_pciep_ib_mem *ib_mem = &ctlhw->ib_mem;
-	char mz_name[RTE_MEMZONE_NAMESIZE];
-	const struct rte_memzone *mz = NULL;
-	struct lsx_pciep_inbound_bar *ib_bar;
 	char *penv, *ptr;
-	char env[64];
+	char str[64];
 	uint64_t min_size = LSX_PCIEP_INBOUND_MIN_BAR_SIZE;
+	uint64_t iova = 0, phy = 0, vir = 0;
+	uint64_t offset = 0, page_sz, adjust = 0;
 
 	if (is_vf) {
-		sprintf(env, "LSX_PCIE%d_PF%d_VF%d_BAR%d_MIN_SIZE",
+		sprintf(str, "LSX_PCIE%d_PF%d_VF%d_BAR%d_MIN_SIZE",
 			pcie_id, pf, vf, bar_idx);
 	} else {
-		sprintf(env, "LSX_PCIE%d_PF%d_BAR%d_MIN_SIZE",
+		sprintf(str, "LSX_PCIE%d_PF%d_BAR%d_MIN_SIZE",
 			pcie_id, pf, bar_idx);
 	}
-	penv = getenv(env);
+	penv = getenv(str);
 	if (penv) {
 		if (strtol(penv, &ptr, 16) >= LSX_PCIEP_INBOUND_MIN_BAR_SIZE) {
 			min_size = strtol(penv, &ptr, 16);
@@ -1596,7 +1668,7 @@ rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 			min_size = atoi(penv);
 		} else {
 			LSX_PCIEP_BUS_WARN("%s = 0x%08x/0x%lx too small?",
-				env, atoi(penv), strtol(penv, &ptr, 16));
+				str, atoi(penv), strtol(penv, &ptr, 16));
 		}
 	}
 
@@ -1612,126 +1684,92 @@ rte_lsx_pciep_set_ib_win(struct rte_lsx_pciep_device *ep_dev,
 		return -EINVAL;
 	}
 
-	bzero(mz_name, RTE_MEMZONE_NAMESIZE);
-
-	if (is_vf) {
-		ib_bar = &ib_mem->vf_ib_bar[pf][vf][bar_idx];
-		if (ib_mem->vf_mz[pf][vf][bar_idx]) {
-			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
-				ib_mem->vf_mz[pf][vf][bar_idx]->name);
-
-			mz = ib_mem->vf_mz[pf][vf][bar_idx];
-
-			goto config_ep_dev_addr;
-		}
-		snprintf(mz_name, RTE_MEMZONE_NAMESIZE - 1,
-			"mz_pciep%d_pf%d_vf%d_bar%d",
-			ctlhw->hw.index, pf, vf, bar_idx);
-	} else {
-		ib_bar = &ib_mem->pf_ib_bar[pf][bar_idx];
-		if (ib_mem->pf_mz[pf][bar_idx]) {
-			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
-				ib_mem->pf_mz[pf][bar_idx]->name);
-
-			mz = ib_mem->pf_mz[pf][bar_idx];
-
-			goto config_ep_dev_addr;
-		}
-		snprintf(mz_name, RTE_MEMZONE_NAMESIZE - 1,
-			"mz_pciep%d_pf%d_bar%d",
-			ctlhw->hw.index, pf, bar_idx);
+	if (ep_dev->virt_addr[bar_idx] &&
+		ep_dev->phy_addr[bar_idx] &&
+		ep_dev->iov_addr[bar_idx]) {
+		phy = ep_dev->phy_addr[bar_idx];
+		goto configure_this_win;
 	}
 
-	mz = rte_memzone_reserve_aligned(mz_name,
-			size, 0, RTE_MEMZONE_IOVA_CONTIG, size);
-	if (!mz || !mz->iova || !mz->addr) {
-		LSX_PCIEP_BUS_ERR("Reserve %s memory(%zuB) failed",
-			mz_name, size);
+	if (lsx_pciep_nonsnoop_env_get(pcie_id))
+		goto huge_page_ib_configure;
 
+	if (is_vf) {
+		sprintf(str, "PCIE%d_PF%d_VF%d_BAR%d_mz",
+			pcie_id, pf, vf, bar_idx);
+	} else {
+		sprintf(str, "PCIE%d_PF%d_BAR%d_mz",
+			pcie_id, pf, bar_idx);
+	}
+
+	ep_dev->ib_zone[bar_idx] = rte_memzone_reserve_aligned(str,
+			size, 0, RTE_MEMZONE_IOVA_CONTIG, size);
+	if (!ep_dev->ib_zone[bar_idx]) {
+		LSX_PCIEP_BUS_ERR("%s: Reserve %s size(%ld) failed",
+			__func__, str, size);
+		return -ENOMEM;
+	}
+	vir = ep_dev->ib_zone[bar_idx]->addr_64;
+	iova = ep_dev->ib_zone[bar_idx]->iova;
+	phy = rte_mem_virt2phy((const void *)vir);
+	goto configure_this_win;
+
+huge_page_ib_configure:
+	if (s_ib_seg.ib_seg[bar_idx])
+		goto configure_this_bar;
+
+	page_sz = lsx_get_hugepage_size();
+	if (page_sz < size) {
+		LSX_PCIEP_BUS_ERR("%s: Page size(%ld) < required(%ld)",
+			__func__, page_sz, size);
 		return -ENOMEM;
 	}
 
-	ret = rte_lsx_pciep_set_ib_win_mz(ep_dev, bar_idx, mz, 1);
+	s_ib_seg.ib_seg[bar_idx] = rte_eal_memalloc_alloc_seg(page_sz, 0);
+	LSX_PCIEP_BUS_INFO("%s: Alloc bar[%d]'s page(%p)(size=%lx)",
+		__func__, bar_idx, s_ib_seg.ib_seg[bar_idx], page_sz);
+	if (!s_ib_seg.ib_seg[bar_idx])
+		return -ENOMEM;
+
+	ret = rte_fslmc_vfio_mem_dmamap(s_ib_seg.ib_seg[bar_idx]->addr_64,
+		s_ib_seg.ib_seg[bar_idx]->iova,
+		s_ib_seg.ib_seg[bar_idx]->len);
 	if (ret) {
-		rte_memzone_free(mz);
+		LSX_PCIEP_BUS_ERR("%s: VFIO MEM MAP failed(%d) for bar%d",
+			__func__, ret, bar_idx);
 
 		return ret;
 	}
 
-config_ep_dev_addr:
-	ep_dev->virt_addr[bar_idx] = ib_bar->inbound_virt;
-	ep_dev->phy_addr[bar_idx] = ib_bar->inbound_phy;
-	ep_dev->iov_addr[bar_idx] = ib_bar->inbound_iova;
-	ep_dev->mz[bar_idx] = mz;
+	LSX_PCIEP_BUS_INFO(IB_HUGE_PAGE_DUMP_FORMAT(bar_idx,
+		s_ib_seg.ib_seg[bar_idx]->iova,
+		rte_mem_virt2phy(s_ib_seg.ib_seg[bar_idx]->addr),
+		s_ib_seg.ib_seg[bar_idx]->addr,
+		s_ib_seg.ib_seg[bar_idx]->len));
+	s_ib_seg.offset[bar_idx] = 0;
+	s_ib_seg.used[bar_idx] = 0;
+	s_ib_seg.cached[bar_idx] = 1;
 
-	return 0;
-}
+configure_this_bar:
+	offset = s_ib_seg.offset[bar_idx];
+	iova = s_ib_seg.ib_seg[bar_idx]->iova + offset;
 
-int
-rte_lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
-	uint8_t bar_idx, const struct rte_memzone *mz,
-	int vf_isolate __rte_unused)
-{
-	int pcie_id = ep_dev->pcie_id;
-	int pf = ep_dev->pf;
-	int vf = ep_dev->vf;
-	int is_vf = ep_dev->is_vf, ret;
-	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
-	struct lsx_pciep_ib_mem *ib_mem = &ctlhw->ib_mem;
-	struct lsx_pciep_inbound_bar *ib_bar;
-	uint64_t size = mz->len, phy, iova;
-
-	if (size < LSX_PCIEP_INBOUND_MIN_BAR_SIZE ||
-		!rte_is_power_of_2(size)) {
-		LSX_PCIEP_BUS_ERR("Invalid MZ(%s)'s size(0x%lx)",
-			mz->name, size);
-		return -EINVAL;
+	while (iova & (size - 1)) {
+		adjust++;
+		iova++;
 	}
 
-	if (bar_idx >= PCI_MAX_RESOURCE) {
-		LSX_PCIEP_BUS_ERR("%s too large bar number(%d)",
-			__func__, bar_idx);
-
-		return -EINVAL;
+	if ((offset + adjust + size) > s_ib_seg.ib_seg[bar_idx]->len) {
+		LSX_PCIEP_BUS_ERR("%s: Page left(%ld) < required(%ld)",
+			__func__,
+			s_ib_seg.ib_seg[bar_idx]->len - offset - adjust,
+			size);
+		return -ENOMEM;
 	}
+	vir = s_ib_seg.ib_seg[bar_idx]->addr_64 + offset + adjust;
+	phy = rte_mem_virt2phy((const void *)vir);
 
-	phy = rte_mem_virt2phy(mz->addr);
-	iova = mz->iova;
-
-	if (is_vf) {
-		ib_bar = &ib_mem->vf_ib_bar[pf][vf][bar_idx];
-		if (ib_mem->vf_mz[pf][vf][bar_idx]) {
-			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
-				ib_mem->vf_mz[pf][vf][bar_idx]->name);
-
-			goto config_ep_dev_addr;
-		}
-		ib_mem->vf_mz[pf][vf][bar_idx] = mz;
-		snprintf(ib_bar->name, RTE_DEV_NAME_MAX_LEN - 1,
-			"pciep%d_pf%d_vf%d_bar%d",
-			ctlhw->hw.index, pf, vf, bar_idx);
-	} else {
-		ib_bar = &ib_mem->pf_ib_bar[pf][bar_idx];
-		if (ib_mem->pf_mz[pf][bar_idx]) {
-			LSX_PCIEP_BUS_INFO("MZ(%s) detected",
-				ib_mem->pf_mz[pf][bar_idx]->name);
-
-			ep_dev->virt_addr[bar_idx] =
-				ib_mem->pf_ib_bar[pf][bar_idx].inbound_virt;
-
-			return 0;
-		}
-		ib_mem->pf_mz[pf][bar_idx] = mz;
-		snprintf(ib_bar->name, RTE_DEV_NAME_MAX_LEN - 1,
-			"pciep%d_pf%d_bar%d",
-			pcie_id, pf, bar_idx);
-	}
-
-	ib_bar->inbound_virt = mz->addr;
-	ib_bar->inbound_iova = iova;
-	ib_bar->inbound_phy = phy;
-	ib_bar->size = size;
-
+configure_this_win:
 	if (!rte_lsx_pciep_hw_sim_get(ctlhw->hw.index)) {
 		ret = ctlhw->ops->pcie_cfg_ib_win(&ctlhw->hw,
 			pf, is_vf, vf,
@@ -1740,15 +1778,25 @@ rte_lsx_pciep_set_ib_win_mz(struct rte_lsx_pciep_device *ep_dev,
 			return ret;
 	}
 
-	if (!is_vf)
-		ib_bar = &ib_mem->pf_ib_bar[pf][bar_idx];
-	else
-		ib_bar = &ib_mem->vf_ib_bar[pf][vf][bar_idx];
+	if (vir) {
+		/**Malloc from hugepage.*/
+		if (!ep_dev->ib_zone[bar_idx]) {
+			s_ib_seg.offset[bar_idx] = offset + adjust + size;
+			s_ib_seg.used[bar_idx] += adjust + size;
+		}
 
-config_ep_dev_addr:
-	ep_dev->virt_addr[bar_idx] = ib_bar->inbound_virt;
-	ep_dev->phy_addr[bar_idx] = ib_bar->inbound_phy;
-	ep_dev->iov_addr[bar_idx] = ib_bar->inbound_iova;
+		ep_dev->virt_addr[bar_idx] = (void *)vir;
+		ep_dev->phy_addr[bar_idx] = phy;
+		ep_dev->iov_addr[bar_idx] = iova;
+		ep_dev->ib_size[bar_idx] = size;
+		if (!ep_dev->ib_zone[bar_idx])
+			ep_dev->ib_seg_size[bar_idx] = size + adjust;
+		else
+			ep_dev->ib_seg_size[bar_idx] = 0;
+	} else {
+		ep_dev->ib_size[bar_idx] = size;
+		ep_dev->ib_seg_size[bar_idx] = 0;
+	}
 
 	return 0;
 }
@@ -1757,82 +1805,59 @@ int
 rte_lsx_pciep_unset_ib_win(struct rte_lsx_pciep_device *ep_dev,
 	uint8_t bar_idx)
 {
-	int pcie_id = ep_dev->pcie_id;
-	int pf = ep_dev->pf;
-	int vf = ep_dev->vf;
-	int is_vf = ep_dev->is_vf, ret;
-	struct lsx_pciep_ctl_hw *ctlhw = &s_pctl_hw[pcie_id];
-	struct lsx_pciep_ib_mem *ib_mem = &ctlhw->ib_mem;
-	struct lsx_pciep_inbound_bar *ib_bar;
-	const struct rte_memzone *mz = NULL;
+	int ret;
 
-	if (is_vf) {
-		ib_bar = &ib_mem->vf_ib_bar[pf][vf][bar_idx];
-		if (!ib_mem->vf_mz[pf][vf][bar_idx]) {
-			LSX_PCIEP_BUS_INFO("PF%d-VF%d-bar%d was unset",
-				pf, vf, bar_idx);
+	if (ep_dev->ib_zone[bar_idx]) {
+		ret = rte_memzone_free(ep_dev->ib_zone[bar_idx]);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("Free BAR%d's memzone failed(%d)",
+				bar_idx, ret);
 		}
-		mz = ib_mem->vf_mz[pf][vf][bar_idx];
-		ib_mem->vf_mz[pf][vf][bar_idx] = NULL;
-	} else {
-		ib_bar = &ib_mem->pf_ib_bar[pf][bar_idx];
-		if (!ib_mem->pf_mz[pf][bar_idx]) {
-			LSX_PCIEP_BUS_INFO("PF%d-bar%d was unset",
-				pf, bar_idx);
-		}
-		mz = ib_mem->pf_mz[pf][bar_idx];
-		ib_mem->pf_mz[pf][bar_idx] = NULL;
+		ep_dev->ib_zone[bar_idx] = NULL;
+
+		return ret;
 	}
-	memset(ib_bar, 0, sizeof(struct lsx_pciep_inbound_bar));
 
-	if (ep_dev->mz[bar_idx] != mz) {
-		if (ep_dev->mz[bar_idx] && mz) {
-			LSX_PCIEP_BUS_WARN("%s-mz[%d](%s) != mz(%s)",
-				ep_dev->name, bar_idx,
-				ep_dev->mz[bar_idx]->name,
-				mz->name);
-		} else if (ep_dev->mz[bar_idx]) {
-			LSX_PCIEP_BUS_WARN("%s-mz[%d](%s) not freed",
-				ep_dev->name, bar_idx,
-				ep_dev->mz[bar_idx]->name);
-		} else if (mz) {
-			LSX_PCIEP_BUS_WARN("%s: mz(%s) not freed",
-				ep_dev->name,
-				mz->name);
+	s_ib_seg.used[bar_idx] -= ep_dev->ib_seg_size[bar_idx];
+	if (!s_ib_seg.used[bar_idx] && s_ib_seg.ib_seg[bar_idx]) {
+		ret = rte_eal_memalloc_free_seg(s_ib_seg.ib_seg[bar_idx]);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("Free BAR%d's segment failed(%d)",
+				bar_idx, ret);
 		}
-		if (ep_dev->mz[bar_idx]) {
-			ret = rte_memzone_free(ep_dev->mz[bar_idx]);
-			if (ret) {
-				LSX_PCIEP_BUS_ERR("%s: free mz[%d] err(%d)",
-					ep_dev->name, bar_idx, ret);
-				return ret;
-			}
-		}
-		if (mz) {
-			ret = rte_memzone_free(mz);
-			if (ret) {
-				LSX_PCIEP_BUS_ERR("%s: free mz err(%d)",
-					ep_dev->name, ret);
-				return ret;
-			}
-		}
-	} else {
-		if (mz) {
-			ret = rte_memzone_free(mz);
-			if (ret) {
-				LSX_PCIEP_BUS_ERR("%s: free mz err(%d)",
-					ep_dev->name, ret);
-				return ret;
-			}
-		}
+		s_ib_seg.ib_seg[bar_idx] = NULL;
+		s_ib_seg.offset[bar_idx] = 0;
+		s_ib_seg.cached[bar_idx] = 0;
 	}
 
 	ep_dev->virt_addr[bar_idx] = NULL;
 	ep_dev->phy_addr[bar_idx] = 0;
 	ep_dev->iov_addr[bar_idx] = 0;
-	ep_dev->mz[bar_idx] = NULL;
+	ep_dev->ib_size[bar_idx] = 0;
+	ep_dev->ib_seg_size[bar_idx] = 0;
 
 	return 0;
+}
+
+void
+rte_lsx_pciep_ib_cache_mark(struct rte_lsx_pciep_device *ep_dev,
+	uint8_t bar_idx, int cached)
+{
+	RTE_SET_USED(ep_dev);
+	if (!s_ib_seg.ib_seg[bar_idx])
+		return;
+
+	if ((cached && s_ib_seg.cached[bar_idx]) ||
+		(!cached && !s_ib_seg.cached[bar_idx]))
+		return;
+
+	if (cached) {
+		/**TBD*/
+		return;
+	}
+
+	mark_kpage_ncache(s_ib_seg.ib_seg[bar_idx]->addr_64);
+	s_ib_seg.cached[bar_idx] = 0;
 }
 
 #define OB_PF_INFO_DUMP_FORMAT(pci, pf, \

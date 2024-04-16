@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2022 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #ifndef _LSXINIC_RC_HW_H_
 #define _LSXINIC_RC_HW_H_
 #include <rte_ether.h>
+#include <rte_bus_pci.h>
 #include "lsxinic_common_pmd.h"
 #include "lsxinic_common_reg.h"
 
@@ -47,18 +48,9 @@ set_bit(unsigned long nr, void *addr)
 	*m |= 1 << (nr & 31);
 }
 
-enum lxsnic_mac_type {
-	lxsnic_undefined = 0,
-	lxsnic_2575,
-	lxsnic__num_macs  /* List is 1-based, so subtract 1 for true count. */
-};
-
-struct lxsnic_hw;
-
 struct lxsnic_mac_info {
 	uint8_t addr[RTE_ETHER_ADDR_LEN];
 	uint8_t perm_addr[RTE_ETHER_ADDR_LEN];
-	enum lxsnic_mac_type type;
 };
 
 struct lxsnic_hw {
@@ -69,5 +61,8 @@ struct lxsnic_hw {
 	uint16_t subsystem_device_id;
 	uint16_t subsystem_vendor_id;
 };
+
+int
+lxsnic_br_of_dev_snoop(struct rte_pci_device *pci_dev);
 
 #endif /* _LSXINIC_RC_HW_H_ */

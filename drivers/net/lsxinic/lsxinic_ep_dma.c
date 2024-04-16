@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2024 NXP
  */
 
 #include <stdio.h>
@@ -16,7 +16,6 @@
 #include <rte_lsx_pciep_bus.h>
 
 #include "lsxinic_ep_dma.h"
-#include "lsxinic_ep_tool.h"
 #include "lsxinic_common_logs.h"
 
 static int s_lsinic_dma_idx;

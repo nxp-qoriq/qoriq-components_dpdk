@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2019-2023 NXP
+ * Copyright 2019-2024 NXP
  * Code was mostly borrowed from examples/l3fwd/main.c
  * See examples/l3fwd/main.c for additional Copyrights.
  */
@@ -52,6 +52,10 @@
 #include <cmdline_parse_etheraddr.h>
 
 #include "l1_l2_comm.h"
+
+#define RTE_LOGTYPE_L1_L2 RTE_LOGTYPE_USER1
+#define RTE_LOGTYPE_L1 RTE_LOGTYPE_USER1
+#define RTE_LOGTYPE_L2 RTE_LOGTYPE_USER1
 
 /* ISC UPLINK: From air to core, DOWNLINK: From core to air*/
 
@@ -121,7 +125,10 @@ static int s_l2_sync = 1;
 
 #define L2_SDU_SIZE 1500
 
-#define L1_L2_MAX_CHAIN_NB (L1_TB_SIZE / L2_SDU_SIZE + 1)
+uint32_t s_l1_tb_size =  L1_TB_SIZE;
+uint32_t s_l2_sdu_size =  L2_SDU_SIZE;
+
+#define L1_L2_MAX_CHAIN_NB (s_l1_tb_size / s_l2_sdu_size + 1)
 
 static void
 l1_l2_calculate_cycles_per_us(void)
@@ -132,32 +139,37 @@ l1_l2_calculate_cycles_per_us(void)
 	rte_delay_ms(1000);
 	end_cycles = rte_get_timer_cycles();
 	s_l1_l2_cycs_per_us = (end_cycles - start_cycles) / (1000 * 1000);
-	printf("L1 L2 Cycles per us is: %ld", s_l1_l2_cycs_per_us);
+	RTE_LOG(INFO, L1_L2,
+		"Cycles per us is: %ld\n", s_l1_l2_cycs_per_us);
 }
 
 static int
 l2_app_downlink_data_prepare(struct rte_mbuf **mbufs, int count)
 {
 	int i;
-	uint32_t remain_len = L1_TB_SIZE, nb_segs;
+	uint32_t remain_len = s_l1_tb_size, nb_segs;
 	uint64_t *ptick;
-	uint64_t tick = rte_get_timer_cycles();
+	uint64_t tick = 0;
 
-	if (remain_len % L2_SDU_SIZE)
-		nb_segs = remain_len / L2_SDU_SIZE + 1;
+	if (s_calculate_latency)
+		tick = rte_get_timer_cycles();
+	if (remain_len % s_l2_sdu_size)
+		nb_segs = remain_len / s_l2_sdu_size + 1;
 	else
-		nb_segs = remain_len / L2_SDU_SIZE;
+		nb_segs = remain_len / s_l2_sdu_size;
 
 	for (i = 0; i < count; i++) {
 		mbufs[i]->data_off = RTE_PKTMBUF_HEADROOM;
 		mbufs[i]->pkt_len = remain_len;
 		mbufs[i]->nb_segs = nb_segs;
-		ptick = (void *)((uint8_t *)mbufs[i]->buf_addr +
-			mbufs[i]->data_off + TIME_STAMP_OFFSET);
-		*ptick = tick;
+		if (s_calculate_latency) {
+			ptick = rte_pktmbuf_mtod_offset(mbufs[i],
+				uint64_t *, TIME_STAMP_OFFSET);
+			*ptick = tick;
+		}
 		nb_segs--;
 		if (nb_segs) {
-			mbufs[i]->data_len = L2_SDU_SIZE;
+			mbufs[i]->data_len = s_l2_sdu_size;
 			if ((i + 1) >= count)
 				return -ENOMEM;
 			mbufs[i]->next = mbufs[i + 1];
@@ -166,14 +178,14 @@ l2_app_downlink_data_prepare(struct rte_mbuf **mbufs, int count)
 			mbufs[i]->next = NULL;
 			break;
 		}
-		remain_len -= L2_SDU_SIZE;
+		remain_len -= s_l2_sdu_size;
 	}
 
 	return (i + 1);
 }
 
 static uint16_t
-l2_app_uplink_data_ready(struct rte_mbuf *mbufs)
+l2_app_downlink_data_ready(struct rte_mbuf *mbufs)
 {
 	return rte_eth_tx_burst(s_port_id, 0, &mbufs, 1);
 }
@@ -208,7 +220,7 @@ l2_app_downlink_prepare(void)
 		rte_pktmbuf_free_bulk(mbufs, L1_L2_MAX_CHAIN_NB);
 		return;
 	}
-	if (chain_count < L1_L2_MAX_CHAIN_NB) {
+	if (chain_count < (int)L1_L2_MAX_CHAIN_NB) {
 		mbufs_free_prepare(&mbufs[chain_count],
 			L1_L2_MAX_CHAIN_NB - chain_count);
 		rte_pktmbuf_free_bulk(&mbufs[chain_count],
@@ -217,7 +229,7 @@ l2_app_downlink_prepare(void)
 
 	tx_pkts = mbufs[0]->nb_segs;
 	tx_bytes = mbufs[0]->pkt_len;
-	ret = l2_app_uplink_data_ready(mbufs[0]);
+	ret = l2_app_downlink_data_ready(mbufs[0]);
 	if (unlikely(ret != 1)) {
 		mbufs_free_prepare(&mbufs[0], chain_count);
 		rte_pktmbuf_free_bulk(&mbufs[0], chain_count);
@@ -256,25 +268,31 @@ l2_app_uplink_data_process(struct rte_mbuf *mbuf)
 	pkt_len = mbuf->pkt_len;
 	nb_segs = mbuf->nb_segs;
 	if (s_l2_uplink_print) {
-		printf("l2_rx_from_l1 total len:%d, segs:%d\r\n",
+		RTE_LOG(INFO, L2,
+			"l2_rx_from_l1 total len:%d, segs:%d\r\n",
 			pkt_len, nb_segs);
 	}
 	while (1) {
 		if (s_l2_uplink_print) {
-			printf("l2_rx_from_l1 len[%d]:%d\r\n",
+			RTE_LOG(INFO, L2,
+				"l2_rx_from_l1 len[%d]:%d\r\n",
 				seg_idx, mbuf->data_len);
 		}
 		total_len += mbuf->data_len;
-		ptick = (void *)((uint8_t *)mbuf->buf_addr +
-			mbuf->data_off + TIME_STAMP_OFFSET);
-		tick_send = *ptick;
-		tick_diff = (current_tick - tick_send);
-		this_latency = ((double)tick_diff) / s_l1_l2_cycs_per_us;
-		s_data_loop_conf.cyc_diff_total += tick_diff;
-		if (this_latency > s_data_loop_conf.max_latency)
-			s_data_loop_conf.max_latency = this_latency;
-		if (this_latency < s_data_loop_conf.min_latency)
-			s_data_loop_conf.min_latency = this_latency;
+		if (s_calculate_latency) {
+			ptick = rte_pktmbuf_mtod_offset(mbuf,
+				uint64_t *, TIME_STAMP_OFFSET);
+			tick_send = *ptick;
+			tick_diff = (current_tick - tick_send);
+			this_latency = ((double)tick_diff) /
+				s_l1_l2_cycs_per_us;
+			s_data_loop_conf.cyc_diff_total += tick_diff;
+			s_data_loop_conf.valid_latency = 1;
+			if (this_latency > s_data_loop_conf.max_latency)
+				s_data_loop_conf.max_latency = this_latency;
+			if (this_latency < s_data_loop_conf.min_latency)
+				s_data_loop_conf.min_latency = this_latency;
+		}
 		if (mbuf->next) {
 			next_mbuf = mbuf->next;
 			mbuf->next = NULL;
@@ -290,13 +308,13 @@ l2_app_uplink_data_process(struct rte_mbuf *mbuf)
 	}
 
 	if (total_len != pkt_len) {
-		fprintf(stderr,
+		RTE_LOG(ERR, L2,
 			"TB len from L1 total_len(%d) != pkt_len(%d)\r\n",
 			total_len, pkt_len);
 	}
 
 	if (nb_segs != (seg_idx + 1)) {
-		fprintf(stderr,
+		RTE_LOG(ERR, L2,
 			"TB chain number from L1 nb_segs(%d) != seg_idx++(%d)\r\n",
 			nb_segs, seg_idx + 1);
 	}
@@ -316,7 +334,7 @@ l2_app_uplink_handle(void)
 	uint16_t recv_nb;
 	int wait = 0;
 
-	if (s_l2_sync)
+	if (s_l2_sync && (s_l1_l2_handle & UP_LINK_ENABLE))
 		wait = 1;
 
 	/**Receive from L1*/
@@ -333,8 +351,8 @@ static void l2_app_handle(void)
 	while (!force_quit) {
 		if (s_l1_l2_handle & DOWN_LINK_ENABLE)
 			l2_app_downlink_prepare(); /* Send to L1*/
-		if (s_l1_l2_handle & UP_LINK_ENABLE)
-			l2_app_uplink_handle(); /* Recv from L1*/
+		/** Always receive.*/
+		l2_app_uplink_handle(); /* Recv from L1*/
 	}
 }
 
@@ -357,12 +375,13 @@ l1_app_downlink_data_process(struct rte_mbuf *mbuf)
 	data_len = mbuf->data_len;
 	nb_segs = mbuf->nb_segs;
 	if (s_l1_downlink_print) {
-		printf("l1 rx from l2 total len:%d(%d), segs:%d\r\n",
+		RTE_LOG(INFO, L1,
+			"RX from L2 total len:%d(%d), segs:%d\r\n",
 			pkt_len, data_len, nb_segs);
 	}
 
 	if (pkt_len != data_len) {
-		fprintf(stderr,
+		RTE_LOG(ERR, L1,
 			"TB is not continue pkt_len(%d) != data_len(%d)\r\n",
 			pkt_len, data_len);
 	}
@@ -393,10 +412,10 @@ l1_app_downlink_handle(void)
 static int
 l1_app_uplink_data_prepare(struct rte_mbuf *mbuf)
 {
-	mbuf->pkt_len = L1_TB_SIZE;
-	mbuf->data_len = L1_TB_SIZE;
+	mbuf->pkt_len = s_l1_tb_size;
+	mbuf->data_len = s_l1_tb_size;
 	mbuf->data_off = RTE_PKTMBUF_HEADROOM;
-	mbuf->tso_segsz = L2_SDU_SIZE;
+	mbuf->tso_segsz = s_l2_sdu_size;
 	/**Process data*/
 
 	return 0;
@@ -427,10 +446,10 @@ l1_app_uplink_process(void)
 	if (!mbuf)
 		return;
 
-	if (mbuf->buf_len < (L1_TB_SIZE + RTE_PKTMBUF_HEADROOM)) {
-		fprintf(stderr,
+	if (mbuf->buf_len < (s_l1_tb_size + RTE_PKTMBUF_HEADROOM)) {
+		RTE_LOG(ERR, L1,
 			"Buf(len = %d) < TB(len = %d) + header room(%d)\r\n",
-			mbuf->buf_len, L1_TB_SIZE, RTE_PKTMBUF_HEADROOM);
+			mbuf->buf_len, s_l1_tb_size, RTE_PKTMBUF_HEADROOM);
 		rte_pktmbuf_free(mbuf);
 		return;
 	}
@@ -458,10 +477,9 @@ l1_app_uplink_process(void)
 static void l1_app_handle(void)
 {
 	while (!force_quit) {
-		if (s_l1_l2_handle & DOWN_LINK_ENABLE) {
-			/* Recv from L2 then send to air.*/
-			l1_app_downlink_handle();
-		}
+		/* Recv from L2 then send to air.*/
+		/** Always receive.*/
+		l1_app_downlink_handle();
 		if (s_l1_l2_handle & UP_LINK_ENABLE) {
 			/* Recv from air then send to L2*/
 			l1_app_uplink_process();
@@ -519,7 +537,8 @@ parse_link_disable(const char *link_name)
 	} else if (!strcmp("bi", link_name)) {
 		s_l1_l2_handle = LINK_DISABLE;
 	} else {
-		printf("link-disable supports up/down/bi\r\n");
+		RTE_LOG(ERR, L1_L2,
+			"link-disable supports up/down/bi\r\n");
 		return -EINVAL;
 	}
 
@@ -557,6 +576,9 @@ parse_layer(const char *slayer)
 #define CMD_LINE_OPT_CORE "core"
 #define CMD_LINE_OPT_LAYER "layer"
 #define CMD_LINE_OPT_LINK_DIS "link-disable"
+#define CMD_LINE_OPT_L1_TB "tb-size"
+#define CMD_LINE_OPT_L2_SDU "sdu-size"
+#define CMD_LINE_OPT_LATENCY "latency-test"
 
 enum {
 	/* long options mapped to a short option */
@@ -569,6 +591,9 @@ enum {
 	CMD_LINE_OPT_CORE_NUM,
 	CMD_LINE_OPT_LAYER_NUM,
 	CMD_LINE_OPT_LINK_DIS_NUM,
+	CMD_LINE_OPT_L1_TB_NUM,
+	CMD_LINE_OPT_L2_SDU_NUM,
+	CMD_LINE_OPT_LATENCY_NUM
 };
 
 static const struct option lgopts[] = {
@@ -576,6 +601,9 @@ static const struct option lgopts[] = {
 	{CMD_LINE_OPT_CORE, 1, 0, CMD_LINE_OPT_CORE_NUM},
 	{CMD_LINE_OPT_LAYER, 1, 0, CMD_LINE_OPT_LAYER_NUM},
 	{CMD_LINE_OPT_LINK_DIS, 1, 0, CMD_LINE_OPT_LINK_DIS_NUM},
+	{CMD_LINE_OPT_L1_TB, 1, 0, CMD_LINE_OPT_L1_TB_NUM},
+	{CMD_LINE_OPT_L2_SDU, 1, 0, CMD_LINE_OPT_L2_SDU_NUM},
+	{CMD_LINE_OPT_LATENCY, 1, 0, CMD_LINE_OPT_LATENCY_NUM},
 	{NULL, 0, 0, 0}
 };
 
@@ -631,6 +659,15 @@ parse_args(int argc, char **argv)
 				return ret;
 			}
 			break;
+		case CMD_LINE_OPT_L1_TB_NUM:
+			s_l1_tb_size = atoi(optarg);
+			break;
+		case CMD_LINE_OPT_L2_SDU_NUM:
+			s_l2_sdu_size = atoi(optarg);
+			break;
+		case CMD_LINE_OPT_LATENCY_NUM:
+			s_calculate_latency = atoi(optarg);
+			break;
 		default:
 			return -ENOTSUP;
 		}
@@ -671,7 +708,7 @@ init_l1_l2_mem(unsigned int nb_mbuf, uint32_t buf_size)
 	if (!l1_l2_mpool)
 		rte_exit(EXIT_FAILURE, "Cannot init l1/l2 mpool(%s)\n", s);
 	else
-		printf("l1/l2 mpool(count=%d) created\n", nb_mbuf);
+		RTE_LOG(INFO, L1_L2, "mpool(count=%d) created\n", nb_mbuf);
 
 	return 0;
 }
@@ -680,8 +717,9 @@ static void
 signal_handler(int signum)
 {
 	if (signum == SIGINT || signum == SIGTERM) {
-		printf("\n\nSignal %d received, preparing to exit...\n",
-				signum);
+		RTE_LOG(INFO, L1_L2,
+			"\n\nSignal %d received, preparing to exit...\n",
+			signum);
 		force_quit = true;
 	}
 }
@@ -692,24 +730,10 @@ signal_handler(int signum)
 
 #include <unistd.h>
 
-static inline void
-port_fwd_dump_port_status(struct rte_eth_stats *stats)
-{
-	printf("Input: %ld bytes, %ld packets, %ld missed, %ld error\n",
-		(unsigned long)stats->ibytes,
-		(unsigned long)stats->ipackets,
-		(unsigned long)stats->imissed,
-		(unsigned long)stats->ierrors);
-	printf("Output: %ld bytes, %ld packets, %ld error\n",
-		(unsigned long)stats->obytes,
-		(unsigned long)stats->opackets,
-		(unsigned long)stats->oerrors);
-}
-
 static void *perf_statistics(void *arg)
 {
 	cpu_set_t cpuset;
-	int ret;
+	int ret, off;
 	struct perf_statistic *rxs, *txs;
 	uint64_t rx_pkts = 0;
 	uint64_t tx_pkts = 0;
@@ -718,7 +742,11 @@ static void *perf_statistics(void *arg)
 	uint64_t rx_bytes_old = 0;
 	uint64_t tx_bytes_old = 0;
 	struct rte_eth_stats stats;
+	uint8_t layer = *((uint8_t *)arg);
+	char buf[4096];
+	char new_line_space[strlen("L1: ")];
 
+	memset(new_line_space, ' ', sizeof(new_line_space));
 	CPU_SET(0, &cpuset);
 	ret = pthread_setaffinity_np(pthread_self(),
 			sizeof(cpu_set_t), &cpuset);
@@ -738,26 +766,47 @@ loop:
 	rx_bytes = rxs->bytes;
 	tx_bytes = txs->bytes;
 
+	off = 0;
 	ret = rte_eth_stats_get(s_port_id, &stats);
 	if (ret)
 		goto skip_print_hw_status;
 
-	port_fwd_dump_port_status(&stats);
+	off = sprintf(buf,
+		"Input: %ld bytes, %ld packets, %ld missed, %ld error\n",
+		stats.ibytes, stats.ipackets, stats.imissed, stats.ierrors);
+
+	off += sprintf(&buf[off],
+		"%sOutput: %ld bytes, %ld packets, %ld error\n",
+		new_line_space, stats.obytes, stats.opackets, stats.oerrors);
+
+	off += sprintf(&buf[off], "%s", new_line_space);
 
 skip_print_hw_status:
-	printf("TX: %lld pkts, %lld bits, %fGbps\r\n",
-		(unsigned long long)tx_pkts,
-		(unsigned long long)tx_bytes * 8,
+	off += sprintf(&buf[off],
+		"TX: %ld pkts, %ld bits, %fGbps\r\n",
+		tx_pkts, tx_bytes * 8,
 		(double)(tx_bytes - tx_bytes_old) * 8 /
 		(PERF_STATISTICS_INTERVAL * G_BITS_SIZE));
-	printf("RX: %lld pkts, %lld bits, %fGbps\r\n",
-		(unsigned long long)rx_pkts,
-		(unsigned long long)rx_bytes * 8,
+
+	off += sprintf(&buf[off],
+		"%sRX: %ld pkts, %ld bits, %fGbps\r\n",
+		new_line_space, rx_pkts, rx_bytes * 8,
 		(double)(rx_bytes - rx_bytes_old) * 8 /
 		(PERF_STATISTICS_INTERVAL * G_BITS_SIZE));
-	printf("Latency avg=%f us, max=%f us, min=%f us\r\n\r\n",
-		s_data_loop_conf.avg_latency,
-		s_data_loop_conf.max_latency, s_data_loop_conf.min_latency);
+
+	if (s_data_loop_conf.valid_latency) {
+		sprintf(&buf[off],
+			"%sLatency avg=%f us, max=%f us, min=%f us\r\n\r\n",
+			new_line_space, s_data_loop_conf.avg_latency,
+			s_data_loop_conf.max_latency,
+			s_data_loop_conf.min_latency);
+	} else {
+		sprintf(&buf[off], "\r\n");
+	}
+	if (layer == 1)
+		RTE_LOG(INFO, L1, "%s", buf);
+	else
+		RTE_LOG(INFO, L2, "%s", buf);
 	tx_bytes_old = tx_bytes;
 	rx_bytes_old = rx_bytes;
 
@@ -802,12 +851,12 @@ main(int argc, char **argv)
 
 	if (s_layer == 1) {
 		nb_buf = (nb_txd + nb_rxd) * 2;
-		data_room_size = (L1_TB_SIZE + RTE_PKTMBUF_HEADROOM +
+		data_room_size = (s_l1_tb_size + RTE_PKTMBUF_HEADROOM +
 			MEMPOOL_CACHE_SIZE) /
 			MEMPOOL_CACHE_SIZE * MEMPOOL_CACHE_SIZE;
 	} else {
 		nb_buf = (nb_txd + nb_rxd) * 2 * 32;
-		data_room_size = (L2_SDU_SIZE + RTE_PKTMBUF_HEADROOM);
+		data_room_size = (s_l2_sdu_size + RTE_PKTMBUF_HEADROOM);
 	}
 
 	if (data_room_size < RTE_MBUF_DEFAULT_DATAROOM)
@@ -898,17 +947,20 @@ main(int argc, char **argv)
 
 		ret = rte_eth_link_get_nowait(portid, &link);
 		if (ret < 0) {
-			printf("Port %u link get failed: %s\n",
+			RTE_LOG(ERR, L1_L2,
+				"Port %u link get failed: %s\n",
 				portid, rte_strerror(-ret));
 		} else {
 			if (link.link_status) {
-				printf("Port%d Link Up. Speed %u Mbps -%s\n",
+				RTE_LOG(INFO, L1_L2,
+					"Port%d Link Up. Speed %u Mbps -%s\n",
 					portid, link.link_speed,
 					(link.link_duplex ==
 					RTE_ETH_LINK_FULL_DUPLEX) ?
 					("full-duplex") : ("half-duplex"));
 			} else {
-				printf("Port %d Link Down\n", portid);
+				RTE_LOG(INFO, L1_L2,
+					"Port %d Link Down\n", portid);
 			}
 		}
 		port_found = 1;
@@ -916,8 +968,8 @@ main(int argc, char **argv)
 	}
 
 	if (!port_found) {
-		printf("No port found\n");
-		printf("Bye...\n");
+		RTE_LOG(ERR, L1_L2, "port %s NOT found\n", s_port_name);
+		RTE_LOG(ERR, L1_L2, "Bye...\n");
 		return 0;
 	}
 
@@ -927,18 +979,18 @@ main(int argc, char **argv)
 	if (getenv("L1_L2_PERF_STATISTICS")) {
 		pthread_t pid;
 
-		pthread_create(&pid, NULL, perf_statistics, NULL);
+		pthread_create(&pid, NULL, perf_statistics, &s_layer);
 	}
 
 	/* launch per-lcore init on every lcore */
 	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MAIN);
 
-	printf("Closing port %d...", portid);
+	RTE_LOG(INFO, L1_L2, "Closing port %d...", portid);
 	rte_eth_dev_stop(portid);
 	rte_eth_dev_close(portid);
-	printf(" Done\n");
+	RTE_LOG(INFO, L1_L2, " Done\n");
 
-	printf("Bye...\n");
+	RTE_LOG(INFO, L1_L2, "Bye...\n");
 
 	return ret;
 }

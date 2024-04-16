@@ -29,35 +29,8 @@
 #define KCYN  "\x1B[36m"
 #define KWHT  "\x1B[37m"
 
-static void mark_kpage_ncache(uint64_t huge_page);
 #if defined(RTE_ARCH_ARM) && defined(RTE_ARCH_64)
-static void flush_tlb(void *p);
-#endif
-
-static
-void mark_kpage_ncache(uint64_t huge_page)
-{
-	int fd;
-
-    fd = open(KPG_NC_DEVICE_PATH, O_RDONLY);
-    if (fd < 0) {
-        printf(KYEL "Error: " KNRM "Could not open: %s\n", KPG_NC_DEVICE_PATH);
-        return;
-    }
-    printf(KCYN "%s: Huge_Page addr =" KNRM " 0x%lX\n",
-										__func__, huge_page);
-    ioctl(fd, KPG_NC_IOCTL_UPDATE, (size_t)&huge_page);
-#if defined(RTE_ARCH_ARM) && defined(RTE_ARCH_64)
-	flush_tlb((void *)huge_page);
-#endif
-	printf(KYEL "Page should be non-cachable now\n"KNRM);
-
-	close(fd);
-}
-
-#if defined(RTE_ARCH_ARM) && defined(RTE_ARCH_64)
-static
-void flush_tlb(void *p)
+static inline void flush_tlb(void *p)
 {
 	asm volatile("dc civac, %0" ::"r"(p));
 	asm volatile("dsb ish");
@@ -65,4 +38,29 @@ void flush_tlb(void *p)
 }
 #endif
 
+static inline void mark_kpage_ncache(uint64_t huge_page)
+{
+	int fd, ret;
+
+	fd = open(KPG_NC_DEVICE_PATH, O_RDONLY);
+	if (fd < 0) {
+		fprintf(stderr, KYEL "Error: " KNRM "Could not open: %s\n",
+			KPG_NC_DEVICE_PATH);
+		return;
+	}
+	fprintf(stdout, KCYN "%s: Huge_Page addr =" KNRM " 0x%lX\n",
+		__func__, huge_page);
+	ret = ioctl(fd, KPG_NC_IOCTL_UPDATE, (size_t)&huge_page);
+	if (ret) {
+		fprintf(stderr, KYEL "Error(%d): " KNRM "non-cachable set\n",
+			ret);
+		return;
+	}
+#if defined(RTE_ARCH_ARM) && defined(RTE_ARCH_64)
+	flush_tlb((void *)huge_page);
+#endif
+	fprintf(stdout, KYEL "Page should be non-cachable now" KNRM "\n");
+
+	close(fd);
+}
 #endif // KPG_NC_MODULE_H

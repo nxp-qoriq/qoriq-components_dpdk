@@ -257,9 +257,9 @@ dpaa_eth_dev_configure(struct rte_eth_dev *dev)
 		sprintf(sh_if_name_env_str, "DPAA_SHARED_IF_NAME_%d", dpaa_intf->ifid);
 		sh_if_name = getenv(sh_if_name_env_str);
 		if (sh_if_name == NULL){
-			strncpy(ifr.ifr_name, dpaa_intf->name, IFNAMSIZ);
+			strncpy(ifr.ifr_name, dpaa_intf->name, IFNAMSIZ - 1);
 		} else {
-			strncpy(ifr.ifr_name, sh_if_name, IFNAMSIZ);
+			strncpy(ifr.ifr_name, sh_if_name, IFNAMSIZ - 1);
 		}
 
 		if (ioctl(socket_fd, SIOCGIFMTU, &ifr) < 0) {

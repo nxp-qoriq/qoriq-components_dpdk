@@ -49,7 +49,6 @@
 #include <rte_lsx_pciep_bus.h>
 #include <portal/dpaa2_hw_pvt.h>
 
-#include "lsxinic_ep_tool.h"
 #include "lsxinic_common_pmd.h"
 #include "lsxinic_common.h"
 #include "lsxinic_common_reg.h"
@@ -319,6 +318,9 @@ lsinic_queue_reset(struct lsinic_queue *q)
 	for (i = 0; i < q->nb_desc; i++) {
 		xe[i].mbuf = NULL;
 		xe[i].my_idx = i;
+		if (q->type == LSINIC_QUEUE_TX &&
+			q->rc_mem_bd_type == RC_MEM_SEG_LEN)
+			xe[i].dma_complete = 1;
 		dma_jobs[i].cnxt = (uint64_t)(&xe[i]);
 	}
 
@@ -1110,6 +1112,7 @@ lsinic_xmit_seg_pkt(struct lsinic_queue *txq,
 	bd_idx = txq->next_avail_idx & (txq->nb_desc - 1);
 	dst_addr = &txq->tx_seg_dst_addr[bd_idx];
 	local_seg = &txq->local_src_seg[bd_idx];
+	txe = &txq->sw_ring[bd_idx];
 
 	if (unlikely(!dst_addr->ready)) {
 		txq->ring_full++;
@@ -1120,10 +1123,18 @@ lsinic_xmit_seg_pkt(struct lsinic_queue *txq,
 
 		return 0;
 	}
+	if (unlikely(!txe->dma_complete)) {
+		txq->ring_full++;
+		txq->drop_packet_num++;
+		LSXINIC_PMD_DBG("%s:TXQ%d:buf[%d] last dma not complete",
+			txq->adapter->lsinic_dev->name,
+			txq->queue_id, bd_idx);
+		return 0;
+	}
 
 	dma_job = &txq->dma_seg_jobs[bd_idx];
-	txe = &txq->sw_ring[bd_idx];
 
+	txe->dma_complete = 0;
 	if (txe->mbuf)
 		rte_pktmbuf_free(txe->mbuf);
 
@@ -3982,19 +3993,20 @@ dq_seg:
 		seg_job = &txq->dma_seg_jobs[idx];
 		if (unlikely(!seg_job->seg_nb ||
 			seg_job->seg_nb >= RTE_DPAAX_QDMA_JOB_SUBMIT_MAX)) {
-			LSXINIC_PMD_ERR("Invalid segment number(%d)",
-				seg_job->seg_nb);
+			LSXINIC_PMD_ERR("DMA SEG jobs[%d].seg_nb(%d)",
+				idx, seg_job->seg_nb);
 			rte_panic("Fatal quit\n");
 		}
 		seg_job->seg_nb--;
-		if (!seg_job->seg_nb)
+		if (!seg_job->seg_nb) {
 			txq->bytes_dq += txe->mbuf->pkt_len;
+			rte_pktmbuf_free(txe->mbuf);
+			txe->mbuf = NULL;
+			txe->dma_complete = 1;
+		}
 
 		if (likely(txq->dma_bd_update & DMA_BD_EP2RC_UPDATE))
 			continue;
-
-		rte_pktmbuf_free(txe->mbuf);
-		txe->mbuf = NULL;
 		txq->next_dma_idx++;
 	}
 	txq->pkts_dq += pkts_dq;
@@ -4283,6 +4295,9 @@ lsinic_rxq_dma_dq(void *q)
 	if (!ret)
 		return 0;
 
+	if (rxq->ep_mem_bd_type == EP_MEM_SRC_SEG_BD)
+		goto dq_seg;
+
 	for (i = 0; i < ret; i++) {
 		if (idx_completed[i] < LSINIC_BD_ENTRY_COUNT) {
 			idx = idx_completed[i];
@@ -4292,21 +4307,35 @@ lsinic_rxq_dma_dq(void *q)
 			continue;
 		}
 		rxe = &rxq->sw_ring[idx];
-		if (rxq->ep_mem_bd_type == EP_MEM_SRC_SEG_BD) {
-			rxq->dma_seg_jobs[idx].seg_nb--;
-			if (!rxq->dma_seg_jobs[idx].seg_nb)
-				rxq->bytes_dq += rxe->mbuf->pkt_len;
-			rxq->pkts_dq++;
-		} else {
-			dma_job = &rxq->dma_jobs[idx];
-			rxq->bytes_dq += dma_job->len;
-			rxq->pkts_dq++;
-		}
+		dma_job = &rxq->dma_jobs[idx];
+		rxq->bytes_dq += dma_job->len;
+		rxq->pkts_dq++;
 		rxe->dma_complete = 1;
 		if (rxq->ep_bd_desc) {
 			rxdp = &rxq->ep_bd_desc[rxe->my_idx];
 			lsinic_bd_dma_complete_update(rxq, rxe->my_idx, rxdp);
 		}
+	}
+
+	return ret;
+
+dq_seg:
+
+	for (i = 0; i < ret; i++) {
+		if (idx_completed[i] < LSINIC_BD_ENTRY_COUNT) {
+			idx = idx_completed[i];
+		} else {
+			idx = idx_completed[i] - LSINIC_BD_ENTRY_COUNT;
+			rxq->bd_dq++;
+			continue;
+		}
+		rxe = &rxq->sw_ring[idx];
+		rxq->dma_seg_jobs[idx].seg_nb--;
+		if (!rxq->dma_seg_jobs[idx].seg_nb) {
+			rxq->bytes_dq += rxe->mbuf->pkt_len;
+			rxe->dma_complete = 1;
+		}
+		rxq->pkts_dq++;
 	}
 
 	return ret;
@@ -6067,7 +6096,7 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	if (adapter->cap & LSINIC_CAP_XFER_HOST_ACCESS_EP_MEM &&
 		!lsinic_dev->virt_addr[LSX_PCIEP_XFER_MEM_BAR_IDX]) {
 		const struct rte_memzone *mz;
-		int ret;
+		int ret, bar;
 		uint64_t mask;
 
 		mz = lsinic_dev_mempool_continue_mz(mp);
@@ -6081,8 +6110,12 @@ lsinic_dev_rx_queue_setup(struct rte_eth_dev *dev,
 			return -EINVAL;
 		}
 
-		ret = rte_lsx_pciep_set_ib_win_mz(lsinic_dev,
-			LSX_PCIEP_XFER_MEM_BAR_IDX, mz, 0);
+		bar = LSX_PCIEP_XFER_MEM_BAR_IDX;
+		lsinic_dev->virt_addr[bar] = mz->addr;
+		lsinic_dev->iov_addr[bar] = mz->iova;
+		lsinic_dev->phy_addr[bar] = rte_mem_virt2phy(mz->addr);
+
+		ret = rte_lsx_pciep_set_ib_win(lsinic_dev, bar, mz->len);
 		if (ret)
 			return ret;
 		if (rte_lsx_pciep_hw_sim_get(adapter->pcie_idx) &&
