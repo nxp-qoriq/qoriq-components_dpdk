@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2023 NXP
+ * Copyright 2020-2024 NXP
  */
 
 #include <unistd.h>
@@ -1812,36 +1812,41 @@ pcie_dw_msix_cfg(struct lsx_pciep_hw_low *hw,
 			hw->index, pf);
 	}
 
-	doorbell_addr = iatu_phy + offsetof(struct pcie_dw_iatu_region,
-		msix_doorbell);
-	vaddr = &iatu->msix_doorbell;
-
-	memset(&sriov_cap, 0, sizeof(sriov_cap));
-	ret = pcie_dw_msix_cap_rw(hw, pf, is_vf, vf, &sriov_cap, 1);
-	if (ret)
-		return ret;
-
-	cap_offset = pcie_dw_get_cap_offset(hw, pf, is_vf, vf,
-		PCI_CAP_ID_MSIX);
-	if (cap_offset < 0) {
-		LSX_PCIEP_BUS_ERR("%s MSIx cap not found",
-			__func__);
-		return cap_offset;
+	if (!hw->is_sriov && hw->msi_flag == LSX_PCIEP_MSIX_INT) {
+		LSX_PCIEP_BUS_ERR("PCIe%d (NONE-SRIOV) %s",
+			hw->index, "does not support MSI-X");
+		return -ENOTSUP;
 	}
 
 	cfg = (void *)(hw->dbi_vir + pf * hw->dbi_pf_size);
 
-	tb_entry = (sriov_cap.msix_table_size & PCI_MSIX_FLAGS_QSIZE) + 1;
-	tb_bar = sriov_cap.msix_table_offset_bir & PCI_MSIX_TABLE_BIR;
+	if (hw->msi_flag == LSX_PCIEP_MSIX_INT) {
+		doorbell_addr = iatu_phy +
+			offsetof(struct pcie_dw_iatu_region, msix_doorbell);
+		vaddr = &iatu->msix_doorbell;
 
-	if (hw->msi_flag == LSX_PCIEP_MSIX_INT &&
-		tb_bar == LSX_PCIE_DW_MSIX_DOOR_BELL_BAR) {
-		if (!hw->is_sriov) {
-			LSX_PCIEP_BUS_ERR("PCIe%d (NONE-SRIOV) %s",
-				hw->index,
-				"does not support MSI-X");
+		memset(&sriov_cap, 0, sizeof(sriov_cap));
+		ret = pcie_dw_msix_cap_rw(hw, pf, is_vf, vf, &sriov_cap, 1);
+		if (ret)
+			return ret;
+
+		cap_offset = pcie_dw_get_cap_offset(hw, pf, is_vf, vf,
+			PCI_CAP_ID_MSIX);
+		if (cap_offset < 0) {
+			LSX_PCIEP_BUS_ERR("%s MSIx cap not found",
+				__func__);
+			return cap_offset;
+		}
+
+		tb_entry = sriov_cap.msix_table_size & PCI_MSIX_FLAGS_QSIZE;
+		tb_entry++;
+		tb_bar = sriov_cap.msix_table_offset_bir & PCI_MSIX_TABLE_BIR;
+		if (tb_bar != LSX_PCIE_DW_MSIX_DOOR_BELL_BAR) {
+			LSX_PCIEP_BUS_ERR("%s: MSIx/bar%d %s",
+				pci_info, tb_bar, "Not supported yet!");
 			return -ENOTSUP;
 		}
+
 		if (vector_total > tb_entry) {
 			LSX_PCIEP_BUS_WARN("%s: %s(%d) %s(%d)",
 				pci_info, "reduce vector required",
@@ -1932,12 +1937,9 @@ pcie_dw_msix_cfg(struct lsx_pciep_hw_low *hw,
 		if (size)
 			*size = CFG_MSIX_OB_SIZE;
 	} else {
-		if (hw->msi_flag == LSX_PCIEP_MSIX_INT) {
-			LSX_PCIEP_BUS_ERR("%s: MSIx/bar%d %s",
-				pci_info, tb_bar,
-				"Not supported yet!");
-			return -ENOTSUP;
-		}
+		LSX_PCIEP_BUS_ERR("%s: Invalid MSI flag(%d)",
+			pci_info, hw->msi_flag);
+		return -EINVAL;
 	}
 
 	return vector_total;
@@ -2644,11 +2646,13 @@ pcie_dw_fun_init_ext(struct lsx_pciep_hw_low *hw,
 		}
 	}
 
-	ret = pcie_dw_msix_cap_init(hw, pf, is_vf, vf);
-	if (ret) {
-		LSX_PCIEP_BUS_ERR("%s MSIx cap init failed(%d)",
-			__func__, ret);
-		goto err_ret2;
+	if (hw->is_sriov) {
+		ret = pcie_dw_msix_cap_init(hw, pf, is_vf, vf);
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("%s MSIx cap init failed(%d)",
+				__func__, ret);
+			goto err_ret2;
+		}
 	}
 
 	f_dw_cfg = fopen(PCIEP_DW_GLOBE_INFO_F, "wb");
