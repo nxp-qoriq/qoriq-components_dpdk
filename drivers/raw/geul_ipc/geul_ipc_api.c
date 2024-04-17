@@ -34,6 +34,8 @@
 #include <geul_ipc_dev.h>
 //#define PR(...) printf(__VA_ARGS__)
 #define PR(...)
+#undef pr_debug
+#define pr_debug(...)
 
 mem_range_t chvpaddr_arr[IPC_MAX_INSTANCE_COUNT][IPC_MAX_CHANNEL_COUNT];
 /* Start of IPC IRQs.*/
