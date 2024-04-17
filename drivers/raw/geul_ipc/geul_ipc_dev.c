@@ -58,28 +58,31 @@ geulipc_rawdev_configure(const struct rte_rawdev *dev,
 	return 0;
 }
 
-static void geulipc_rawdev_info_get(struct rte_rawdev *dev,
+static int geulipc_rawdev_info_get(struct rte_rawdev *dev,
 				rte_rawdev_obj_t dev_info,
 				size_t dev_info_size)
 {
 	struct geulipc_rawdev *geuldev;
-	geulipc_rawdev_config_t *gc = (geulipc_rawdev_config_t *)dev_info;;
+	geulipc_rawdev_config_t *gc = (geulipc_rawdev_config_t *)dev_info;
 
 	GEULIPC_PMD_FUNC_TRACE();
 
 	if (!dev_info) {
 		GEULIPC_PMD_ERR("Invalid request");
-		return;
+		return -EINVAL;
 	}
 
 	if (dev_info_size != sizeof(*gc)) {
 		GEULIPC_PMD_ERR("Invalid size parameter to %s", __func__);
 		return -EINVAL;
 	}
+
 	geuldev = geulipc_rawdev_get_priv(dev);
 
 	gc->instance_handle = geuldev->instance_handle;
 	gc->device_id = geuldev->device_id;
+
+	return 0;
 }
 
 static const struct rte_rawdev_ops geulipc_rawdev_ops = {

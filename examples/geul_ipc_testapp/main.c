@@ -3,6 +3,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include <errno.h>
@@ -33,6 +34,8 @@
 #include <geul_cpe_ipc.h>
 #include <geul_cpe_ipc_api.h>
 #include <rte_pmd_geul_ipc_rawdev.h>
+#include <rte_version.h>
+#include <rte_bus_vdev.h>
 #define UNUSED(x) void(x)
 
 //#define ipc_debug(...) printf(__VA_ARGS__)
@@ -618,7 +621,7 @@ setup_ipc(uint16_t devid, int modem_id)
 	rdev_conf.dev_private = &config;
 
 	/* Configure the Geul device - includes host initialization */
-	ret = rte_rawdev_configure(devid, &rdev_conf, sizeof(rdev_conf));
+	ret = rte_rawdev_configure(devid, &rdev_conf, sizeof(config));
 	if (ret < 0) {
 		printf("Unable to configure device (%s): (%d)\n",
 		       geul_device_name[modem_id], ret);
@@ -1255,7 +1258,7 @@ receiver_poll(void *arg __rte_unused)
 				channels[ipcu->instance_id][L1_TO_L2_PRT_CH_1]->channel_id,
 				instance);
 		if (ret)
-			printf("Unable to recv_ptr on L1_TO_L2_MSG_CH_5 (%d)\n", ret);
+			printf("Unable to recv_ptr on L1_TO_L2_PRT_CH_1 (%d)\n", ret);
 		}
 
 		if (test_mode != SIX_CORE_MODE &&
