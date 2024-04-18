@@ -69,7 +69,11 @@ extern void cmd_config_qec_fdelay_parsed(void *parsed_result, struct cmdline *cl
 extern void cmd_config_qec_iqtaps_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_config_pattern_new_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_config_pattern_fr1fr2_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_cell_search_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_cell_attach_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_rf_switch_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_wait_response_parsed(void *parsed_result, struct cmdline *cl, void *data);
+
 
 struct cmd_wait_response_result {
 	cmdline_fixed_string_t wait;
@@ -779,6 +783,88 @@ static cmdline_parse_inst_t cmd_tdd_config_pattern_fr1fr2 = {
 	}
 };
 
+struct cmd_cell_search_result {
+	cmdline_fixed_string_t cell ;
+	cmdline_fixed_string_t search;
+	cmdline_fixed_string_t action;
+	cmdline_fixed_string_t args;
+};
+
+static cmdline_parse_token_string_t cmd_cell_search_cell_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_cell_search_result, cell, "cell");
+static cmdline_parse_token_string_t cmd_cell_search_search_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_cell_search_result, search, "search");
+static cmdline_parse_token_string_t cmd_cell_search_cell_action_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_cell_search_result, action, "start#stop");
+static cmdline_parse_token_string_t cmd_cell_search_cell_args_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_cell_search_result, args, NULL);
+
+static cmdline_parse_inst_t cmd_cell_search = {
+	.f = cmd_cell_search_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_cell_search_cell_tok,
+		(void *)&cmd_cell_search_search_tok,
+		(void *)&cmd_cell_search_cell_action_tok,
+		(void *)&cmd_cell_search_cell_args_tok,
+		NULL,
+	}
+};
+
+struct cmd_cell_attach_result {
+	cmdline_fixed_string_t cell ;
+	cmdline_fixed_string_t attach;
+	uint16_t sfn;
+	uint16_t slot;
+};
+
+static cmdline_parse_token_string_t cmd_cell_attach_cell_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_cell_attach_result, cell, "cell");
+static cmdline_parse_token_string_t cmd_cell_attach_search_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_cell_attach_result, attach, "attach");
+static cmdline_parse_token_num_t cmd_cell_attach_sfn_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_cell_attach_result, sfn, RTE_UINT16);
+static cmdline_parse_token_num_t cmd_cell_attach_slot_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_cell_attach_result, slot, RTE_UINT16);
+
+static cmdline_parse_inst_t cmd_cell_attach = {
+	.f = cmd_cell_attach_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_cell_attach_cell_tok,
+		(void *)&cmd_cell_attach_search_tok,
+		(void *)&cmd_cell_attach_sfn_tok,
+		(void *)&cmd_cell_attach_slot_tok,
+		NULL,
+	}
+};
+
+//
+struct cmd_rf_switch_result {
+	cmdline_fixed_string_t rf_switch ;
+	cmdline_fixed_string_t action;
+};
+
+static cmdline_parse_token_string_t cmd_rf_switch_rf_switch_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_rf_switch_result, rf_switch, "rf_switch");
+static cmdline_parse_token_string_t cmd_rf_switch_action_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_rf_switch_result, action, "tx#rx");
+
+
+static cmdline_parse_inst_t cmd_rf_switch = {
+	.f = cmd_rf_switch_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_rf_switch_rf_switch_tok,
+		(void *)&cmd_rf_switch_action_tok,
+		NULL,
+	}
+};
+
+
 static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_quit,
 	&cmd_help,
@@ -805,6 +891,9 @@ static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_config_qec_iqtaps,
 	&cmd_tdd_config_pattern_new,
 	&cmd_tdd_config_pattern_fr1fr2,
+	&cmd_cell_search,
+	&cmd_cell_attach,
+	&cmd_rf_switch,
 	NULL
 };
 

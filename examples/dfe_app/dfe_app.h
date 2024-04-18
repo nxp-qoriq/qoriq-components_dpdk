@@ -49,7 +49,4 @@ void cmd_do_sym_size_config(uint32_t sym_size);
 void cmd_do_rx_antenna_config(uint32_t rx_antenna);
 void cmd_do_qec_config(uint32_t tx_rx, uint32_t mode, uint32_t index, uint32_t value);
 
-
-
-
 #endif
