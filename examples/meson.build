@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2017-2019 Intel Corporation
-# Copyright 2022-2023 NXP
+# Copyright 2022-2024 NXP
 
 link_whole_libs = []
 if get_option('default_library') == 'static'
@@ -17,6 +17,8 @@ all_examples = [
         'dfe_app',
         'distributor',
         'dma',
+        'geul_ipc_benchmark',
+        'geul_ipc_testapp',
         'ethtool',
         'eventdev_pipeline',
         'fips_validation',
