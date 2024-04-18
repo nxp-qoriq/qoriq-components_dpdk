@@ -1382,8 +1382,11 @@ DPAA2:
 				This configuration is effective with DPAA2_TX_CONF enabled.
 
 19. DPAA2_TX_CONF_FD_OVERFLOW	Clean TX confirm queue to make FD in HW not overflow the number set.
-				Default overflow number is 65535 and it's effectiver with
+				Default overflow number is 65535 and it's effective with
 				DPAA2_TX_DYNAMIC_CONF enabled.
+
+20. DPAA2_RX_GET_PROTOCOL_OFFSET User application can get performance optimized direct access to L3,
+				 L4 and L5 positions of RX frame by API "rte_pmd_dpaa2_rx_get_offset".
 
 ================================================================================
 

@@ -138,6 +138,9 @@ rte_pmd_dpaa2_ep_name(uint32_t eth_id);
 uint16_t
 rte_pmd_dpaa2_clean_tx_conf(uint32_t eth_id,
 	uint16_t txq_id);
+int
+rte_pmd_dpaa2_rx_get_offset(struct rte_mbuf *m,
+	uint8_t *l3_off, uint8_t *l4_off, uint8_t *l5_off);
 
 #if defined(RTE_LIBRTE_IEEE1588)
 __rte_experimental

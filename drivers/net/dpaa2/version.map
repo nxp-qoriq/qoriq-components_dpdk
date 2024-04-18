@@ -8,6 +8,7 @@ DPDK_23 {
 	rte_pmd_dpaa2_dev_recycle_qp_setup;
 	rte_pmd_dpaa2_ep_name;
 	rte_pmd_dpaa2_clean_tx_conf;
+	rte_pmd_dpaa2_rx_get_offset;
 
 	local: *;
 };
