@@ -5537,7 +5537,10 @@ lsinic_recv_pkts_to_cache_seg(struct lsinic_queue *rxq)
 		rxm = rxe->mbuf;
 		RTE_ASSERT(rxm);
 
-		rxm->nb_segs = rxdp->nb;
+		/** Merge multiple segments from RC to single continue buffer,
+		 * so the nb_segs should be 1.
+		 */
+		rxm->nb_segs = 1;
 		rxm->packet_type = RTE_PTYPE_L3_IPV4;
 		rxq->mcache[rxq->mtail] = rxm;
 		rxq->mtail = (rxq->mtail + 1) & MCACHE_MASK;
