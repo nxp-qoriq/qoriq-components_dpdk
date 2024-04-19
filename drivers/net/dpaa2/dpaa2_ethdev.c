@@ -38,6 +38,10 @@
 #define CHECK_INTERVAL         100  /* 100ms */
 #define MAX_REPEAT_TIME        90   /* 9s (90 * 100ms) in total */
 
+/* scheduler rfc magic number */
+#define POLICER_RFC_NUM         2698
+#define SHIFT_RESERVED_PRIORITY 16
+
 /* Supported Rx offloads */
 static uint64_t dev_rx_offloads_sup =
 		RTE_ETH_RX_OFFLOAD_CHECKSUM |
@@ -798,6 +802,25 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		if ((dpaa2_svr_family & 0xffff0000) != SVR_LX2160A) {
 			dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING, 1,
 				&cfg.flc.value);
+		}
+	}
+
+	/*
+	 * if scheduler magic number match then set its configuration parameters.
+	 * Here,
+	 * uint64_t reserved_64s[0] is scheduler uint16_t rfc magic number and
+	 *                                       uint8_t WQ priority
+	 * uint64_t reserved_64s[1] is scheduler handle
+	 */
+	if ((rx_conf->reserved_64s[0] & UINT16_MAX) == POLICER_RFC_NUM) {
+		if (rx_conf->reserved_64s[1]) {
+			struct dpaa2_dpcon_dev *dpcon_dev =
+					(struct dpaa2_dpcon_dev *)rx_conf->reserved_64s[1];
+			cfg.destination.type = DPNI_DEST_DPCON;
+			cfg.destination.id = dpcon_dev->dpcon_id;
+			cfg.destination.priority =
+					(rx_conf->reserved_64s[0] >> SHIFT_RESERVED_PRIORITY) & UINT8_MAX;
+			options |= DPNI_QUEUE_OPT_DEST;
 		}
 	}
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_RX,
