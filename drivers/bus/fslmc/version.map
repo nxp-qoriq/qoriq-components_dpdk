@@ -44,6 +44,9 @@ INTERNAL {
 	dpcon_get_attributes;
 	dpcon_open;
 	dpcon_close;
+	dpcon_reset;
+	dpcon_enable;
+	dpcon_disable;
 	dpdmai_close;
 	dpdmai_disable;
 	dpdmai_enable;
