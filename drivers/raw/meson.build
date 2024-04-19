@@ -9,9 +9,14 @@ drivers = [
         'cnxk_bphy',
         'cnxk_gpio',
         'dpaa2_cmdif',
-        'geul_ipc',
         'ifpga',
         'ntb',
         'skeleton',
 ]
+cmd = run_command('sh', '-c', 'echo $COMMON_HEADERS_DIR')
+COMMON_HEADERS_DIR = cmd.stdout().strip()
+if COMMON_HEADERS_DIR != ''
+  drivers += 'geul_ipc'
+endif
+
 std_deps = ['rawdev']
