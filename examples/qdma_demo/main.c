@@ -81,6 +81,12 @@ enum qdma_demo_test_mode {
 	QDMA_DEMO_CPU_MODE = (1 << 1),
 };
 
+enum qdma_demo_validate_mode {
+	QDMA_DEMO_NO_VALIDATE = 0,
+	QDMA_DEMO_FULL_VALIDATE = 1,
+	QDMA_DEMO_LAST_BYTE_VALIDATE = 2,
+};
+
 struct qdma_demo_latency {
 	double min;
 	double max;
@@ -154,7 +160,7 @@ static char *g_test_case_str;
 
 static int g_latency;
 static int g_test_mode = QDMA_DEMO_DMA_MODE;
-static int g_validate;
+static int g_validate = QDMA_DEMO_NO_VALIDATE;
 static int g_seg_iova;
 static int g_scatter_gather;
 static int g_silent;
@@ -215,6 +221,9 @@ struct qdma_demo_core_cfg {
 	uint64_t dma_total_bytes;
 	uint64_t cpu_total_pkts;
 	uint64_t cpu_total_bytes;
+
+	uint64_t check_count;
+	uint32_t max_check;
 };
 
 struct qdma_demo_core_cfg g_core_cfg[RTE_MAX_LCORE];
@@ -546,11 +555,17 @@ qdma_demo_validate_set(struct dma_job *job)
 	int r_num;
 	uint32_t i, j;
 
-	if (likely(!g_validate))
+	if (likely(g_validate == QDMA_DEMO_NO_VALIDATE))
 		return;
 
 	if (!job->dma_len)
 		goto cpu_validate_set;
+
+	if (g_validate == QDMA_DEMO_LAST_BYTE_VALIDATE) {
+		*(job->vdmasrc + job->dma_len - 1) = LATENCY_TEST_SRC_DATA;
+		*(job->vdmadst + job->dma_len - 1) = LATENCY_TEST_DST_DATA;
+		goto cpu_validate_set;
+	}
 
 	r_num = rand();
 	for (i = 0; i < job->dma_len / 4; i++) {
@@ -568,6 +583,12 @@ cpu_validate_set:
 	if (!job->cpu_len)
 		return;
 
+	if (g_validate == QDMA_DEMO_LAST_BYTE_VALIDATE) {
+		*(job->vcpusrc + job->cpu_len - 1) = LATENCY_TEST_SRC_DATA;
+		*(job->vcpudst + job->cpu_len - 1) = LATENCY_TEST_DST_DATA;
+		return;
+	}
+
 	r_num = rand();
 	for (i = 0; i < job->cpu_len / 4; i++) {
 		*((int *)(job->vcpusrc) + i) = r_num;
@@ -581,25 +602,75 @@ cpu_validate_set:
 	}
 }
 
-static int
+#ifndef dccivac
+#ifdef RTE_ARCH_ARM64
+#define dccivac(p) \
+	{ asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
+#else
+#define dccivac(p) { (void)(p); }
+#endif
+#endif
+
+#define VALIDATE_CHECK_COUNT_MAX 100000
+
+static uint32_t
 qdma_demo_validate_check(struct dma_job *job[],
-	uint32_t job_num)
+	uint32_t job_num, uint32_t *max_check)
 {
-	uint32_t i = 0, j = 0;
+	uint32_t i = 0, j = 0, idx, check_count, total = 0, max = 0;
 	int dma_err = 0, cpu_err = 0;
 
-	if (likely(!g_validate))
+	if (likely(g_validate == QDMA_DEMO_NO_VALIDATE))
 		return 0;
+
+	if (g_validate == QDMA_DEMO_LAST_BYTE_VALIDATE) {
+		for (i = 0; i < job_num; i++) {
+			if (!job[i]->dma_len)
+				goto cpu_last_byte_validate;
+			idx = job[i]->dma_len - 1;
+			check_count = 1;
+			while (job[i]->vdmasrc[idx] != job[i]->vdmadst[idx]) {
+				dccivac(&job[i]->vdmadst[idx]);
+				check_count++;
+				if (check_count > VALIDATE_CHECK_COUNT_MAX) {
+					dma_err = 1;
+					goto err_quit;
+				}
+			}
+			if (check_count > max)
+				max = check_count;
+			total += check_count;
+
+cpu_last_byte_validate:
+			if (!job[i]->cpu_len)
+				continue;
+
+			idx = job[i]->cpu_len - 1;
+			if (job[i]->vcpusrc[idx] != job[i]->vcpudst[idx]) {
+				cpu_err = 1;
+				goto err_quit;
+			}
+		}
+		goto err_quit;
+	}
 
 	for (i = 0; i < job_num; i++) {
 		if (!job[i]->dma_len)
 			goto cpu_validate;
 
 		for (j = 0; j < job[i]->dma_len; j++) {
-			if (job[i]->vdmasrc[j] != job[i]->vdmadst[j]) {
-				dma_err = 1;
-				goto err_quit;
+			check_count = 1;
+			while (job[i]->vdmasrc[j] != job[i]->vdmadst[j]) {
+				dccivac(&job[i]->vdmadst[j]);
+				check_count++;
+				if (check_count > VALIDATE_CHECK_COUNT_MAX) {
+					dma_err = 1;
+					goto err_quit;
+				}
 			}
+			if (check_count > max)
+				max = check_count;
+			total += check_count;
 		}
 
 cpu_validate:
@@ -621,6 +692,7 @@ err_quit:
 			job[i]->idx, job[i]->vdmasrc, j,
 			job[i]->vdmasrc[j], job[i]->vdmadst,
 			j, job[i]->vdmadst[j]);
+		return -EINVAL;
 	}
 	if (cpu_err) {
 		rte_exit(EXIT_FAILURE,
@@ -628,9 +700,12 @@ err_quit:
 			job[i]->idx, job[i]->vcpusrc, j,
 			job[i]->vcpusrc[j], job[i]->vcpudst,
 			j, job[i]->vcpudst[j]);
+		return -EINVAL;
 	}
+	if (max_check)
+		*max_check = max;
 
-	return 0;
+	return total;
 }
 
 static int
@@ -662,7 +737,12 @@ qdma_demo_memcpy_process(uint16_t burst_nb,
 	if (g_latency)
 		calculate_latency(lcore_id, cycle1, cycle2, job, job_num, 0);
 
-	ret = qdma_demo_validate_check(job, job_num);
+	ret = qdma_demo_validate_check(job, job_num, NULL);
+	if (ret < 0) {
+		rte_exit(EXIT_FAILURE, "Validate failed\n");
+		return ret;
+	}
+	g_core_cfg[lcore_id].check_count += ret;
 
 	eq_ret = rte_ring_enqueue_bulk(g_core_cfg[lcore_id].job_ring,
 			(void **)job, job_num, NULL);
@@ -674,7 +754,7 @@ qdma_demo_memcpy_process(uint16_t burst_nb,
 		return -EINVAL;
 	}
 
-	return ret;
+	return 0;
 }
 
 static int
@@ -812,11 +892,6 @@ quit:
 	return ret;
 }
 
-#ifdef RTE_ARCH_ARM64
-#define dccivac(p) \
-	{ asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
-#endif
-
 static void
 qdma_demo_silent_complete_check(uint32_t dq_num,
 	struct dma_job *job[], uint32_t *miss_counts)
@@ -832,9 +907,7 @@ qdma_demo_silent_complete_check(uint32_t dq_num,
 		vdst = job[i]->vdmadst + job[i]->dma_len - 1;
 		while ((*vsrc) != (*vdst)) {
 			miss++;
-#ifdef RTE_ARCH_ARM64
 			dccivac(vdst);
-#endif
 			if (quit_signal)
 				break;
 		}
@@ -846,9 +919,7 @@ cpu_check:
 		vsrc = job[i]->vcpusrc + job[i]->cpu_len - 1;
 		vdst = job[i]->vcpudst + job[i]->cpu_len - 1;
 		while ((*vsrc) != (*vdst)) {
-#ifdef RTE_ARCH_ARM64
 			dccivac(vdst);
-#endif
 			if (quit_signal)
 				break;
 		}
@@ -913,6 +984,7 @@ lcore_qdma_process_throughput(uint16_t burst_nb,
 	bool error = false;
 	uint16_t dq_idx[burst_nb];
 	int ret;
+	uint32_t max;
 
 	job_num = rte_ring_dequeue_bulk(job_ring,
 				(void **)job, burst_nb, NULL);
@@ -965,11 +1037,15 @@ lcore_qdma_process_throughput(uint16_t burst_nb,
 	for (i = 0; i < dq_num; i++)
 		job[i] = &jobs[dq_idx[i]];
 
-	ret = qdma_demo_validate_check(job, dq_num);
-	if (ret) {
+	max = 0;
+	ret = qdma_demo_validate_check(job, dq_num, &max);
+	if (ret < 0) {
 		rte_exit(EXIT_FAILURE, "Validate failed\n");
 		return ret;
 	}
+	g_core_cfg[lcore_id].check_count += ret;
+	if (max > g_core_cfg[lcore_id].max_check)
+		g_core_cfg[lcore_id].max_check = max;
 skip_dq:
 	if (g_silent) {
 		qdma_demo_silent_complete_check(dq_num, job, NULL);
@@ -1001,6 +1077,7 @@ lcore_qdma_process_throughput_sg(uint16_t burst_nb,
 	bool error = false;
 	uint16_t dq_idx[burst_nb];
 	int ret;
+	uint32_t max;
 
 	job_num = rte_ring_dequeue_bulk(job_ring,
 			(void **)job, burst_nb, NULL);
@@ -1054,11 +1131,15 @@ dequeue:
 
 	for (i = 0; i < dq_num; i++)
 		job[i] = &jobs[dq_idx[i]];
-	ret = qdma_demo_validate_check(job, dq_num);
-	if (ret) {
+	max = 0;
+	ret = qdma_demo_validate_check(job, dq_num, &max);
+	if (ret < 0) {
 		rte_exit(EXIT_FAILURE, "Validate failed\n");
 		return ret;
 	}
+	g_core_cfg[lcore_id].check_count += ret;
+	if (max > g_core_cfg[lcore_id].max_check)
+		g_core_cfg[lcore_id].max_check = max;
 	if (error)
 		rte_exit(EXIT_FAILURE, "Job Processing Error\n");
 skip_dq:
@@ -1271,10 +1352,13 @@ lcore_qdma_control_loop(void)
 	uint64_t cpu_bytes_diff_total;
 	uint64_t cpu_bytes_diff[RTE_MAX_LCORE];
 
+	uint64_t check_diff;
+	uint64_t check_old_count[RTE_MAX_LCORE];
+
 	uint64_t cycle1 = 0, cycle2 = 0, cycle_diff;
 	float bytes_speed, pkts_speed;
 	int ret, offset;
-	uint32_t i;
+	uint32_t i, max;
 	char perf_buf[1024];
 
 	lcore_id = rte_lcore_id();
@@ -1283,6 +1367,7 @@ lcore_qdma_control_loop(void)
 	memset(cpu_old_bytes, 0, sizeof(cpu_old_bytes));
 	memset(dma_old_pkts, 0, sizeof(dma_old_pkts));
 	memset(dma_old_bytes, 0, sizeof(dma_old_bytes));
+	memset(check_old_count, 0, sizeof(check_old_count));
 
 	ret = rte_dma_start(qdma_dev_id);
 	if (ret) {
@@ -1314,6 +1399,8 @@ lcore_qdma_control_loop(void)
 		dma_bytes_diff_total = 0;
 		cpu_pkts_diff_total = 0;
 		cpu_bytes_diff_total = 0;
+		check_diff = 0;
+		max = 0;
 		offset += sprintf(&perf_buf[offset], "Statistics:\n");
 		RTE_LCORE_FOREACH_WORKER(i) {
 			dma_pkts_diff[i] = g_core_cfg[i].dma_total_pkts -
@@ -1333,6 +1420,12 @@ lcore_qdma_control_loop(void)
 			cpu_bytes_diff_total += cpu_bytes_diff[i];
 			cpu_old_pkts[i] = g_core_cfg[i].cpu_total_pkts;
 			cpu_old_bytes[i] = g_core_cfg[i].cpu_total_bytes;
+
+			check_diff += g_core_cfg[i].check_count -
+				check_old_count[i];
+			check_old_count[i] = g_core_cfg[i].check_count;
+			if (g_core_cfg[i].max_check > max)
+				max = g_core_cfg[i].max_check;
 
 			if (g_packet_dma_size > 0) {
 				bytes_speed = (float)dma_bytes_diff[i] /
@@ -1371,6 +1464,12 @@ lcore_qdma_control_loop(void)
 				"Total DMA Rate: %.3f Mbps OR %.3f Kpps\n",
 				8 * bytes_speed / NS_PER_MS,
 				pkts_speed / NS_PER_MS);
+			if (g_validate != QDMA_DEMO_NO_VALIDATE) {
+				offset += sprintf(&perf_buf[offset],
+					"Average check times: %.3f, max times: %d\n",
+					(float)check_diff / dma_pkts_diff_total,
+					max);
+			}
 		}
 
 		if (g_packet_cpu_size > 0) {
@@ -2015,8 +2114,32 @@ qdma_parse_long_arg(char *optarg, const struct option *lopt)
 		RTE_LOG(INFO, qdma_demo, "burst size %u\n", g_burst);
 		break;
 	case ARG_VALIDATE:
-		g_validate = 1;
-		RTE_LOG(INFO, qdma_demo, "Validate data transfer\n");
+		if (!optarg) {
+			g_validate = QDMA_DEMO_FULL_VALIDATE;
+		} else {
+			ret = sscanf(optarg, "%d", &g_validate);
+			if (ret != 1) {
+				RTE_LOG(ERR, qdma_demo, "Invalid validate size\n");
+				ret = -EINVAL;
+				goto out;
+			}
+		}
+		ret = 0;
+		if (g_validate == QDMA_DEMO_NO_VALIDATE) {
+			RTE_LOG(INFO, qdma_demo,
+				"Don't validate data after DMA complete.\n");
+		} else if (g_validate == QDMA_DEMO_FULL_VALIDATE) {
+			RTE_LOG(INFO, qdma_demo,
+				"Validate full data after DMA complete.\n");
+		} else if (g_validate == QDMA_DEMO_LAST_BYTE_VALIDATE) {
+			RTE_LOG(INFO, qdma_demo,
+				"Validate last byte after DMA complete.\n");
+		} else {
+			RTE_LOG(INFO, qdma_demo,
+				"Invalid validation type(%d)\n", g_validate);
+			ret = -EINVAL;
+			goto out;
+		}
 		break;
 	case ARG_SEG_IOVA:
 		g_seg_iova = 1;

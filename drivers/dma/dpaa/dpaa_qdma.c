@@ -11,7 +11,7 @@
 
 static int s_data_validation;
 static int s_hw_err_check;
-static int s_sg_disable;
+static int s_sg_disable = 1;
 
 static inline void
 qdma_desc_addr_set64(struct fsl_qdma_comp_cmd_desc *ccdf, u64 addr)
@@ -334,7 +334,6 @@ fsl_qdma_free_stq_res(struct fsl_qdma_status_queue *queue)
 {
 	rte_free(queue->cq);
 }
-
 
 static int
 fsl_qdma_prep_status_queue(struct fsl_qdma_engine *fsl_qdma,
