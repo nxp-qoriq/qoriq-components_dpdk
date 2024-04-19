@@ -604,4 +604,28 @@ rte_pmd_dpaa2_dev_recycle_qp_setup(struct rte_dpaa2_device *dpaa2_dev,
 	struct dpaa2_queue **txq,
 	struct dpaa2_queue **rxq);
 
+struct rte_mbuf *__rte_hot
+eth_fd_to_mbuf(const struct qbman_fd *fd, int port_id);
+
+void __rte_hot
+dpaa2_dev_rx_parse_new(struct rte_mbuf *m,
+			const struct qbman_fd *fd,
+			void *hw_annot_addr);
+uint32_t __rte_hot
+dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr);
+
+/* DPCON prototypes */
+int32_t
+dpaa2_dpcon_start(struct dpaa2_dpcon_dev *dpcon_dev);
+int32_t
+dpaa2_dpcon_stop(struct dpaa2_dpcon_dev *dpcon_dev);
+void
+dpaa2_free_dpcon_dev(struct dpaa2_dpcon_dev *dpcon_dev);
+int
+dpaa2_dpcon_recv(struct dpaa2_dpcon_dev *dpcon_dev,
+		 struct rte_mbuf **mbuf,
+		 uint16_t nb_pkts);
+struct
+dpaa2_dpcon_dev *dpaa2_alloc_dpcon_dev(void);
+
 #endif /* _DPAA2_ETHDEV_H */

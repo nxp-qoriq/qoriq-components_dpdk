@@ -70,7 +70,7 @@ dpaa2_timestamp_dynfield(struct rte_mbuf *mbuf)
 	DPAA2_RESET_FD_FLC(_fd);		\
 } while (0)
 
-static inline void __rte_hot
+void __rte_hot
 dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 		       void *hw_annot_addr)
 {
@@ -275,7 +275,7 @@ parse_done:
 	return pkt_type;
 }
 
-static inline uint32_t __rte_hot
+uint32_t __rte_hot
 dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 {
 	struct dpaa2_annot_hdr *annotation = hw_annot_addr;
@@ -424,7 +424,7 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 	return (void *)first_seg;
 }
 
-static inline struct rte_mbuf *__rte_hot
+struct rte_mbuf *__rte_hot
 eth_fd_to_mbuf(const struct qbman_fd *fd,
 	       int port_id)
 {

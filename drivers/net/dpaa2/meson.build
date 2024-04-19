@@ -18,6 +18,8 @@ sources = files(
         'dpaa2_rxtx.c',
         'dpaa2_sparser.c',
         'dpaa2_ptp.c',
+        'dpaa2_dpcon.c',
+        'dpaa2_scheduler.c',
         'mc/dprtc.c',
         'mc/dpkg.c',
         'mc/dpdmux.c',
