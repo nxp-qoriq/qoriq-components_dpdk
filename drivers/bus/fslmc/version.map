@@ -90,6 +90,7 @@ INTERNAL {
 	qbman_pull_desc_clear;
 	qbman_pull_desc_set_fq;
 	qbman_pull_desc_set_numframes;
+	qbman_pull_desc_set_channel;
 	qbman_pull_desc_set_storage;
 	qbman_release_desc_clear;
 	qbman_release_desc_set_bpid;

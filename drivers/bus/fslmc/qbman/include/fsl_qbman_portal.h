@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  * Copyright (C) 2014 Freescale Semiconductor, Inc.
- * Copyright 2015-2020 NXP
+ * Copyright 2015-2020, 2024 NXP
  *
  */
 #ifndef _FSL_QBMAN_PORTAL_H
@@ -400,6 +400,7 @@ void qbman_pull_desc_set_wq(struct qbman_pull_desc *d, uint32_t wqid,
  * @chid: the channel id to be dequeued.
  * @dct: the dequeue command type.
  */
+__rte_internal
 void qbman_pull_desc_set_channel(struct qbman_pull_desc *d, uint32_t chid,
 				 enum qbman_pull_type_e dct);
 
