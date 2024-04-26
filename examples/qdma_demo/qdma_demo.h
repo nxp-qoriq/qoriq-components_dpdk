@@ -14,7 +14,8 @@
 #define MEM_TO_MEM (1 << 3)
 #define MAX_TEST_CASES 4
 
-#define BURST_NB_MAX 256
+#define QDMA_DEMO_BURST_NB_DEFAULT 8
+#define QDMA_DEMO_MEMZONE_SIZE_MAX (128 * 1024 * 1024)
 
 struct qdma_test_case {
 	const char *name;
