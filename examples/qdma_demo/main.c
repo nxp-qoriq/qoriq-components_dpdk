@@ -146,10 +146,10 @@ static const char * const s_lopts_help[] = {
 	""
 };
 
-static uint64_t g_mem_zone_size = (128 * 1024 * 1024);
+static uint64_t g_mem_zone_size = QDMA_DEMO_MEMZONE_SIZE_MAX;
 
 /*Configurable options*/
-static uint32_t g_burst = BURST_NB_MAX;
+static uint32_t g_burst = QDMA_DEMO_BURST_NB_DEFAULT;
 static uint64_t g_pci_phy = RTE_BAD_IOVA;
 static uint64_t g_packet_dma_size = 1024;
 static uint64_t g_packet_cpu_size = 64;
@@ -1723,6 +1723,27 @@ qdma_demo_job_desc_init(struct dma_job *job,
 	return 0;
 }
 
+static const struct rte_memzone *
+qdma_demo_alloc_memzone(char nm[],
+	uint64_t *size_req)
+{
+	uint64_t size = *size_req;
+	const struct rte_memzone *mz;
+
+reserve_again:
+	mz = rte_memzone_reserve_aligned(nm,
+			size, 0, RTE_MEMZONE_IOVA_CONTIG, 4096);
+	if (!mz) {
+		size = size / 2;
+		if (size <= 4096)
+			return NULL;
+		goto reserve_again;
+	}
+	*size_req = size;
+
+	return mz;
+}
+
 static int
 qdma_demo_core_configure(char *optarg,
 	struct rte_dma_info *dma_info)
@@ -1735,7 +1756,7 @@ qdma_demo_core_configure(char *optarg,
 	uint64_t mem_addr = 0, end_mem = 0;
 	uint64_t v_pci_addr = (uint64_t)g_pci_vir;
 	uint64_t v_mem_addr = 0;
-	uint64_t elem_size = 0;
+	uint64_t elem_size = 0, size_req;
 	uint64_t src_iova = 0, dst_iova = 0;
 	uint64_t src_va = 0, dst_va = 0;
 	char nm[RTE_MEMZONE_NAMESIZE];
@@ -1804,12 +1825,54 @@ qdma_demo_core_configure(char *optarg,
 		}
 	}
 
+	sprintf(nm, "qdma_demo_memz");
 	if (g_pci_size) {
 		seg_len = g_pci_size / pci_seg;
 		g_mem_zone_size = seg_len * mem_seg;
+		if (g_mem_zone_size > 0) {
+			size_req = g_mem_zone_size;
+			g_memz = qdma_demo_alloc_memzone(nm, &size_req);
+			if (!g_memz) {
+				RTE_LOG(ERR, qdma_demo,
+					"Reserved %s (size=%lx)failed\n",
+					nm, g_mem_zone_size);
+				return -ENOMEM;
+			}
+			if (size_req != g_mem_zone_size) {
+				RTE_LOG(WARNING, qdma_demo,
+					"Resize %s from %lx to %lx\n",
+					nm, g_mem_zone_size, size_req);
+				seg_len = size_req / mem_seg;
+				RTE_LOG(WARNING, qdma_demo,
+					"Resize PCI from %lx to %x\n",
+					g_pci_size, seg_len * pci_seg);
+				g_pci_size = seg_len * pci_seg;
+				g_mem_zone_size = size_req;
+			}
+		}
 		end_pci = pci_addr + g_pci_size;
 	} else {
+		size_req = g_mem_zone_size;
+		g_memz = qdma_demo_alloc_memzone(nm, &size_req);
+		if (!g_memz) {
+			RTE_LOG(ERR, qdma_demo,
+				"Reserved %s (size=%lx)failed\n",
+				nm, g_mem_zone_size);
+			return -ENOMEM;
+		}
+		if (size_req != g_mem_zone_size) {
+			RTE_LOG(WARNING, qdma_demo,
+				"Resize %s from %lx to %lx\n",
+				nm, g_mem_zone_size, size_req);
+			g_mem_zone_size = size_req;
+		}
 		seg_len = g_mem_zone_size / mem_seg;
+	}
+
+	if (g_memz) {
+		mem_addr = g_memz->iova;
+		v_mem_addr = g_memz->addr_64;
+		end_mem = mem_addr + g_memz->len;
 	}
 
 	for (core = 0; core < RTE_MAX_LCORE; core++) {
@@ -1830,22 +1893,6 @@ qdma_demo_core_configure(char *optarg,
 			g_core_cfg[core].pci_src_len = seg_len;
 			g_core_cfg[core].mem_dst_len = seg_len;
 		}
-	}
-
-	if (mem_seg > 0) {
-		sprintf(nm, "qdma_demo_memz");
-		g_memz = rte_memzone_reserve_aligned(nm,
-				g_mem_zone_size, 0,
-				RTE_MEMZONE_IOVA_CONTIG, 4096);
-		if (!g_memz) {
-			RTE_LOG(ERR, qdma_demo,
-				"Reserved %s (size-%ld)failed\n",
-				nm, g_mem_zone_size);
-			return -ENOMEM;
-		}
-		mem_addr = g_memz->iova;
-		v_mem_addr = g_memz->addr_64;
-		end_mem = mem_addr + g_memz->len;
 	}
 
 	elem_size = qdma_demo_roundup_pow_of_two(elem_size);
@@ -2108,8 +2155,8 @@ qdma_parse_long_arg(char *optarg, const struct option *lopt)
 			goto out;
 		}
 		ret = 0;
-		if (g_burst > BURST_NB_MAX || g_burst < 1)
-			g_burst = BURST_NB_MAX;
+		if (g_burst < 1)
+			g_burst = QDMA_DEMO_BURST_NB_DEFAULT;
 
 		RTE_LOG(INFO, qdma_demo, "burst size %u\n", g_burst);
 		break;
