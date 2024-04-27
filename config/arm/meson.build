@@ -340,8 +340,8 @@ soc_dpaa = {
 	['RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST', false],
 	['RTE_LIBRTE_PMD_CAAM_JR_BE', false],
 	['RTE_LIBRTE_IEEE1588', false],
-	['RTE_DMA_DPAA_ERRATA_ERR050757', false],
-	['RTE_DMA_DPAA_ERRATA_ERR050265', false],
+	['RTE_DMA_DPAA_ERRATA_ERR050757', true],
+	['RTE_DMA_DPAA_ERRATA_ERR050265', true],
 	['RTE_DMA_DPAA_ERR_CHK', false],
 
 	# Enable this flag to use dedicated socket memory
