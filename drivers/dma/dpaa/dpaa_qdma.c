@@ -11,7 +11,10 @@
 
 static int s_data_validation;
 static int s_hw_err_check;
-static int s_sg_disable = 1;
+static int s_sg_enable = 1;
+#ifdef RTE_DMA_DPAA_ERRATA_ERR050757
+static int s_pci_read = 1;
+#endif
 
 static inline void
 qdma_desc_addr_set64(struct fsl_qdma_comp_cmd_desc *ccdf, u64 addr)
@@ -126,10 +129,9 @@ fsl_qdma_pre_comp_sd_desc(struct fsl_qdma_queue *queue)
 	struct fsl_qdma_comp_cmd_desc *ccdf;
 	uint16_t i, j;
 	struct fsl_qdma_cmpd_ft *ft;
-	struct fsl_qdma_df *df;
 
 	for (i = 0; i < queue->n_cq; i++) {
-		dma_addr_t phy_ft = 0, phy_df = 0;
+		dma_addr_t phy_ft = 0;
 
 		queue->ft[i] = dma_pool_alloc(NULL,
 			sizeof(struct fsl_qdma_cmpd_ft),
@@ -156,25 +158,14 @@ fsl_qdma_pre_comp_sd_desc(struct fsl_qdma_queue *queue)
 			offsetof(struct fsl_qdma_cmpd_ft, desc_ssge);
 		queue->ft[i]->phy_dsge = phy_ft +
 			offsetof(struct fsl_qdma_cmpd_ft, desc_dsge);
-
-		queue->df[i] = dma_pool_alloc(NULL,
-			sizeof(struct fsl_qdma_df),
-			RTE_CACHE_LINE_SIZE, &phy_df);
-		if (!queue->df[i]) {
-			rte_free(queue->ft[i]);
-			queue->ft[i] = NULL;
-			goto fail;
-		}
-
-		memset(queue->ft[i], 0, sizeof(struct fsl_qdma_cmpd_ft));
-		memset(queue->df[i], 0, sizeof(struct fsl_qdma_df));
+		queue->ft[i]->phy_df = phy_ft +
+			offsetof(struct fsl_qdma_cmpd_ft, phy_df);
 
 		ft = queue->ft[i];
-		df = queue->df[i];
-		sdf = &df->sdf;
-		ddf = &df->ddf;
+		sdf = &ft->df.sdf;
+		ddf = &ft->df.ddf;
 		/* Compound Command Descriptor(Frame List Table) */
-		qdma_desc_sge_addr_set64(&ft->desc_buf, phy_df);
+		qdma_desc_sge_addr_set64(&ft->desc_buf, ft->phy_df);
 		/* It must be 32 as Compound S/G Descriptor */
 		ft->desc_buf.length = sizeof(struct fsl_qdma_df);
 
@@ -198,10 +189,8 @@ fsl_qdma_pre_comp_sd_desc(struct fsl_qdma_queue *queue)
 	return 0;
 
 fail:
-	for (j = 0; j < i; j++) {
+	for (j = 0; j < i; j++)
 		rte_free(queue->ft[j]);
-		rte_free(queue->df[j]);
-	}
 
 	return -ENOMEM;
 }
@@ -247,23 +236,12 @@ fsl_qdma_alloc_queue_resources(struct fsl_qdma_engine *fsl_qdma,
 		rte_free(cmd_queue->cq);
 		return -ENOMEM;
 	}
-	sprintf(nm, "Descriptor Buf_%d_%d",
-		block_id, queue_id);
-	cmd_queue->df = rte_zmalloc(nm,
-			sizeof(void *) * QDMA_QUEUE_SIZE, 0);
-	if (!cmd_queue->df) {
-		DPAA_QDMA_ERR("%s zmalloc failed!", nm);
-		rte_free(cmd_queue->ft);
-		rte_free(cmd_queue->cq);
-		return -ENOMEM;
-	}
 	sprintf(nm, "Pending_desc_%d_%d",
 		block_id, queue_id);
 	cmd_queue->pending_desc = rte_zmalloc(nm,
 		sizeof(struct fsl_qdma_desc) * FSL_QDMA_MAX_DESC_NUM, 0);
 	if (!cmd_queue->pending_desc) {
 		DPAA_QDMA_ERR("%s zmalloc failed!", nm);
-		rte_free(cmd_queue->df);
 		rte_free(cmd_queue->ft);
 		rte_free(cmd_queue->cq);
 		return -ENOMEM;
@@ -278,7 +256,6 @@ fsl_qdma_alloc_queue_resources(struct fsl_qdma_engine *fsl_qdma,
 		rte_free(cmd_queue->pending_desc);
 		rte_free(cmd_queue->ft);
 		rte_free(cmd_queue->cq);
-		rte_free(cmd_queue->df);
 		return -ENOMEM;
 	}
 	sprintf(nm, "complete-desc_ring_%d_%d",
@@ -292,7 +269,6 @@ fsl_qdma_alloc_queue_resources(struct fsl_qdma_engine *fsl_qdma,
 		rte_free(cmd_queue->pending_desc);
 		rte_free(cmd_queue->ft);
 		rte_free(cmd_queue->cq);
-		rte_free(cmd_queue->df);
 		return -ENOMEM;
 	}
 	sprintf(nm, "complete-pool-desc_ring_%d_%d",
@@ -307,7 +283,6 @@ fsl_qdma_alloc_queue_resources(struct fsl_qdma_engine *fsl_qdma,
 		rte_free(cmd_queue->pending_desc);
 		rte_free(cmd_queue->ft);
 		rte_free(cmd_queue->cq);
-		rte_free(cmd_queue->df);
 		return -ENOMEM;
 	}
 
@@ -320,7 +295,6 @@ fsl_qdma_alloc_queue_resources(struct fsl_qdma_engine *fsl_qdma,
 static void
 fsl_qdma_free_cmdq_res(struct fsl_qdma_queue *queue)
 {
-	rte_free(queue->df);
 	rte_free(queue->ft);
 	rte_free(queue->cq);
 	rte_free(queue->pending_desc);
@@ -664,8 +638,30 @@ fsl_qdma_enqueue_desc_single(struct fsl_qdma_queue *fsl_queue,
 	struct fsl_qdma_comp_sg_desc *csgf_src, *csgf_dest;
 	struct fsl_qdma_cmpd_ft *ft;
 	int ret;
+#ifdef RTE_DMA_DPAA_ERRATA_ERR050757
+	struct fsl_qdma_sdf *sdf;
+#endif
 
 	ft = fsl_queue->ft[fsl_queue->ci];
+
+#ifdef RTE_DMA_DPAA_ERRATA_ERR050757
+	if (s_pci_read) {
+		sdf = &ft->df.sdf;
+		sdf->srttype = FSL_QDMA_CMD_RWTTYPE;
+#ifdef RTE_DMA_DPAA_ERRATA_ERR050265
+		sdf->prefetch = 1;
+#endif
+		if (len > FSL_QDMA_CMD_SS_ERR050757_LEN) {
+			sdf->ssen = 1;
+			sdf->sss = FSL_QDMA_CMD_SS_ERR050757_LEN;
+			sdf->ssd = FSL_QDMA_CMD_SS_ERR050757_LEN;
+		} else {
+			sdf->ssen = 0;
+			sdf->sss = 0;
+			sdf->ssd = 0;
+		}
+	}
+#endif
 	csgf_src = &ft->desc_sbuf;
 	csgf_dest = &ft->desc_dbuf;
 	qdma_desc_sge_addr_set64(csgf_src, src);
@@ -745,7 +741,7 @@ drain_again:
 }
 
 static int
-fsl_qdma_enqueue_desc(struct fsl_qdma_queue *fsl_queue)
+fsl_qdma_enqueue_desc_sg(struct fsl_qdma_queue *fsl_queue)
 {
 	uint8_t *block = fsl_queue->block_vir, i;
 	struct fsl_qdma_comp_sg_desc *csgf_src, *csgf_dest;
@@ -758,74 +754,10 @@ fsl_qdma_enqueue_desc(struct fsl_qdma_queue *fsl_queue)
 	struct fsl_qdma_sdf *sdf;
 #endif
 
-	ret = fsl_qdma_enqueue_overflow(fsl_queue);
-	if (unlikely(ret))
-		return ret;
-
 	ft = fsl_queue->ft[fsl_queue->ci];
 	csgf_src = &ft->desc_sbuf;
 	csgf_dest = &ft->desc_dbuf;
-#ifdef RTE_DMA_DPAA_ERRATA_ERR050757
-	sdf = &fsl_queue->df[fsl_queue->ci]->sdf;
-	sdf->srttype = FSL_QDMA_CMD_RWTTYPE;
-#ifdef RTE_DMA_DPAA_ERRATA_ERR050265
-	sdf->prefetch = 1;
-#endif
-#endif
 
-	if (num == 1) {
-#ifdef RTE_DMA_DPAA_ERRATA_ERR050757
-		if (fsl_queue->pending_desc[start].len >
-			FSL_QDMA_CMD_SSS_DISTANCE) {
-			sdf->ssen = 1;
-			sdf->sss = FSL_QDMA_CMD_SSS_STRIDE;
-			sdf->ssd = FSL_QDMA_CMD_SSS_DISTANCE;
-		} else {
-			sdf->sss = 0;
-			sdf->ssd = 0;
-		}
-#endif
-		ret = fsl_qdma_enqueue_desc_single(fsl_queue,
-			fsl_queue->pending_desc[start].dst,
-			fsl_queue->pending_desc[start].src,
-			fsl_queue->pending_desc[start].len);
-		if (!ret) {
-			fsl_queue->pending_start =
-				(start + 1) & (fsl_queue->pending_max - 1);
-			fsl_queue->pending_num = 0;
-		}
-		return ret;
-	} else if (s_sg_disable) {
-		while (fsl_queue->pending_num > 0) {
-#ifdef RTE_DMA_DPAA_ERRATA_ERR050757
-			if (fsl_queue->pending_desc[start].len >
-				FSL_QDMA_CMD_SSS_DISTANCE) {
-				sdf->ssen = 1;
-				sdf->sss = FSL_QDMA_CMD_SSS_STRIDE;
-				sdf->ssd = FSL_QDMA_CMD_SSS_DISTANCE;
-			} else {
-				sdf->sss = 0;
-				sdf->ssd = 0;
-			}
-#endif
-			ret = fsl_qdma_enqueue_desc_single(fsl_queue,
-				fsl_queue->pending_desc[start].dst,
-				fsl_queue->pending_desc[start].src,
-				fsl_queue->pending_desc[start].len);
-			if (!ret) {
-				start = (start + 1) &
-					(fsl_queue->pending_max - 1);
-				fsl_queue->pending_start = start;
-				fsl_queue->pending_num--;
-			} else {
-				DPAA_QDMA_ERR("Eq pending desc failed(%d)",
-					ret);
-				return -EIO;
-			}
-		}
-
-		return 0;
-	}
 	qdma_desc_sge_addr_set64(csgf_src, ft->phy_ssge);
 	csgf_src->extion = 1;
 	qdma_desc_sge_addr_set64(csgf_dest, ft->phy_dsge);
@@ -849,13 +781,21 @@ fsl_qdma_enqueue_desc(struct fsl_qdma_queue *fsl_queue)
 	csgf_src->length = total_len;
 	csgf_dest->length = total_len;
 #ifdef RTE_DMA_DPAA_ERRATA_ERR050757
-	if (total_len > FSL_QDMA_CMD_SSS_DISTANCE) {
-		sdf->ssen = 1;
-		sdf->sss = FSL_QDMA_CMD_SSS_STRIDE;
-		sdf->ssd = FSL_QDMA_CMD_SSS_DISTANCE;
-	} else {
-		sdf->sss = 0;
-		sdf->ssd = 0;
+	if (s_pci_read) {
+		sdf = &ft->df.sdf;
+		sdf->srttype = FSL_QDMA_CMD_RWTTYPE;
+#ifdef RTE_DMA_DPAA_ERRATA_ERR050265
+		sdf->prefetch = 1;
+#endif
+		if (total_len > FSL_QDMA_CMD_SS_ERR050757_LEN) {
+			sdf->ssen = 1;
+			sdf->sss = FSL_QDMA_CMD_SS_ERR050757_LEN;
+			sdf->ssd = FSL_QDMA_CMD_SS_ERR050757_LEN;
+		} else {
+			sdf->ssen = 0;
+			sdf->sss = 0;
+			sdf->ssd = 0;
+		}
 	}
 #endif
 	ret = fsl_qdma_enqueue_desc_to_ring(fsl_queue, 1);
@@ -873,6 +813,51 @@ fsl_qdma_enqueue_desc(struct fsl_qdma_queue *fsl_queue)
 	fsl_queue->pending_num = 0;
 
 	return 0;
+}
+
+static int
+fsl_qdma_enqueue_desc(struct fsl_qdma_queue *fsl_queue)
+{
+	uint16_t start = fsl_queue->pending_start;
+	int ret;
+
+	ret = fsl_qdma_enqueue_overflow(fsl_queue);
+	if (unlikely(ret))
+		return ret;
+
+	if (fsl_queue->pending_num == 1) {
+		ret = fsl_qdma_enqueue_desc_single(fsl_queue,
+			fsl_queue->pending_desc[start].dst,
+			fsl_queue->pending_desc[start].src,
+			fsl_queue->pending_desc[start].len);
+		if (!ret) {
+			fsl_queue->pending_start =
+				(start + 1) & (fsl_queue->pending_max - 1);
+			fsl_queue->pending_num = 0;
+		}
+		return ret;
+	} else if (!s_sg_enable) {
+		while (fsl_queue->pending_num > 0) {
+			ret = fsl_qdma_enqueue_desc_single(fsl_queue,
+				fsl_queue->pending_desc[start].dst,
+				fsl_queue->pending_desc[start].src,
+				fsl_queue->pending_desc[start].len);
+			if (!ret) {
+				start = (start + 1) &
+					(fsl_queue->pending_max - 1);
+				fsl_queue->pending_start = start;
+				fsl_queue->pending_num--;
+			} else {
+				DPAA_QDMA_ERR("Eq pending desc failed(%d)",
+					ret);
+				return -EIO;
+			}
+		}
+
+		return 0;
+	}
+
+	return fsl_qdma_enqueue_desc_sg(fsl_queue);
 }
 
 static int
@@ -1277,6 +1262,7 @@ dpaa_qdma_init(struct rte_dma_dev *dmadev)
 	int regs_size;
 	int ret;
 	uint32_t i, j, k;
+	char *penv;
 
 	if (getenv("DPAA_QDMA_DATA_VALIDATION"))
 		s_data_validation = 1;
@@ -1284,8 +1270,15 @@ dpaa_qdma_init(struct rte_dma_dev *dmadev)
 	if (getenv("DPAA_QDMA_HW_ERR_CHECK"))
 		s_hw_err_check = 1;
 
-	if (getenv("DPAA_QDMA_SG_DISABLE"))
-		s_sg_disable = 1;
+	penv = getenv("DPAA_QDMA_SG_ENABLE");
+	if (penv)
+		s_sg_enable = atoi(penv);
+
+#ifdef RTE_DMA_DPAA_ERRATA_ERR050757
+	penv = getenv("DPAA_QDMA_PCI_READ");
+	if (penv)
+		s_pci_read = atoi(penv);
+#endif
 
 	fsl_qdma->n_queues = QDMA_QUEUES * QDMA_BLOCKS;
 	fsl_qdma->num_blocks = QDMA_BLOCKS;

@@ -88,9 +88,7 @@
 #define FSL_QDMA_CMD_RWTTYPE		0x4
 #define FSL_QDMA_CMD_LWC		0x2
 
-#define FSL_QDMA_CFG_SSS_OFFSET		12
-#define FSL_QDMA_CMD_SSS_STRIDE		128
-#define FSL_QDMA_CMD_SSS_DISTANCE	128
+#define FSL_QDMA_CMD_SS_ERR050757_LEN 128
 
 /* qdma engine attribute */
 #define QDMA_QUEUE_SIZE FSL_QDMA_CIRCULAR_DESC_SIZE_MIN
@@ -192,8 +190,10 @@ struct fsl_qdma_cmpd_ft {
 	uint64_t cache_align[2];
 	struct fsl_qdma_comp_sg_desc desc_ssge[FSL_QDMA_SG_MAX_ENTRY];
 	struct fsl_qdma_comp_sg_desc desc_dsge[FSL_QDMA_SG_MAX_ENTRY];
+	struct fsl_qdma_df df;
 	uint64_t phy_ssge;
 	uint64_t phy_dsge;
+	uint64_t phy_df;
 } __rte_packed;
 
 #define FSL_QDMA_ERR_REG_STATUS_OFFSET 0xe00
@@ -273,7 +273,6 @@ struct fsl_qdma_queue {
 	uint8_t pending_num;
 	uint16_t complete_start;
 	dma_addr_t bus_addr;
-	struct fsl_qdma_df **df;
 	void *engine;
 };
 
