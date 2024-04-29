@@ -22,8 +22,9 @@
 #include "cmd_timer.h"
 #include "cmd_line.h"
 #include "ipc.h"
+#include "tti.h"
 
-#define APP_VERSION       "0.3-bsp-drop-0.3"
+#define APP_VERSION       "0.4-bsp-drop-0.3.1"
 
 int log_level = APP_DBG_LOG_ERROR;
 int rte_log_level = RTE_LOGTYPE_EAL;
@@ -34,6 +35,11 @@ struct dfe_state state;
 char cmd_line_to_run[MAX_CMD_LEN];
 int interactive = 1;
 int wait_response = 0;
+
+uint32_t tti_irq_count = 0;
+uint32_t tti_msg_count = 0;
+uint16_t sfn_no = 0;
+uint16_t slot_no = 0;
 
 /* error to string helper */
 static const char *modem_error_to_text(uint32_t status_code)
@@ -81,6 +87,22 @@ static void print_help(char *s)
 		"\t%s -c \"tdd config_pattern D,D,D,S[0:5:10:13],U\"\n"
 		"\t%s -c \"tdd start\"\n\n", s, s, s, s, s);
 
+}
+
+void reset_tti_stats(void)
+{
+	tti_msg_count = 0;
+	tti_irq_count = 0;
+	sfn_no = 0;
+	slot_no = 0;
+}
+
+void dump_tti_stats(void)
+{
+	printf("tti_irq_count = %d\n", tti_irq_count);
+	printf("tti_msg_count = %d\n", tti_msg_count);
+	printf("       sfn_no = %d\n", sfn_no);
+	printf("      slot_no = %d\n", slot_no);
 }
 
 /* wrapper on top of send_msg to accomodate user-dfined 'dfe_msg' structure */
@@ -131,6 +153,15 @@ void process_msg_from_modem(struct rte_bbdev_op_data *in_buf)
 		return;
 
 	switch (msg->type) {
+	/* TTI message from Modem */
+	case DFE_TTI_MESSAGE:
+		/* ulCurrentSlotInFrame, ulCurrentSfn */
+		tti_msg_count++;
+		slot_no = msg->payload[0];
+		sfn_no = msg->payload[1];
+		break;
+
+	/* VSPA DMA to/from DDR benchmarking feature */
 	case DFE_VSPA_DMA_BENCH:
 		cmdline_printf(cl,
 				"VSPA benchmark result = %d.%d Gb/s (%d VSPA cycles), parallel DMAs = %d, iterations = %d\n",

@@ -12,7 +12,9 @@ sources = files(
 	'main.c',
 	'ipc.c',
 	'cmd_line.c',
-	'cmd_timer.c'
+	'cmd_timer.c',
+	'tti.c',
+	'tti_lib.c'
 )
 
 cmd = run_command('sh', '-c', 'echo $LA9310_COMMON_HEADERS')

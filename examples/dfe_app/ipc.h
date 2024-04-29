@@ -30,4 +30,7 @@ int send_msg(void *msg, uint32_t len);
 
 void *get_tx_buf(int qid);
 
+int stop_tti_thread(void);
+int start_tti_thread(void);
+
 #endif
