@@ -26,6 +26,8 @@
 	"\thelp\n" \
 	"\tfdd start/stop\n" \
 	"\ttdd start/stop\n" \
+	"\ttdd start/stop\n" \
+	"\ttdd_tti start/stop\n" \
 	"\ttdd config pattern <D/U>[start_sym:stop_sym],S[start_sym_dl:stop_sym_dl:start_sym_ul:stop_sym_ul],G,...\n" \
 	"\ttdd config pattern_fr1fr2 <dl_slots,dl_syms,ul_slots,ul_syms,g_after_d,g_after_u> ...\n" \
 	"\tconfig scs <scs>\n" \
@@ -51,6 +53,7 @@ extern void cmd_fdd_start_parsed(void *parsed_result, struct cmdline *cl, void *
 extern void cmd_fdd_stop_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_start_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_stop_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_tdd_tti_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_scs_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_symbol_size_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_rx_ant_parsed(void *parsed_result, struct cmdline *cl, void *data);
@@ -72,6 +75,7 @@ extern void cmd_tdd_config_pattern_fr1fr2_parsed(void *parsed_result, struct cmd
 extern void cmd_cell_search_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_cell_attach_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_rf_switch_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_tti_stats_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_wait_response_parsed(void *parsed_result, struct cmdline *cl, void *data);
 
 
@@ -206,6 +210,27 @@ static cmdline_parse_inst_t cmd_tdd_stop = {
 	.tokens = {
 		(void *)&cmd_tdd_stop_tdd_tok,
 		(void *)&cmd_tdd_stop_stop_tok,
+		NULL,
+	}
+};
+
+struct cmd_tdd_tti_result {
+	cmdline_fixed_string_t tdd_tti;
+	cmdline_fixed_string_t action;
+};
+
+static cmdline_parse_token_string_t cmd_tdd_tti_tdd_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_tti_result, tdd_tti, "tdd_tti");
+static cmdline_parse_token_string_t cmd_tdd_tti_action_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_tti_result, action, "start#stop");
+
+static cmdline_parse_inst_t cmd_tdd_tti = {
+	.f = cmd_tdd_tti_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_tdd_tti_tdd_tok,
+		(void *)&cmd_tdd_tti_action_tok,
 		NULL,
 	}
 };
@@ -841,7 +866,6 @@ static cmdline_parse_inst_t cmd_cell_attach = {
 	}
 };
 
-//
 struct cmd_rf_switch_result {
 	cmdline_fixed_string_t rf_switch ;
 	cmdline_fixed_string_t action;
@@ -864,6 +888,22 @@ static cmdline_parse_inst_t cmd_rf_switch = {
 	}
 };
 
+struct cmd_tti_stats_result {
+	cmdline_fixed_string_t tti_stats ;
+};
+
+static cmdline_parse_token_string_t cmd_tti_stats_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tti_stats_result, tti_stats, "tti_stats");
+
+static cmdline_parse_inst_t cmd_tti_stats = {
+	.f = cmd_tti_stats_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_tti_stats_tok,
+		NULL,
+	}
+};
 
 static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_quit,
@@ -894,6 +934,8 @@ static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_cell_search,
 	&cmd_cell_attach,
 	&cmd_rf_switch,
+	&cmd_tdd_tti,
+	&cmd_tti_stats,
 	NULL
 };
 
