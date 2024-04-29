@@ -24,11 +24,15 @@
 #include "logging.h"
 #include "cmd_timer.h"
 #include "ipc.h"
+#include "tti.h"
 
 struct rte_mempool *mp[BBDEV_QUEUE_COUNT];
 
 uint16_t raw_buf_size;
 uint32_t dev_id = BBDEV_IPC_DEV_ID_0;
+
+int stop_tti_thread(void);
+int start_tti_thread(void);
 
 void *get_tx_buf(int qid)
 {
@@ -162,6 +166,32 @@ static int ipc_poll_loop(__attribute__((unused)) void *dummy)
 	return 0;
 }
 
+/* tti thread - can be modified as needed */
+static int tti_poll_loop(__attribute__((unused)) void *dummy)
+{
+	int ret = 0;
+
+	/* init TTI here */
+	tti_init();
+
+	while (!rte_atomic16_read(&state.do_tti_poll));
+
+	app_print_dbg("%s: hello from core %u\n", __func__, rte_lcore_id());
+
+	while (rte_atomic16_read(&state.do_tti_poll)) {
+		ret = tti_wait();
+		if (ret != 0) {
+			app_print_err("%s: TTI wait retcode %d core %u\n", __func__, ret, rte_lcore_id());
+			break;
+		}
+		tti_irq_count++;
+	}
+
+	tti_close();
+
+	return 0;
+}
+
 static int launch_thread(unsigned int *lcore, lcore_function_t *f, const char *name)
 {
 	unsigned int lcore_id;
@@ -198,12 +228,40 @@ static int start_secondary_threads(void)
 	return 0;
 }
 
+int start_tti_thread(void)
+{
+	int ret = 0;
+
+	/* TTI polling thread */
+	ret = launch_thread(&state.tti_lcore, tti_poll_loop, "TTI polling");
+	if (ret < 0)
+		return ret;
+
+	rte_atomic16_set(&state.do_tti_poll, 1);
+
+	return 0;
+}
+
+int stop_tti_thread(void)
+{
+	/* signal TTI thread to end graciously */
+	rte_atomic16_set(&state.do_tti_poll, 0);
+	signal_close();
+
+	/* wait for everything to finish */
+	rte_eal_wait_lcore(state.tti_lcore);
+
+	return 0;
+}
+
 static void stop_secondary_threads(void)
 {
 	rte_atomic16_set(&state.do_poll, 0);
 
 	/* Wait for any ongoing processing to end */
 	rte_eal_wait_lcore(state.ipc_lcore);
+
+	stop_tti_thread();
 }
 
 int init_bbdev(void)
@@ -376,6 +434,7 @@ void dfe_free(void)
 	/* stop any command timer */
 	delete_cmd_timer();
 	rte_atomic16_clear(&state.initialized);
+
 	rte_eal_cleanup();
 	app_print_info("DFE resources are being freed...\n");
 }

@@ -25,7 +25,9 @@ struct dfe_state {
 	rte_atomic16_t initialized;	/* dfe_init() can only be called once */
 	rte_atomic16_t is_active;	/* card state */
 	rte_atomic16_t do_poll;
+	rte_atomic16_t do_tti_poll;
 	unsigned int ipc_lcore;
+	unsigned int tti_lcore;
 	uint8_t stop_in_progress;
 	uint8_t reset_in_progress;
 	uint8_t reset_via_timeout;
@@ -33,6 +35,7 @@ struct dfe_state {
 };
 
 extern struct dfe_state state;
+extern uint32_t tti_irq_count;
 
 void process_msg_from_modem(struct rte_bbdev_op_data *in_buf);
 void signal_ipc_reset(void);
@@ -48,8 +51,7 @@ void cmd_do_tx_rx_addr_config(int msg_type_tx_rx_addr, uint32_t addr);
 void cmd_do_sym_size_config(uint32_t sym_size);
 void cmd_do_rx_antenna_config(uint32_t rx_antenna);
 void cmd_do_qec_config(uint32_t tx_rx, uint32_t mode, uint32_t index, uint32_t value);
-
-
-
+void reset_tti_stats(void);
+void dump_tti_stats(void);
 
 #endif
