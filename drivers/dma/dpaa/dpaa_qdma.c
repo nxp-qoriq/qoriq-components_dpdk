@@ -159,7 +159,7 @@ fsl_qdma_pre_comp_sd_desc(struct fsl_qdma_queue *queue)
 		queue->ft[i]->phy_dsge = phy_ft +
 			offsetof(struct fsl_qdma_cmpd_ft, desc_dsge);
 		queue->ft[i]->phy_df = phy_ft +
-			offsetof(struct fsl_qdma_cmpd_ft, phy_df);
+			offsetof(struct fsl_qdma_cmpd_ft, df);
 
 		ft = queue->ft[i];
 		sdf = &ft->df.sdf;
