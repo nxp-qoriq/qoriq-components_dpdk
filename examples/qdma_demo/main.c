@@ -2164,9 +2164,13 @@ qdma_parse_long_arg(char *optarg, const struct option *lopt)
 		if (!optarg) {
 			g_validate = QDMA_DEMO_FULL_VALIDATE;
 		} else {
-			ret = sscanf(optarg, "%d", &g_validate);
-			if (ret != 1) {
-				RTE_LOG(ERR, qdma_demo, "Invalid validate size\n");
+			if (!strcmp("full", optarg)) {
+				g_validate = QDMA_DEMO_FULL_VALIDATE;
+			} else if (!strcmp("last", optarg)) {
+				g_validate = QDMA_DEMO_LAST_BYTE_VALIDATE;
+			} else {
+				RTE_LOG(ERR, qdma_demo,
+					"Invalid validate type(%s)\n", optarg);
 				ret = -EINVAL;
 				goto out;
 			}
