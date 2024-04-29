@@ -159,7 +159,7 @@ fsl_qdma_pre_comp_sd_desc(struct fsl_qdma_queue *queue)
 		queue->ft[i]->phy_dsge = phy_ft +
 			offsetof(struct fsl_qdma_cmpd_ft, desc_dsge);
 		queue->ft[i]->phy_df = phy_ft +
-			offsetof(struct fsl_qdma_cmpd_ft, phy_df);
+			offsetof(struct fsl_qdma_cmpd_ft, df);
 
 		ft = queue->ft[i];
 		sdf = &ft->df.sdf;
@@ -586,8 +586,12 @@ static int
 fsl_qdma_enqueue_desc_to_ring(struct fsl_qdma_queue *fsl_queue,
 	int is_burst)
 {
+	struct fsl_qdma_engine *fsl_qdma = fsl_queue->engine;
 	uint16_t i, num = fsl_queue->pending_num, idx, start, dq;
 	int ret, dq_cnt;
+
+	if (fsl_qdma->is_slient)
+		return 0;
 
 	num = is_burst ? fsl_queue->pending_num : 1;
 
@@ -697,7 +701,7 @@ fsl_qdma_enqueue_overflow(struct fsl_qdma_queue *fsl_queue)
 
 	check_num = 0;
 overflow_check:
-	if (unlikely(s_hw_err_check)) {
+	if (fsl_qdma->is_slient || unlikely(s_hw_err_check)) {
 		reg = qdma_readl_be(block +
 			 FSL_QDMA_BCQSR(fsl_queue->queue_id));
 		overflow = (reg & FSL_QDMA_BCQSR_QF_XOFF_BE) ?
@@ -707,8 +711,14 @@ overflow_check:
 			QDMA_QUEUE_CR_WM) ? 1 : 0;
 	}
 
-	if (likely(!overflow))
+	if (likely(!overflow)) {
 		return 0;
+	} else if (fsl_qdma->is_slient) {
+		check_num++;
+		if (check_num < 1000)
+			goto overflow_check;
+		return -ENOSPC;
+	}
 
 	DPAA_QDMA_DP_DEBUG("TC%d/Q%d submitted(%ld)-completed(%ld) >= %d",
 		fsl_queue->block_id, fsl_queue->queue_id,
