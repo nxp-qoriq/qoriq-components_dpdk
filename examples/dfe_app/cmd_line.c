@@ -82,6 +82,35 @@ cmd_tdd_stop_parsed(__attribute__((unused)) void *parsed_result,
 }
 
 void
+cmd_tdd_tti_parsed(__attribute__((unused)) void *parsed_result,
+		     __attribute__((unused)) struct cmdline *cl,
+		     __attribute__((unused)) void *data)
+{
+	struct cmd_tdd_tti_result *res = parsed_result;
+
+	if (!strncmp(res->action, "stop", 4)) {
+		cmd_do_simple(DFE_TDD_STOP, "TDD stop");
+		cmd_do_wait_response();
+		sleep(1);
+		cmd_do_simple(DFE_IPC_HOST_DISCONNECT, "Stop TTI msgs");
+		sleep(1);
+		stop_tti_thread();
+
+		return;
+	}
+
+	/* reset the stats */
+	reset_tti_stats();
+
+	start_tti_thread();
+
+	/* given that start/stop are the possible options... */
+	cmd_do_simple(DFE_IPC_HOST_CONNECT, "Receive TTI msgs");
+	cmd_do_wait_response();
+	cmd_do_simple(DFE_TDD_START, "TDD start");
+}
+
+void
 cmd_config_scs_parsed(void *parsed_result,
 		      __attribute__((unused)) struct cmdline *cl,
 		      __attribute__((unused)) void *data)
@@ -322,6 +351,14 @@ cmd_rf_switch_parsed(void *parsed_result,
 		cmd_do_simple(DFE_TDD_SWITCH_TX, "TDD switch TX");
 	else if (!strncmp(res->action, "rx", 2))
 		cmd_do_simple(DFE_TDD_SWITCH_RX, "TDD switch RX");
+}
+
+void
+cmd_tti_stats_parsed(__attribute__((unused)) void *parsed_result,
+			 __attribute__((unused)) struct cmdline *cl,
+			 __attribute__((unused)) void *data)
+{
+	dump_tti_stats();
 }
 
 void
