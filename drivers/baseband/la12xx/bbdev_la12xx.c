@@ -2819,7 +2819,7 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 err:
 	rte_free(hp);
 	rte_free(ipc_priv_ch);
-	if (dev_mem)
+	if (dev_mem >= 0)
 		close(dev_mem);
 	if (dev_ipc >= 0)
 		close(dev_ipc);

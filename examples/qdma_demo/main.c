@@ -125,7 +125,7 @@ static const struct option s_lopts[] = {
 	{"pci_ep", optional_argument, &s_opt_val, ARG_PCI_EP},
 	{"pci_dma_rbp", optional_argument, &s_opt_val, ARG_PCI_DMA_RBP},
 	{"silent", optional_argument, &s_opt_val, ARG_SILENT},
-	{0, 0, 0, 0},
+	{NULL, 0, 0, 0},
 };
 
 static const char * const s_lopts_help[] = {
@@ -139,6 +139,7 @@ static const char * const s_lopts_help[] = {
 	"[dma_mode], [cpu_mode], [mix_mode]",
 	"",
 	"<burst number>",
+	"",
 	"",
 	"",
 	"",
@@ -779,6 +780,12 @@ lcore_qdma_iova_seg_to_continue(uint32_t lcore_id)
 		return -ENOMEM;
 	}
 
+	if (page_size <= 0) {
+		RTE_LOG(ERR, qdma_demo,
+			"Unable to get page_size\n");
+		return -EINVAL;
+	}
+
 	seg_size = g_packet_dma_size;
 	vq_id = g_core_cfg[lcore_id].vq_id;
 
@@ -1203,6 +1210,11 @@ lcore_qdma_process_latency(uint16_t burst_nb,
 		ret = rte_dma_copy(qdma_dev_id,
 				vq_id, job[i]->src, job[i]->dest,
 				job[i]->dma_len, flags);
+		if (unlikely(ret < 0)) {
+			rte_exit(EXIT_FAILURE,
+				"DMA submit %d jobs error(%d)\n",
+				job_num, ret);
+		}
 	}
 
 	if (!g_scatter_gather) {
@@ -1464,7 +1476,7 @@ lcore_qdma_control_loop(void)
 				"Total DMA Rate: %.3f Mbps OR %.3f Kpps\n",
 				8 * bytes_speed / NS_PER_MS,
 				pkts_speed / NS_PER_MS);
-			if (g_validate != QDMA_DEMO_NO_VALIDATE) {
+			if (g_validate != QDMA_DEMO_NO_VALIDATE && dma_pkts_diff_total) {
 				offset += sprintf(&perf_buf[offset],
 					"Average check times: %.3f, max times: %d\n",
 					(float)check_diff / dma_pkts_diff_total,
@@ -1826,7 +1838,7 @@ qdma_demo_core_configure(char *optarg,
 	}
 
 	sprintf(nm, "qdma_demo_memz");
-	if (g_pci_size) {
+	if (g_pci_size && pci_seg) {
 		seg_len = g_pci_size / pci_seg;
 		g_mem_zone_size = seg_len * mem_seg;
 		if (g_mem_zone_size > 0) {
