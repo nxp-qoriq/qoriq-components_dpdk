@@ -270,7 +270,7 @@ struct fsl_qdma_queue {
 	struct fsl_qdma_desc *pending_desc;
 	uint16_t pending_max;
 	uint16_t pending_start;
-	uint8_t pending_num;
+	uint16_t pending_num;
 	uint16_t complete_start;
 	dma_addr_t bus_addr;
 	void *engine;
