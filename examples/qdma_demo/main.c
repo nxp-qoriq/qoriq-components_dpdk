@@ -246,7 +246,7 @@ qdma_demo_roundup_pow_of_two(uint64_t n)
 }
 
 static int
-test_dma_init(struct rte_dma_info *dma_info)
+qdma_demo_dma_init(struct rte_dma_info *dma_info)
 {
 	struct rte_dma_conf dma_config;
 	struct rte_dma_info local_dma_info;
@@ -264,6 +264,7 @@ test_dma_init(struct rte_dma_info *dma_info)
 			rte_memcpy(dma_info, &local_dma_info,
 				sizeof(struct rte_dma_info));
 		}
+
 		return 0;
 	}
 
@@ -274,23 +275,50 @@ init_dma:
 
 	ret = rte_dma_info_get(qdma_dev_id, &local_dma_info);
 	if (ret) {
-		RTE_LOG(ERR, qdma_demo,
+		RTE_LOG(WARNING, qdma_demo,
 			"Failed to get DMA[%d] info(%d)\n",
 			qdma_dev_id, ret);
-		return ret;
+		i++;
+		goto init_dma;
 	}
-	if (local_dma_info.dev_capa & RTE_DMA_CAPA_DPAAX_QDMA_FLAGS_INDEX)
-		s_flags_cntx = 1;
+
 	dma_config.nb_vchans = local_dma_info.max_vchans;
-	dma_config.enable_silent = g_silent;
+	if ((local_dma_info.dev_capa & RTE_DMA_CAPA_SILENT) && g_silent)
+		dma_config.enable_silent = true;
+	else
+		dma_config.enable_silent = false;
 
 	ret = rte_dma_configure(qdma_dev_id, &dma_config);
 	if (ret) {
 		RTE_LOG(WARNING, qdma_demo,
 			"Failed to configure DMA[%d](%d)\n",
 			qdma_dev_id, ret);
+		i++;
 		goto init_dma;
 	}
+	if (!(local_dma_info.dev_capa & RTE_DMA_CAPA_OPS_COPY_SG)) {
+		if (g_scatter_gather) {
+			RTE_LOG(WARNING, qdma_demo,
+				"SG is not supported by DMA, disable SG copy\n");
+			g_scatter_gather = 0;
+		}
+	}
+	if (g_scatter_gather && local_dma_info.max_sges < g_burst) {
+		RTE_LOG(WARNING, qdma_demo,
+			"Adjust burst number(%d) to %d for SG copy\n",
+			g_burst, local_dma_info.max_sges);
+		g_burst = local_dma_info.max_sges;
+	}
+	if (local_dma_info.dev_capa & RTE_DMA_CAPA_DPAAX_QDMA_FLAGS_INDEX)
+		s_flags_cntx = 1;
+	if (!(local_dma_info.dev_capa & RTE_DMA_CAPA_SILENT)) {
+		if (g_silent) {
+			RTE_LOG(WARNING, qdma_demo,
+				"Silent mode is not supported by DMA\n");
+			g_silent = 0;
+		}
+	}
+
 	if (dma_info) {
 		rte_memcpy(dma_info, &local_dma_info,
 			sizeof(struct rte_dma_info));
@@ -2428,7 +2456,7 @@ main(int argc, char *argv[])
 	}
 
 	if (g_test_mode & QDMA_DEMO_DMA_MODE) {
-		ret = test_dma_init(&dma_info);
+		ret = qdma_demo_dma_init(&dma_info);
 		if (ret) {
 			RTE_LOG(ERR, qdma_demo, "DMA init failed(%d)\n", ret);
 			return ret;
@@ -2462,7 +2490,7 @@ main(int argc, char *argv[])
 	end_cycles = rte_get_timer_cycles();
 	time_diff = end_cycles - start_cycles;
 
-	RTE_LOG(INFO, qdma_demo, "Spend :%.3f ms, cyc diff:%ld\n",
+	RTE_LOG(INFO, qdma_demo, "Spend :%.3f ns, cyc diff:%ld\n",
 		(s_ns_per_cyc * time_diff), time_diff);
 
 	ret = launch_cores();
