@@ -59,5 +59,6 @@ struct dma_job {
 #define ARG_SILENT (1 << 12)
 #define ARG_DMA_LATENCY (1 << 13)
 #define ARG_CPU_SIZE (1 << 14)
+#define ARG_RANDOM_SIZE (1 << 15)
 
 #endif
