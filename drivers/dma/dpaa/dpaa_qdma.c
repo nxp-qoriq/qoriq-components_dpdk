@@ -12,6 +12,8 @@
 static int s_data_validation;
 static int s_hw_err_check;
 static int s_sg_enable = 1;
+static uint32_t s_sg_max_entry_sz = 2000;
+
 #ifdef RTE_DMA_DPAA_ERRATA_ERR050757
 static int s_pci_read = 1;
 #endif
@@ -761,7 +763,7 @@ fsl_qdma_enqueue_desc_sg(struct fsl_qdma_queue *fsl_queue)
 	struct fsl_qdma_comp_sg_desc *csgf_src, *csgf_dest;
 	struct fsl_qdma_cmpd_ft *ft;
 	uint32_t total_len;
-	uint16_t start, idx, num, i;
+	uint16_t start, idx, num, i, next_idx;
 	int ret;
 #ifdef RTE_DMA_DPAA_ERRATA_ERR050757
 	struct fsl_qdma_sdf *sdf;
@@ -770,13 +772,31 @@ fsl_qdma_enqueue_desc_sg(struct fsl_qdma_queue *fsl_queue)
 eq_sg:
 	total_len = 0;
 	start = fsl_queue->pending_start;
+	if (fsl_queue->pending_desc[start].len > s_sg_max_entry_sz ||
+		fsl_queue->pending_num == 1) {
+		ret = fsl_qdma_enqueue_desc_single(fsl_queue,
+			fsl_queue->pending_desc[start].dst,
+			fsl_queue->pending_desc[start].src,
+			fsl_queue->pending_desc[start].len);
+		if (!ret) {
+			fsl_queue->pending_start =
+				(start + 1) & (fsl_queue->pending_max - 1);
+			fsl_queue->pending_num--;
+		}
+		if (fsl_queue->pending_num > 0)
+			goto eq_sg;
+
+		return ret;
+	}
+
+	ret = fsl_qdma_enqueue_overflow(fsl_queue);
+	if (unlikely(ret))
+		return ret;
+
 	if (fsl_queue->pending_num > FSL_QDMA_SG_MAX_ENTRY)
 		num = FSL_QDMA_SG_MAX_ENTRY;
 	else
 		num = fsl_queue->pending_num;
-	ret = fsl_qdma_enqueue_overflow(fsl_queue);
-	if (unlikely(ret))
-		return ret;
 
 	ft = fsl_queue->ft[fsl_queue->ci];
 	csgf_src = &ft->desc_sbuf;
@@ -799,7 +819,16 @@ eq_sg:
 		ft->desc_dsge[i].length = fsl_queue->pending_desc[idx].len;
 		ft->desc_dsge[i].final = 0;
 		total_len += fsl_queue->pending_desc[idx].len;
+		if ((i + 1) != num) {
+			next_idx = (idx + 1) & (fsl_queue->pending_max - 1);
+			if (fsl_queue->pending_desc[next_idx].len >
+				s_sg_max_entry_sz) {
+				num = i + 1;
+				break;
+			}
+		}
 	}
+
 	ft->desc_ssge[num - 1].final = 1;
 	ft->desc_dsge[num - 1].final = 1;
 	csgf_src->length = total_len;
@@ -1297,6 +1326,10 @@ dpaa_qdma_init(struct rte_dma_dev *dmadev)
 	penv = getenv("DPAA_QDMA_SG_ENABLE");
 	if (penv)
 		s_sg_enable = atoi(penv);
+
+	penv = getenv("DPAA_QDMA_SG_MAX_ENTRY_SIZE");
+	if (penv)
+		s_sg_max_entry_sz = atoi(penv);
 
 #ifdef RTE_DMA_DPAA_ERRATA_ERR050757
 	penv = getenv("DPAA_QDMA_PCI_READ");
