@@ -12,6 +12,8 @@
 static int s_data_validation;
 static int s_hw_err_check;
 static int s_sg_enable = 1;
+static uint32_t s_sg_max_entry_sz = 2000;
+
 #ifdef RTE_DMA_DPAA_ERRATA_ERR050757
 static int s_pci_read = 1;
 #endif
@@ -584,16 +586,14 @@ dpaa_qdma_block_dequeue(struct fsl_qdma_engine *fsl_qdma,
 
 static int
 fsl_qdma_enqueue_desc_to_ring(struct fsl_qdma_queue *fsl_queue,
-	int is_burst)
+	uint16_t num)
 {
 	struct fsl_qdma_engine *fsl_qdma = fsl_queue->engine;
-	uint16_t i, num = fsl_queue->pending_num, idx, start, dq;
+	uint16_t i, idx, start, dq;
 	int ret, dq_cnt;
 
 	if (fsl_qdma->is_slient)
 		return 0;
-
-	num = is_burst ? fsl_queue->pending_num : 1;
 
 	fsl_queue->desc_in_hw[fsl_queue->ci] = num;
 eq_again:
@@ -635,6 +635,69 @@ dq_again:
 }
 
 static int
+fsl_qdma_enqueue_overflow(struct fsl_qdma_queue *fsl_queue)
+{
+	int overflow = 0;
+	uint32_t reg;
+	uint16_t blk_drain, check_num, drain_num;
+	uint8_t *block = fsl_queue->block_vir;
+	const struct rte_dma_stats *st = &fsl_queue->stats;
+	struct fsl_qdma_engine *fsl_qdma = fsl_queue->engine;
+
+	check_num = 0;
+overflow_check:
+	if (fsl_qdma->is_slient || unlikely(s_hw_err_check)) {
+		reg = qdma_readl_be(block +
+			 FSL_QDMA_BCQSR(fsl_queue->queue_id));
+		overflow = (reg & FSL_QDMA_BCQSR_QF_XOFF_BE) ?
+			1 : 0;
+	} else {
+		overflow = (fsl_qdma_queue_bd_in_hw(fsl_queue) >=
+			QDMA_QUEUE_CR_WM) ? 1 : 0;
+	}
+
+	if (likely(!overflow)) {
+		return 0;
+	} else if (fsl_qdma->is_slient) {
+		check_num++;
+		if (check_num >= 10000) {
+			DPAA_QDMA_WARN("Waiting for HW complete in silent mode");
+			check_num = 0;
+		}
+		goto overflow_check;
+	}
+
+	DPAA_QDMA_DP_DEBUG("TC%d/Q%d submitted(%ld)-completed(%ld) >= %d",
+		fsl_queue->block_id, fsl_queue->queue_id,
+		st->submitted, st->completed, QDMA_QUEUE_CR_WM);
+	drain_num = 0;
+
+drain_again:
+	blk_drain = dpaa_qdma_block_dequeue(fsl_qdma,
+		fsl_queue->block_id);
+	if (!blk_drain) {
+		drain_num++;
+		if (drain_num >= 10000) {
+			DPAA_QDMA_WARN("TC%d failed drain, Q%d's %ld bd in HW.",
+				fsl_queue->block_id, fsl_queue->queue_id,
+				st->submitted - st->completed);
+			drain_num = 0;
+		}
+		goto drain_again;
+	}
+	check_num++;
+	if (check_num >= 1000) {
+		DPAA_QDMA_WARN("TC%d failed check, Q%d's %ld bd in HW.",
+			fsl_queue->block_id, fsl_queue->queue_id,
+			st->submitted - st->completed);
+		check_num = 0;
+	}
+	goto overflow_check;
+
+	return 0;
+}
+
+static int
 fsl_qdma_enqueue_desc_single(struct fsl_qdma_queue *fsl_queue,
 	dma_addr_t dst, dma_addr_t src, size_t len)
 {
@@ -645,6 +708,10 @@ fsl_qdma_enqueue_desc_single(struct fsl_qdma_queue *fsl_queue,
 #ifdef RTE_DMA_DPAA_ERRATA_ERR050757
 	struct fsl_qdma_sdf *sdf;
 #endif
+
+	ret = fsl_qdma_enqueue_overflow(fsl_queue);
+	if (unlikely(ret))
+		return ret;
 
 	ft = fsl_queue->ft[fsl_queue->ci];
 
@@ -677,7 +744,7 @@ fsl_qdma_enqueue_desc_single(struct fsl_qdma_queue *fsl_queue,
 	/* This entry is the last entry. */
 	csgf_dest->final = 1;
 
-	ret = fsl_qdma_enqueue_desc_to_ring(fsl_queue, 0);
+	ret = fsl_qdma_enqueue_desc_to_ring(fsl_queue, 1);
 	if (ret)
 		return ret;
 	fsl_queue->ci = (fsl_queue->ci + 1) & (fsl_queue->n_cq - 1);
@@ -690,79 +757,46 @@ fsl_qdma_enqueue_desc_single(struct fsl_qdma_queue *fsl_queue,
 }
 
 static int
-fsl_qdma_enqueue_overflow(struct fsl_qdma_queue *fsl_queue)
-{
-	int overflow = 0;
-	uint32_t reg;
-	uint16_t blk_drain, check_num, drain_num;
-	uint8_t *block = fsl_queue->block_vir;
-	const struct rte_dma_stats *st = &fsl_queue->stats;
-	struct fsl_qdma_engine *fsl_qdma = fsl_queue->engine;
-
-	check_num = 0;
-overflow_check:
-	if (fsl_qdma->is_slient || unlikely(s_hw_err_check)) {
-		reg = qdma_readl_be(block +
-			 FSL_QDMA_BCQSR(fsl_queue->queue_id));
-		overflow = (reg & FSL_QDMA_BCQSR_QF_XOFF_BE) ?
-			1 : 0;
-	} else {
-		overflow = (fsl_qdma_queue_bd_in_hw(fsl_queue) >=
-			QDMA_QUEUE_CR_WM) ? 1 : 0;
-	}
-
-	if (likely(!overflow)) {
-		return 0;
-	} else if (fsl_qdma->is_slient) {
-		check_num++;
-		if (check_num < 1000)
-			goto overflow_check;
-		return -ENOSPC;
-	}
-
-	DPAA_QDMA_DP_DEBUG("TC%d/Q%d submitted(%ld)-completed(%ld) >= %d",
-		fsl_queue->block_id, fsl_queue->queue_id,
-		st->submitted, st->completed, QDMA_QUEUE_CR_WM);
-	drain_num = 0;
-
-drain_again:
-	blk_drain = dpaa_qdma_block_dequeue(fsl_qdma,
-		fsl_queue->block_id);
-	if (!blk_drain) {
-		drain_num++;
-		if (drain_num > 1000) {
-			DPAA_QDMA_ERR("TC%d failed drain, Q%d's %ld bd in HW.",
-				fsl_queue->block_id, fsl_queue->queue_id,
-				st->submitted - st->completed);
-			return -ENOSPC;
-		}
-		goto drain_again;
-	}
-	check_num++;
-	if (check_num > 1000) {
-		DPAA_QDMA_ERR("TC%d failed check, Q%d's %ld bd in HW.",
-			fsl_queue->block_id, fsl_queue->queue_id,
-			st->submitted - st->completed);
-		return -ENOSPC;
-	}
-	goto overflow_check;
-
-	return -ENOSPC;
-}
-
-static int
 fsl_qdma_enqueue_desc_sg(struct fsl_qdma_queue *fsl_queue)
 {
-	uint8_t *block = fsl_queue->block_vir, i;
+	uint8_t *block = fsl_queue->block_vir;
 	struct fsl_qdma_comp_sg_desc *csgf_src, *csgf_dest;
 	struct fsl_qdma_cmpd_ft *ft;
-	uint32_t total_len = 0;
-	uint8_t num = fsl_queue->pending_num;
-	uint16_t start = fsl_queue->pending_start, idx;
+	uint32_t total_len;
+	uint16_t start, idx, num, i, next_idx;
 	int ret;
 #ifdef RTE_DMA_DPAA_ERRATA_ERR050757
 	struct fsl_qdma_sdf *sdf;
 #endif
+
+eq_sg:
+	total_len = 0;
+	start = fsl_queue->pending_start;
+	if (fsl_queue->pending_desc[start].len > s_sg_max_entry_sz ||
+		fsl_queue->pending_num == 1) {
+		ret = fsl_qdma_enqueue_desc_single(fsl_queue,
+			fsl_queue->pending_desc[start].dst,
+			fsl_queue->pending_desc[start].src,
+			fsl_queue->pending_desc[start].len);
+		if (!ret) {
+			fsl_queue->pending_start =
+				(start + 1) & (fsl_queue->pending_max - 1);
+			fsl_queue->pending_num--;
+		}
+		if (fsl_queue->pending_num > 0)
+			goto eq_sg;
+
+		return ret;
+	}
+
+	ret = fsl_qdma_enqueue_overflow(fsl_queue);
+	if (unlikely(ret))
+		return ret;
+
+	if (fsl_queue->pending_num > FSL_QDMA_SG_MAX_ENTRY)
+		num = FSL_QDMA_SG_MAX_ENTRY;
+	else
+		num = fsl_queue->pending_num;
 
 	ft = fsl_queue->ft[fsl_queue->ci];
 	csgf_src = &ft->desc_sbuf;
@@ -785,7 +819,16 @@ fsl_qdma_enqueue_desc_sg(struct fsl_qdma_queue *fsl_queue)
 		ft->desc_dsge[i].length = fsl_queue->pending_desc[idx].len;
 		ft->desc_dsge[i].final = 0;
 		total_len += fsl_queue->pending_desc[idx].len;
+		if ((i + 1) != num) {
+			next_idx = (idx + 1) & (fsl_queue->pending_max - 1);
+			if (fsl_queue->pending_desc[next_idx].len >
+				s_sg_max_entry_sz) {
+				num = i + 1;
+				break;
+			}
+		}
 	}
+
 	ft->desc_ssge[num - 1].final = 1;
 	ft->desc_dsge[num - 1].final = 1;
 	csgf_src->length = total_len;
@@ -808,7 +851,7 @@ fsl_qdma_enqueue_desc_sg(struct fsl_qdma_queue *fsl_queue)
 		}
 	}
 #endif
-	ret = fsl_qdma_enqueue_desc_to_ring(fsl_queue, 1);
+	ret = fsl_qdma_enqueue_desc_to_ring(fsl_queue, num);
 	if (ret)
 		return ret;
 
@@ -820,7 +863,9 @@ fsl_qdma_enqueue_desc_sg(struct fsl_qdma_queue *fsl_queue)
 
 	fsl_queue->pending_start =
 		(start + num) & (fsl_queue->pending_max - 1);
-	fsl_queue->pending_num = 0;
+	fsl_queue->pending_num -= num;
+	if (fsl_queue->pending_num > 0)
+		goto eq_sg;
 
 	return 0;
 }
@@ -830,10 +875,6 @@ fsl_qdma_enqueue_desc(struct fsl_qdma_queue *fsl_queue)
 {
 	uint16_t start = fsl_queue->pending_start;
 	int ret;
-
-	ret = fsl_qdma_enqueue_overflow(fsl_queue);
-	if (unlikely(ret))
-		return ret;
 
 	if (fsl_queue->pending_num == 1) {
 		ret = fsl_qdma_enqueue_desc_single(fsl_queue,
@@ -871,17 +912,19 @@ fsl_qdma_enqueue_desc(struct fsl_qdma_queue *fsl_queue)
 }
 
 static int
-dpaa_info_get(const struct rte_dma_dev *dev, struct rte_dma_info *dev_info,
-	__rte_unused uint32_t info_sz)
+dpaa_qdma_info_get(const struct rte_dma_dev *dev,
+	struct rte_dma_info *dev_info, __rte_unused uint32_t info_sz)
 {
 	struct fsl_qdma_engine *fsl_qdma = dev->data->dev_private;
 
 	dev_info->dev_capa = RTE_DMA_CAPA_MEM_TO_MEM |
-		RTE_DMA_CAPA_SILENT | RTE_DMA_CAPA_OPS_COPY;
+		RTE_DMA_CAPA_SILENT | RTE_DMA_CAPA_OPS_COPY |
+		RTE_DMA_CAPA_OPS_COPY_SG;
 	dev_info->dev_capa |= RTE_DMA_CAPA_DPAAX_QDMA_FLAGS_INDEX;
 	dev_info->max_vchans = fsl_qdma->n_queues;
 	dev_info->max_desc = FSL_QDMA_MAX_DESC_NUM;
 	dev_info->min_desc = QDMA_QUEUE_SIZE;
+	dev_info->max_sges = FSL_QDMA_SG_MAX_ENTRY;
 
 	return 0;
 }
@@ -985,9 +1028,9 @@ dpaa_qdma_enqueue(void *dev_private, uint16_t vchan,
 	uint16_t idx;
 	int ret;
 
-	if (pending >= FSL_QDMA_SG_MAX_ENTRY) {
-		DPAA_QDMA_ERR("Too many pending jobs on queue%d",
-			vchan);
+	if (pending >= fsl_queue->pending_max) {
+		DPAA_QDMA_ERR("Too many pending jobs(%d) on queue%d",
+			pending, vchan);
 		return -ENOSPC;
 	}
 	idx = (start + pending) & (fsl_queue->pending_max - 1);
@@ -1254,7 +1297,7 @@ dpaa_qdma_burst_capacity(const void *dev_private, uint16_t vchan)
 }
 
 static struct rte_dma_dev_ops dpaa_qdma_ops = {
-	.dev_info_get		  = dpaa_info_get,
+	.dev_info_get		  = dpaa_qdma_info_get,
 	.dev_configure            = dpaa_qdma_configure,
 	.dev_start                = dpaa_qdma_start,
 	.dev_close                = dpaa_qdma_close,
@@ -1283,6 +1326,10 @@ dpaa_qdma_init(struct rte_dma_dev *dmadev)
 	penv = getenv("DPAA_QDMA_SG_ENABLE");
 	if (penv)
 		s_sg_enable = atoi(penv);
+
+	penv = getenv("DPAA_QDMA_SG_MAX_ENTRY_SIZE");
+	if (penv)
+		s_sg_max_entry_sz = atoi(penv);
 
 #ifdef RTE_DMA_DPAA_ERRATA_ERR050757
 	penv = getenv("DPAA_QDMA_PCI_READ");

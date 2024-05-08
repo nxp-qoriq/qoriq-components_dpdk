@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2019,2022-2023 NXP
+ *   Copyright 2016-2019,2022-2024 NXP
  *
  */
 
@@ -450,7 +450,7 @@ acquire_success:
 	return 0;
 
 acquire_failed:
-	DPAA2_MEMPOOL_WARN("Buffer acquire err: %d", ret);
+	DPAA2_MEMPOOL_DP_DEBUG("Buffer acquire err: %d", ret);
 	/* The API expect the exact number of requested bufs */
 	/* Releasing all buffers allocated */
 	ret = dpaa2_mbuf_release(obj_table, bpid,

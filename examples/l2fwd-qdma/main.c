@@ -79,6 +79,7 @@ static int mac_updating = 1;
 #define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 #define MEMPOOL_CACHE_SIZE 256
 
+static uint16_t s_pkt_burst = MAX_PKT_BURST;
 /*
  * Configurable number of RX/TX ring descriptors
  */
@@ -333,7 +334,7 @@ l2fwd_qdma_copy(struct rte_mbuf **m, unsigned int portid,
 static void
 l2fwd_qdma_main_loop(void)
 {
-	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+	struct rte_mbuf *pkts_burst[s_pkt_burst];
 	int sent;
 	unsigned int lcore_id;
 	uint64_t prev_tsc, diff_tsc, cur_tsc, timer_tsc;
@@ -417,10 +418,10 @@ l2fwd_qdma_main_loop(void)
 		 * Read packet from RX queues
 		 */
 		for (i = 0; i < qconf->n_rx_port; i++) {
-			l2fwd_qdma_forward(vq_id, MAX_PKT_BURST);
+			l2fwd_qdma_forward(vq_id, s_pkt_burst);
 			portid = qconf->rx_port_list[i];
 			nb_rx = rte_eth_rx_burst(portid, 0,
-						 pkts_burst, MAX_PKT_BURST);
+						 pkts_burst, s_pkt_burst);
 
 			s_port_statistics[portid].rx += nb_rx;
 			if (nb_rx)
@@ -718,21 +719,38 @@ init_dma:
 
 	ret = rte_dma_info_get(qdma_dev_id, &dma_info);
 	if (ret) {
-		RTE_LOG(ERR, l2fwd_qdma, "Failed to get DMA[%d] info(%d)\n",
+		RTE_LOG(WARNING, l2fwd_qdma,
+			"Failed to get DMA[%d] info(%d)\n",
 			qdma_dev_id, ret);
-		return ret;
+		i++;
+		goto init_dma;
 	}
-	if (dma_info.dev_capa & RTE_DMA_CAPA_DPAAX_QDMA_FLAGS_INDEX)
-		s_flags_cntx = 1;
-	dma_config.nb_vchans = dma_info.max_vchans;
-	dma_config.enable_silent = 0;
 
+	dma_config.nb_vchans = dma_info.max_vchans;
+	dma_config.enable_silent = false;
 	ret = rte_dma_configure(qdma_dev_id, &dma_config);
 	if (ret) {
 		RTE_LOG(WARNING, l2fwd_qdma,
 			"Failed to configure DMA[%d](%d)\n",
 			qdma_dev_id, ret);
+		i++;
 		goto init_dma;
+	}
+
+	if (dma_info.dev_capa & RTE_DMA_CAPA_DPAAX_QDMA_FLAGS_INDEX)
+		s_flags_cntx = 1;
+	if (!(dma_info.dev_capa & RTE_DMA_CAPA_OPS_COPY_SG)) {
+		if (qdma_sg) {
+			RTE_LOG(WARNING, l2fwd_qdma,
+				"qDMA SG is not supported by DMA, disable SG copy\n");
+			qdma_sg = 0;
+		}
+	}
+	if (qdma_sg && s_pkt_burst > dma_info.max_sges) {
+		RTE_LOG(WARNING, l2fwd_qdma,
+			"Adjust burst number(%d) to %d for qDMA SG copy\n",
+			s_pkt_burst, dma_info.max_sges);
+		s_pkt_burst = dma_info.max_sges;
 	}
 
 	L2FWD_QDMA_DMA_INIT_FLAG = 1;
@@ -998,7 +1016,7 @@ main(int argc, char **argv)
 
 		/* Initialize TX buffers */
 		tx_buffer[portid] = rte_zmalloc_socket(NULL,
-				RTE_ETH_TX_BUFFER_SIZE(MAX_PKT_BURST), 0,
+				RTE_ETH_TX_BUFFER_SIZE(s_pkt_burst), 0,
 				rte_eth_dev_socket_id(portid));
 		if (!tx_buffer[portid]) {
 			rte_exit(EXIT_FAILURE,
@@ -1006,7 +1024,7 @@ main(int argc, char **argv)
 				portid);
 		}
 
-		ret = rte_eth_tx_buffer_init(tx_buffer[portid], MAX_PKT_BURST);
+		ret = rte_eth_tx_buffer_init(tx_buffer[portid], s_pkt_burst);
 		if (ret < 0) {
 			rte_exit(EXIT_FAILURE,
 				"Port%d TX buffer init failed(%d)\n",

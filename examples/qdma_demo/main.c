@@ -125,6 +125,7 @@ static const struct option s_lopts[] = {
 	{"pci_ep", optional_argument, &s_opt_val, ARG_PCI_EP},
 	{"pci_dma_rbp", optional_argument, &s_opt_val, ARG_PCI_DMA_RBP},
 	{"silent", optional_argument, &s_opt_val, ARG_SILENT},
+	{"random_min_size", optional_argument, &s_opt_val, ARG_RANDOM_SIZE},
 	{NULL, 0, 0, 0},
 };
 
@@ -144,7 +145,8 @@ static const char * const s_lopts_help[] = {
 	"",
 	"",
 	"",
-	""
+	"",
+	"<random min size>"
 };
 
 static uint64_t g_mem_zone_size = QDMA_DEMO_MEMZONE_SIZE_MAX;
@@ -166,6 +168,7 @@ static int g_seg_iova;
 static int g_scatter_gather;
 static int g_silent;
 static int g_dma_prep_latency;
+static uint32_t g_packet_rand_min_size;
 
 static int g_pci_ep;
 static int g_pci_dma_rbp;
@@ -246,7 +249,7 @@ qdma_demo_roundup_pow_of_two(uint64_t n)
 }
 
 static int
-test_dma_init(struct rte_dma_info *dma_info)
+qdma_demo_dma_init(struct rte_dma_info *dma_info)
 {
 	struct rte_dma_conf dma_config;
 	struct rte_dma_info local_dma_info;
@@ -264,6 +267,7 @@ test_dma_init(struct rte_dma_info *dma_info)
 			rte_memcpy(dma_info, &local_dma_info,
 				sizeof(struct rte_dma_info));
 		}
+
 		return 0;
 	}
 
@@ -274,23 +278,50 @@ init_dma:
 
 	ret = rte_dma_info_get(qdma_dev_id, &local_dma_info);
 	if (ret) {
-		RTE_LOG(ERR, qdma_demo,
+		RTE_LOG(WARNING, qdma_demo,
 			"Failed to get DMA[%d] info(%d)\n",
 			qdma_dev_id, ret);
-		return ret;
+		i++;
+		goto init_dma;
 	}
-	if (local_dma_info.dev_capa & RTE_DMA_CAPA_DPAAX_QDMA_FLAGS_INDEX)
-		s_flags_cntx = 1;
+
 	dma_config.nb_vchans = local_dma_info.max_vchans;
-	dma_config.enable_silent = g_silent;
+	if ((local_dma_info.dev_capa & RTE_DMA_CAPA_SILENT) && g_silent)
+		dma_config.enable_silent = true;
+	else
+		dma_config.enable_silent = false;
 
 	ret = rte_dma_configure(qdma_dev_id, &dma_config);
 	if (ret) {
 		RTE_LOG(WARNING, qdma_demo,
 			"Failed to configure DMA[%d](%d)\n",
 			qdma_dev_id, ret);
+		i++;
 		goto init_dma;
 	}
+	if (!(local_dma_info.dev_capa & RTE_DMA_CAPA_OPS_COPY_SG)) {
+		if (g_scatter_gather) {
+			RTE_LOG(WARNING, qdma_demo,
+				"SG is not supported by DMA, disable SG copy\n");
+			g_scatter_gather = 0;
+		}
+	}
+	if (g_scatter_gather && local_dma_info.max_sges < g_burst) {
+		RTE_LOG(WARNING, qdma_demo,
+			"Adjust burst number(%d) to %d for SG copy\n",
+			g_burst, local_dma_info.max_sges);
+		g_burst = local_dma_info.max_sges;
+	}
+	if (local_dma_info.dev_capa & RTE_DMA_CAPA_DPAAX_QDMA_FLAGS_INDEX)
+		s_flags_cntx = 1;
+	if (!(local_dma_info.dev_capa & RTE_DMA_CAPA_SILENT)) {
+		if (g_silent) {
+			RTE_LOG(WARNING, qdma_demo,
+				"Silent mode is not supported by DMA\n");
+			g_silent = 0;
+		}
+	}
+
 	if (dma_info) {
 		rte_memcpy(dma_info, &local_dma_info,
 			sizeof(struct rte_dma_info));
@@ -1059,14 +1090,14 @@ skip_dq:
 		qdma_demo_silent_complete_recover(dq_num, job);
 	}
 
+	g_core_cfg[lcore_id].dma_total_pkts += dq_num;
+	for (i = 0; i < dq_num; i++)
+		g_core_cfg[lcore_id].dma_total_bytes += job[i]->dma_len;
+
 	job_num = rte_ring_enqueue_bulk(job_ring,
 			(void **)job, dq_num, NULL);
 	if (job_num != dq_num)
 		rte_exit(EXIT_FAILURE, "job recycle failed\n");
-
-	g_core_cfg[lcore_id].dma_total_pkts += dq_num;
-	g_core_cfg[lcore_id].dma_total_bytes +=
-		g_packet_dma_size * dq_num;
 
 	return 0;
 }
@@ -1079,7 +1110,7 @@ lcore_qdma_process_throughput_sg(uint16_t burst_nb,
 	struct dma_job *job[burst_nb];
 	struct rte_dma_sge src_sge[burst_nb];
 	struct rte_dma_sge dst_sge[burst_nb];
-	uint32_t i, j, job_num, dq_num = 0, lcore_id = rte_lcore_id();
+	uint32_t i, job_num, dq_num = 0, lcore_id = rte_lcore_id();
 	uint64_t flags;
 	bool error = false;
 	uint16_t dq_idx[burst_nb];
@@ -1119,9 +1150,9 @@ lcore_qdma_process_throughput_sg(uint16_t burst_nb,
 			job_num, ret);
 	}
 	if (g_test_mode & QDMA_DEMO_CPU_MODE) {
-		for (j = 0; j < job_num; j++) {
-			rte_memcpy(job[j]->vcpudst, job[j]->vcpusrc,
-				job[j]->cpu_len);
+		for (i = 0; i < job_num; i++) {
+			rte_memcpy(job[i]->vcpudst, job[i]->vcpusrc,
+				job[i]->cpu_len);
 		}
 	}
 dequeue:
@@ -1155,14 +1186,14 @@ skip_dq:
 		qdma_demo_silent_complete_recover(dq_num, job);
 	}
 
+	g_core_cfg[lcore_id].dma_total_pkts += dq_num;
+	for (i = 0; i < dq_num; i++)
+		g_core_cfg[lcore_id].dma_total_bytes += job[i]->dma_len;
+
 	job_num = rte_ring_enqueue_bulk(job_ring,
 			(void **)job, dq_num, NULL);
 	if (job_num != dq_num)
 		rte_exit(EXIT_FAILURE, "job recycle failed\n");
-
-	g_core_cfg[lcore_id].dma_total_pkts += dq_num;
-	g_core_cfg[lcore_id].dma_total_bytes +=
-		g_packet_dma_size * dq_num;
 
 	return 0;
 }
@@ -1274,14 +1305,14 @@ skip_dq:
 	if (g_silent)
 		qdma_demo_silent_complete_recover(dq_num, job);
 
+	g_core_cfg[lcore_id].dma_total_pkts += dq_num;
+	for (i = 0; i < dq_num; i++)
+		g_core_cfg[lcore_id].dma_total_bytes += job[i]->dma_len;
+
 	job_num = rte_ring_enqueue_bulk(job_ring,
 				(void **)job, dq_num, NULL);
 	if (job_num != dq_num)
 		rte_exit(EXIT_FAILURE, "job recycle failed\n");
-
-	g_core_cfg[lcore_id].dma_total_pkts += dq_num;
-	g_core_cfg[lcore_id].dma_total_bytes +=
-		g_packet_dma_size * dq_num;
 
 	return 0;
 }
@@ -1662,6 +1693,27 @@ qdma_demo_dma_vchan_init(int test_case,
 	}
 }
 
+static inline uint32_t
+random_range(uint32_t min, uint32_t max)
+{
+	uint32_t random_num;
+
+	random_num = min + rand() / (RAND_MAX / (max - min + 1) + 1);
+	if (random_num > max) {
+		RTE_LOG(ERR, qdma_demo,
+			"random number(%d) > max (%d)\n",
+			random_num, max);
+		random_num = max;
+	} else if (random_num < min) {
+		RTE_LOG(ERR, qdma_demo,
+			"random number(%d) < min (%d)\n",
+			random_num, max);
+		random_num = min;
+	}
+
+	return random_num;
+}
+
 static int
 qdma_demo_job_desc_init(struct dma_job *job,
 	uint64_t src_iova, uint64_t dst_iova,
@@ -1680,18 +1732,44 @@ qdma_demo_job_desc_init(struct dma_job *job,
 	if (g_packet_dma_size > 0) {
 		job->vdmasrc = vsrc_start;
 		job->vdmadst = vdst_start;
-		dmasrc_last = job->vdmasrc + g_packet_dma_size - 1;
-		dmadst_last = job->vdmadst + g_packet_dma_size - 1;
 	}
 	if (g_packet_cpu_size > 0) {
 		job->vcpusrc = vsrc_start + g_packet_dma_size;
 		job->vcpudst = vdst_start + g_packet_dma_size;
-		cpusrc_last = job->vcpusrc + g_packet_cpu_size - 1;
-		cpudst_last = job->vcpudst + g_packet_cpu_size - 1;
 	}
 
-	job->dma_len = g_packet_dma_size;
-	job->cpu_len = g_packet_cpu_size;
+	if (g_packet_rand_min_size) {
+		if (g_packet_dma_size > 0) {
+			job->dma_len = random_range(g_packet_rand_min_size,
+				g_packet_dma_size);
+		} else {
+			job->dma_len = 0;
+		}
+		if (g_packet_cpu_size > 0) {
+			job->cpu_len = random_range(g_packet_rand_min_size,
+				g_packet_cpu_size);
+		} else {
+			job->cpu_len = 0;
+		}
+	} else {
+		job->dma_len = g_packet_dma_size;
+		job->cpu_len = g_packet_cpu_size;
+	}
+
+	if (job->dma_len) {
+		dmasrc_last = job->vdmasrc + job->dma_len - 1;
+		dmadst_last = job->vdmadst + job->dma_len - 1;
+	} else {
+		dmasrc_last = NULL;
+		dmadst_last = NULL;
+	}
+	if (job->cpu_len) {
+		cpusrc_last = job->vcpusrc + job->cpu_len - 1;
+		cpudst_last = job->vcpudst + job->cpu_len - 1;
+	} else {
+		cpusrc_last = NULL;
+		cpudst_last = NULL;
+	}
 	job->idx = idx;
 	if ((test_case == MEM_TO_PCI || test_case == MEM_TO_MEM) &&
 		(job->src + elem_size) > end_mem) {
@@ -2207,6 +2285,20 @@ qdma_parse_long_arg(char *optarg, const struct option *lopt)
 	case ARG_SEG_IOVA:
 		g_seg_iova = 1;
 		RTE_LOG(INFO, qdma_demo, "IOVA segments test\n");
+		ret = 0;
+		break;
+	case ARG_RANDOM_SIZE:
+		if (optarg) {
+			ret = sscanf(optarg, "%u", &g_packet_rand_min_size);
+			if (ret != 1) {
+				RTE_LOG(ERR, qdma_demo, "Invalid random min size\n");
+				g_packet_rand_min_size = 1;
+			}
+		} else {
+			g_packet_rand_min_size = 1;
+		}
+		RTE_LOG(INFO, qdma_demo, "Random pkt size\n");
+		ret = 0;
 		break;
 	default:
 		RTE_LOG(ERR, qdma_demo, "Unknown Argument\n");
@@ -2266,6 +2358,25 @@ static int qdma_demo_validate_args(void)
 		g_packet_dma_size = 0;
 	if (!(g_test_mode & QDMA_DEMO_CPU_MODE))
 		g_packet_cpu_size = 0;
+
+	if (g_packet_rand_min_size && g_packet_dma_size) {
+		if (g_packet_rand_min_size > g_packet_dma_size) {
+			RTE_LOG(WARNING, qdma_demo,
+				"DMA radom size(%d) > max size(%ld)\n",
+				g_packet_rand_min_size,
+				g_packet_dma_size);
+			g_packet_rand_min_size = 1;
+		}
+	}
+	if (g_packet_rand_min_size && g_packet_cpu_size) {
+		if (g_packet_rand_min_size > g_packet_cpu_size) {
+			RTE_LOG(WARNING, qdma_demo,
+				"CPU radom size(%d) > max size(%ld)\n",
+				g_packet_rand_min_size,
+				g_packet_cpu_size);
+			g_packet_rand_min_size = 1;
+		}
+	}
 
 	RTE_LOG(INFO, qdma_demo, "Stats core id - %d\n",
 		rte_get_main_lcore());
@@ -2428,7 +2539,7 @@ main(int argc, char *argv[])
 	}
 
 	if (g_test_mode & QDMA_DEMO_DMA_MODE) {
-		ret = test_dma_init(&dma_info);
+		ret = qdma_demo_dma_init(&dma_info);
 		if (ret) {
 			RTE_LOG(ERR, qdma_demo, "DMA init failed(%d)\n", ret);
 			return ret;
@@ -2462,7 +2573,7 @@ main(int argc, char *argv[])
 	end_cycles = rte_get_timer_cycles();
 	time_diff = end_cycles - start_cycles;
 
-	RTE_LOG(INFO, qdma_demo, "Spend :%.3f ms, cyc diff:%ld\n",
+	RTE_LOG(INFO, qdma_demo, "Spend :%.3f ns, cyc diff:%ld\n",
 		(s_ns_per_cyc * time_diff), time_diff);
 
 	ret = launch_cores();
