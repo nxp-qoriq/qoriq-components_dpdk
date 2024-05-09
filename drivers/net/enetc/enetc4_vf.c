@@ -763,7 +763,7 @@ enetc4_vf_mac_init(struct enetc_eth_hw *hw, struct rte_eth_dev *eth_dev)
 	*mac = (uint32_t)enetc_rd(enetc_hw, ENETC_SIPMAR0);
 	high_mac = (uint32_t)*mac;
 	mac++;
-	*mac = (uint32_t)enetc_rd(enetc_hw, ENETC_SIPMAR1);
+	*mac = (uint16_t)enetc_rd(enetc_hw, ENETC_SIPMAR1);
 	low_mac = (uint16_t)*mac;
 
 	if ((high_mac | low_mac) == 0) {

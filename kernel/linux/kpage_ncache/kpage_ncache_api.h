@@ -55,6 +55,7 @@ static inline void mark_kpage_ncache(uint64_t huge_page)
 	if (ret) {
 		fprintf(stderr, KYEL "Error(%d): " KNRM "non-cachable set\n",
 			ret);
+		close(fd);
 		return;
 	}
 #if defined(RTE_ARCH_ARM) && defined(RTE_ARCH_64)

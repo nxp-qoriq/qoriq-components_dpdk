@@ -1033,8 +1033,11 @@ lsinic_dev_pcie_dev_id(void)
 	}
 	if (fscanf(svr_file, "svr:%x", &svr_ver) < 0) {
 		LSXINIC_PMD_ERR("Unable to read SoC device");
+		fclose(svr_file);
 		return 0;
 	}
+
+	fclose(svr_file);
 
 	num = sizeof(s_lsinic_rev2_id_map) /
 		sizeof(struct lsinic_pcie_svr_map);

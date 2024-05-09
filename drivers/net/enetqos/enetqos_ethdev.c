@@ -918,7 +918,7 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 	char *dtb_entry;
 	const char *mz_name = "bd_addr_v";
 	struct rte_eth_dev *dev = NULL;
-	size_t ccsr_addr, ccsr_size;
+	size_t ccsr_addr = 0, ccsr_size = 0;
 	struct enetqos_priv *priv;
 	unsigned int bdsize, i;
 	const char *name;
@@ -973,7 +973,7 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 
 	file = fopen("/proc/device-tree/aliases/ethernet1", "r");
 	if (file) {
-		dtb_entry = malloc(MAX_LINE_SIZE);
+		dtb_entry = malloc(MAX_LINE_SIZE + 1);
 		if (!dtb_entry) {
 			ENETQOS_PMD_ERR("malloc failed!!");
 			rt = -1;
@@ -981,6 +981,8 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 			goto err;
 		}
 		cnt = fread(dtb_entry, sizeof(char), MAX_LINE_SIZE, file);
+		dtb_entry[MAX_LINE_SIZE] = '\0';
+
 		/* fread success */
 		if (cnt) {
 			ret = sscanf(EXTRACT_CCSR_ADDR(dtb_entry), "%lx",

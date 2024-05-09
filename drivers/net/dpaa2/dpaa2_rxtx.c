@@ -1901,6 +1901,8 @@ dpaa2_dev_tx_with_dynamic_cnf(void *queue,
 	uint32_t flags[MAX_TX_RING_SLOTS] = {0};
 	uint8_t cnf_flag[MAX_TX_RING_SLOTS], cnf_flag_idx = 0;
 
+	memset(cnf_flag, 0, sizeof(cnf_flag));
+
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {

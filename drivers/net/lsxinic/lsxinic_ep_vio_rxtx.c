@@ -1419,7 +1419,7 @@ tx_addr_dma_read:
 static void
 lsxvio_recv_bd(struct lsxvio_queue *vq)
 {
-	uint16_t free_entries, i, avail_idx, desc_idx, head, bd_num = 0;
+	uint16_t free_entries, i = 0, avail_idx, desc_idx, head, bd_num = 0;
 	uint16_t tx_bd_nb;
 	struct vring_avail *avail;
 	struct lsinic_dma_job *jobs[DEFAULT_BURST_THRESH];
