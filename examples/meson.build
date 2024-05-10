@@ -40,6 +40,7 @@ all_examples = [
         'l2fwd-event',
         'l2fwd-jobstats',
         'l2fwd-keepalive',
+        'l2fwd-policer',
         'l3fwd',
         'l3fwd-graph',
         'l3fwd-power',
