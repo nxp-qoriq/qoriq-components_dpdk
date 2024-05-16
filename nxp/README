@@ -305,6 +305,19 @@ Following are some pre-requisites:
 
             $ export ENABLE_ORDERED_QUEUE=1
 
+      NOTE: If `l2fwd-policer` application is to be run, please export the following
+	    below environment variable before executing the dynamic_dpl.sh script:
+
+            $ export MAX_TCS=8
+            $ export MAX_QUEUES=1
+            $ export DPCON_COUNT=3
+            $ export DPCON_PRIORITIES=8
+            $ export DPNI_OPTIONS="DPNI_OPT_SINGLE_SENDER,DPNI_OPT_CUSTOM_CG,DPNI_OPT_HAS_POLICING,DPNI_OPT_HAS_KEY_MASKING,DPNI_OPT_HAS_OPR,DPNI_OPT_OPR_PER_TC"
+
+	    Note: If total number of Rx descriptor exceeds defined limit.
+	    Please use Normal buffers, run 'export DPNI_NORMAL_BUF=1' before
+	    running dynamic_dpl.sh script.
+
   3. Run the following on the board:
 
     a) Change directory to location of Dynamic DPL script. It would ideally be
@@ -799,6 +812,32 @@ Notes:
   You need to disable the DPAA_HW SEC on DPAA devices by to use any other sec driver.
    export DPAA_SEC_DISABLE=1
    or use the export DPSECI_COUNT=0 for dpaa2 before creating the dprc.
+
+  Layer-2 Policer Forwarding 'l2fwd-policer' Application
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  Execute following commands to run the 'l2fwd-policer' example application:
+
+  Policer unit in bytes:
+
+  $ ./dpdk-l2fwd-policer -c 0x2 -- -p 0x1 -P --config='(0,100,2)' --policer_unit frames --policer_option opt_discard_red --cir 2000 --cbs 10240 --pir 2000 --pbs 20480 -T0
+
+  Policer unit in frames:
+
+  $ ./dpdk-l2fwd-policer -c 0x2 -- -p 0x1 -P --config='(0,100,2)' --policer_unit bytes --policer_option opt_discard_red --cir 10 --cbs 10240 --pir 20 --pbs 20480 -T0
+
+  In the above commands, the core mask is to execute on core 1.
+  --config:(portid,vlanid,vlan_prio)[,(portid,vlanid,vlan_prio)]
+    portid: acceptable which are used in portmask
+    vlanid: acceptable range 0 to 4095
+    vlan_prio: number of vlan priorities, maximum is 8 i.e.(0 to 7)
+  Policer unit can be modified as bytes or frames.
+  Below parameters can be configured by the user in the set unit:
+  cir: Committed information rate (CIR) in Kbps or packets/second
+  cbs: Committed burst size (CBS) in bytes or packets
+  pir: Peak information rate (PIR) in Kbps or packets/second
+  pbs: Peak burst size (PBS) in bytes or packets
+  NOTE: In bytes mode, configure L3 rate(kbps) in cir and pir.
 
   Layer-3 Forwarding 'l3fwd' Application
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
