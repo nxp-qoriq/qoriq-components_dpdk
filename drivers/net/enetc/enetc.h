@@ -272,6 +272,7 @@ uint16_t enetc_recv_pkts(void *rxq, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts);
 uint16_t enetc_recv_pkts_nc(void *rxq, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts);
+uint16_t enetc_loopback_pkts_nc(void *rxq, void *txq, const uint16_t mode);
 
 int enetc_refill_rx_ring(struct enetc_bdr *rx_ring, const int buff_cnt);
 void enetc4_dev_hw_init(struct rte_eth_dev *eth_dev);
