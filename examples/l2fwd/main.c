@@ -53,6 +53,7 @@ static int promiscuous_on;
 #define MEMPOOL_CACHE_SIZE 256
 
 static int max_burst_size = MAX_PKT_BURST;
+static uint16_t loopback_mode = UINT16_MAX;
 /*
  * Configurable number of RX/TX ring descriptors
  */
@@ -232,6 +233,20 @@ l2fwd_main_loop(void)
 			portid);
 
 	}
+	if (loopback_mode != UINT16_MAX) {
+		for (i = 0; i < qconf->n_rx_port; i++) {
+			if (qconf->n_rx_port > 1) {
+				RTE_LOG(ERR, L2FWD, "Only single port per thread supported in loopback,"
+						" But given = %d\n", qconf->n_rx_port);
+				return;
+			}
+			portid = qconf->rx_port_list[i];
+			rte_eth_lb_burst(portid, 0, 0, loopback_mode);
+			/* Only single port per thread supported */
+			break;
+		}
+		return;
+	}
 
 	while (!force_quit) {
 
@@ -322,6 +337,10 @@ l2fwd_usage(const char *prgname)
 	       "  -b NUM: burst size for receive packet (default is 32)\n"
 	       "  -r NUM: RX queue size (default is 1024)\n"
 	       "  -t NUM: TX queue size (default is 1024)\n"
+	       "  -l <mode>: Enable driver loopback mode. mode can be 0 or 1\n"
+	       "		- 0 : driver use default RX and TX functions for loopback\n"
+	       "		- 1 : driver use optimized loopback code, No packet touch\n"
+	       "		Note: statistics are not avilable in this mode\n"
 	       "  --portmap: Configure forwarding port pair mapping\n"
 	       "	      Default: alternate port pairs\n\n",
 	       prgname);
@@ -438,6 +457,7 @@ static const char short_options[] =
 	"b:"  /* burst size */
 	"r:"  /* RX queue size */
 	"t:"  /* TX queue size */
+	"l:"  /* loopback mode */
 	;
 
 #define CMD_LINE_OPT_NO_MAC_UPDATING "no-mac-updating"
@@ -542,7 +562,14 @@ l2fwd_parse_args(int argc, char **argv)
 			}
 			nb_txd = tx_size;
 			break;
-
+		case 'l':
+			loopback_mode = (unsigned int)atoi(optarg);
+			if (loopback_mode > 1) {
+				printf("invalid loopback mode\n");
+				l2fwd_usage(prgname);
+				return -1;
+			}
+			break;
 		/* long options */
 		case CMD_LINE_OPT_PORTMAP_NUM:
 			ret = l2fwd_parse_port_pair_config(optarg);
