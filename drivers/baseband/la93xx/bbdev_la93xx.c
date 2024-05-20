@@ -665,7 +665,7 @@ get_hugepage_info(struct rte_bbdev *dev)
 	return hp_info;
 }
 
-static int open_ipc_dev(int modem_id)
+static int open_ipc_dev(int modem_id __rte_unused)
 {
 	char dev_path[PATH_MAX];
 	int dev_ipc = 0;
