@@ -130,6 +130,9 @@ geulipc_rawdev_probe(struct rte_vdev_device *vdev)
 	const char *name;
 	int ret;
 
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
+
 	name = rte_vdev_device_name(vdev);
 	
 	GEULIPC_PMD_INFO("Init %s on NUMA node %d", name, rte_socket_id());
