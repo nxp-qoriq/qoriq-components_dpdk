@@ -665,7 +665,7 @@ get_hugepage_info(struct rte_bbdev *dev)
 	return hp_info;
 }
 
-static int open_ipc_dev(int modem_id)
+static int open_ipc_dev(int modem_id __rte_unused)
 {
 	char dev_path[PATH_MAX];
 	int dev_ipc = 0;
@@ -1200,6 +1200,9 @@ la93xx_bbdev_probe(struct rte_vdev_device *vdev)
 
 	PMD_INIT_FUNC_TRACE();
 
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
+
 	if (vdev == NULL)
 		return -EINVAL;
 
@@ -1221,6 +1224,9 @@ la93xx_bbdev_remove(struct rte_vdev_device *vdev)
 	const char *name;
 
 	PMD_INIT_FUNC_TRACE();
+
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
 
 	if (vdev == NULL)
 		return -EINVAL;
