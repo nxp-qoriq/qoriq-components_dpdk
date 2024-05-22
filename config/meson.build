@@ -313,6 +313,7 @@ if get_option('mbuf_refcnt_atomic')
     dpdk_conf.set('RTE_MBUF_REFCNT_ATOMIC', true)
 endif
 dpdk_conf.set10('RTE_IOVA_AS_PA', get_option('enable_iova_as_pa'))
+dpdk_conf.set('RTE_USR_DEF_PRIORITY_LAST', get_option('usr_def_priority_last'))
 
 compile_time_cpuflags = []
 subdir(arch_subdir)
