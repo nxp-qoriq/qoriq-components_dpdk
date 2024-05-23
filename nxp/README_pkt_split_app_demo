@@ -82,8 +82,8 @@ Steps to run dpdk-pkt_split_app on LS1046ARDB when split port is eth port
 2. ifconfig fm1-mac10 <valid IP address>
 3. mount -t hugetlbfs hugetlbfs /dev/hugepages
 4. echo 512 > /proc/sys/vm/nr_hugepages
-5. fmc -c usdpaa_config_ls1046_shared_24g.xml -p usdpaa_policy_24g_classif_frag_gtp_1queue.xml -a
-6. Bind PCI device with DPDK driver
+5. fmc -c usdpaa_config_ls1046_shared_24g.xml -p usdpaa_policy_vsp_24g_classif_frag_gtp_1queue.xml -a
+6. Bind PCI device with DPDK driver [OPTIONAL]
 
    To print the available PCI devices, use:
    $ lspci
