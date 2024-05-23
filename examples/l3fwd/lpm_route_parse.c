@@ -110,7 +110,8 @@ lpm_parse_v6_rule(char *str, struct lpm_route_rule *v)
 
 	rc = lpm_parse_v6_net(in[CB_FLD_DST_ADDR], v->ip_32, &v->depth);
 
-	GET_CB_FIELD(in[CB_FLD_IF_OUT], v->if_out, 0, UINT8_MAX, 0);
+	GET_CB_FIELD(in[CB_FLD_IF_OUT], v->if_out, 0,
+			(sizeof(enabled_port_mask) * CHAR_BIT) - 1, 0);
 
 	return rc;
 }
@@ -132,7 +133,8 @@ lpm_parse_v4_rule(char *str, struct lpm_route_rule *v)
 
 	rc = parse_ipv4_addr_mask(in[CB_FLD_DST_ADDR], &v->ip, &v->depth);
 
-	GET_CB_FIELD(in[CB_FLD_IF_OUT], v->if_out, 0, UINT8_MAX, 0);
+	GET_CB_FIELD(in[CB_FLD_IF_OUT], v->if_out, 0,
+			(sizeof(enabled_port_mask) * CHAR_BIT) - 1, 0);
 
 	return rc;
 }
@@ -184,7 +186,7 @@ lpm_add_rules(const char *rule_path,
 	char buff[LINE_MAX];
 	FILE *fh;
 	unsigned int i = 0, rule_size = sizeof(*next);
-	int val;
+	int val, rc;
 
 	*proute_base = NULL;
 	fh = fopen(rule_path, "rb");
@@ -237,13 +239,14 @@ lpm_add_rules(const char *rule_path,
 			return -EINVAL;
 		}
 
-		if (parser(buff + 1, next) != 0) {
+		rc = parser(buff + 1, next);
+		if (rc != 0) {
 			RTE_LOG(ERR, L3FWD,
-				"%s Line %u: parse rules error\n",
-				rule_path, i);
+				"%s Line %u: parse rules error code = %d\n",
+				rule_path, i, rc);
 			fclose(fh);
 			free(route_rules);
-			return -EINVAL;
+			return rc;
 		}
 
 		route_cnt++;
