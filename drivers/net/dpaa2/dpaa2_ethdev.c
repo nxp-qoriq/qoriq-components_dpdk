@@ -572,6 +572,8 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 		DPAA2_PMD_DEBUG("MTU configured for the device: %d",
 				dev->data->mtu);
 	} else {
+		DPAA2_PMD_ERR("Configured mtu %d and calculated max-pkt-len is %d which should be <= %d",
+			eth_conf->rxmode.mtu, max_rx_pktlen, DPAA2_MAX_RX_PKT_LEN);
 		return -1;
 	}
 
