@@ -65,7 +65,8 @@ em_parse_v6_rule(char *str, struct em_rule *v)
 	/* protocol. */
 	GET_CB_FIELD(in[CB_FLD_PROTO], v->v6_key.proto, 0, UINT8_MAX, 0);
 	/* out interface. */
-	GET_CB_FIELD(in[CB_FLD_IF_OUT], v->if_out, 0, UINT8_MAX, 0);
+	GET_CB_FIELD(in[CB_FLD_IF_OUT], v->if_out, 0,
+			(sizeof(enabled_port_mask) * CHAR_BIT) - 1, 0);
 
 	return 0;
 }
@@ -102,7 +103,8 @@ em_parse_v4_rule(char *str, struct em_rule *v)
 	/* protocol. */
 	GET_CB_FIELD(in[CB_FLD_PROTO], v->v4_key.proto, 0, UINT8_MAX, 0);
 	/* out interface. */
-	GET_CB_FIELD(in[CB_FLD_IF_OUT], v->if_out, 0, UINT8_MAX, 0);
+	GET_CB_FIELD(in[CB_FLD_IF_OUT], v->if_out, 0,
+			(sizeof(enabled_port_mask) * CHAR_BIT) - 1, 0);
 
 	return 0;
 }
@@ -119,7 +121,7 @@ em_add_rules(const char *rule_path,
 	char buff[LINE_MAX];
 	FILE *fh;
 	unsigned int i = 0, rule_size = sizeof(*next);
-	int val;
+	int val, rc;
 
 	*proute_base = NULL;
 	fh = fopen(rule_path, "rb");
@@ -172,13 +174,14 @@ em_add_rules(const char *rule_path,
 			return -EINVAL;
 		}
 
-		if (parser(buff + 1, next) != 0) {
+		rc = parser(buff + 1, next);
+		if (rc != 0) {
 			RTE_LOG(ERR, L3FWD,
-				"%s Line %u: parse rules error\n",
-				rule_path, i);
+				"%s Line %u: parse rules error code = %d\n",
+				rule_path, i, rc);
 			fclose(fh);
 			free(route_rules);
-			return -EINVAL;
+			return rc;
 		}
 
 		route_cnt++;
@@ -249,8 +252,7 @@ void
 read_config_files_em(void)
 {
 	/* ipv4 check */
-	if (parm_config.rule_ipv4_name != NULL &&
-			parm_config.rule_ipv6_name != NULL) {
+	if (parm_config.rule_ipv4_name != NULL) {
 		/* ipv4 check */
 		route_num_v4 = em_add_rules(parm_config.rule_ipv4_name,
 					&em_route_base_v4, &em_parse_v4_rule);
@@ -258,7 +260,14 @@ read_config_files_em(void)
 			em_free_routes();
 			rte_exit(EXIT_FAILURE, "Failed to add EM IPv4 rules\n");
 		}
-
+	} else {
+		RTE_LOG(INFO, L3FWD, "Missing IPv4 rule file, using default instead\n");
+		if (em_add_default_v4_rules() < 0) {
+			em_free_routes();
+			rte_exit(EXIT_FAILURE, "Failed to add default IPv4 rules\n");
+		}
+	}
+	if (parm_config.rule_ipv6_name != NULL) {
 		/* ipv6 check */
 		route_num_v6 = em_add_rules(parm_config.rule_ipv6_name,
 					&em_route_base_v6, &em_parse_v6_rule);
@@ -267,11 +276,7 @@ read_config_files_em(void)
 			rte_exit(EXIT_FAILURE, "Failed to add EM IPv6 rules\n");
 		}
 	} else {
-		RTE_LOG(INFO, L3FWD, "Missing 1 or more rule files, using default instead\n");
-		if (em_add_default_v4_rules() < 0) {
-			em_free_routes();
-			rte_exit(EXIT_FAILURE, "Failed to add default IPv4 rules\n");
-		}
+		RTE_LOG(INFO, L3FWD, "Missing IPv6 rule file, using default instead\n");
 		if (em_add_default_v6_rules() < 0) {
 			em_free_routes();
 			rte_exit(EXIT_FAILURE, "Failed to add default IPv6 rules\n");
