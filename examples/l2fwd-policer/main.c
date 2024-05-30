@@ -38,6 +38,7 @@
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
 #include <rte_string_fns.h>
+#include <rte_pmd_dpaa2.h>
 
 static volatile bool force_quit;
 
@@ -46,6 +47,33 @@ static int mac_updating = 1;
 
 /* Ports set in promiscuous mode off by default. */
 static int promiscuous_on;
+
+/* Set to select color aware mode (otherwise - color blind) */
+#define POLICER_OPT_COLOR_AWARE 0x00000001
+/* Set to discard frame with RED color */
+#define POLICER_OPT_DISCARD_RED 0x00000002
+
+/* policer units */
+#define POLICER_UNIT_BYTES  0
+#define POLICER_UNIT_FRAMES 1
+
+/* policer color */
+#define POLICER_COLOR_GREEN 0
+#define POLICER_COLOR_YELLOW 1
+#define POLICER_COLOR_RED 2
+
+/* Flow classification enabled by default */
+uint8_t enable_flow = 1;
+/* policer default configuration */
+int policer_unit = POLICER_UNIT_BYTES;
+int default_color = POLICER_COLOR_RED;
+uint32_t policer_option = POLICER_OPT_DISCARD_RED;
+uint32_t cir;
+uint32_t cbs;
+uint32_t pir;
+uint32_t pbs;
+
+void *sch_handle;
 
 #define RTE_LOGTYPE_L2FWD RTE_LOGTYPE_USER1
 
@@ -277,7 +305,7 @@ l2fwd_main_loop(void)
 			prev_tsc = cur_tsc;
 		}
 		/* >8 End of draining TX queue. */
-
+#if 0
 		/* Read packet from RX queues. 8< */
 		for (i = 0; i < qconf->n_rx_port; i++) {
 
@@ -297,6 +325,21 @@ l2fwd_main_loop(void)
 			}
 		}
 		/* >8 End of read packet from RX queues. */
+#endif
+		/* sleep(5); */
+		nb_rx = rte_dpaa2_scheduler_rx(sch_handle, pkts_burst, max_burst_size);
+		if (unlikely(nb_rx == 0))
+			continue;
+
+		/* TODO: fix portid, fwding logic */
+		portid = 0;
+		port_statistics[portid].rx += nb_rx;
+
+		for (j = 0; j < nb_rx; j++) {
+			m = pkts_burst[j];
+			rte_prefetch0(rte_pktmbuf_mtod(m, void *));
+			l2fwd_simple_forward(m, portid);
+		}
 	}
 }
 
@@ -320,6 +363,17 @@ l2fwd_usage(const char *prgname)
 	       "      When enabled:\n"
 	       "       - The source MAC address is replaced by the TX port MAC address\n"
 	       "       - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n"
+	       "  --no-enable-flow: Disable vlan flow control\n"
+	       "  --policer_option: configure policer options (opt_discard_red, opt_color_aware or opt_both)\n"
+	       "           Default: opt_discard_red\n"
+	       "  --policer_unit: configure policer unit (bytes, frames)\n"
+	       "         Default: bytes\n"
+	       "  --default_color: configure policer default color (red, yellow or green)\n"
+	       "          Default: red\n"
+	       "  -cir NUM in bytes/frames as selected\n"
+	       "  -cbs NUM bytes/frames as selected\n"
+	       "  -pir NUM bytes/frames as selected\n"
+	       "  -pbs NUM bytes/frames as selected\n"
 	       "  -b NUM: burst size for receive packet (default is 32)\n"
 	       "  -r NUM: RX queue size (default is 1024)\n"
 	       "  -t NUM: TX queue size (default is 1024)\n"
@@ -431,6 +485,43 @@ l2fwd_parse_timer_period(const char *q_arg)
 	return n;
 }
 
+static void
+parse_policer_unit(const char *optarg)
+{
+	if (!strcmp(optarg, "frames"))
+		policer_unit = POLICER_UNIT_FRAMES;
+	else if (!strcmp(optarg, "bytes"))
+		policer_unit = POLICER_UNIT_BYTES;
+	else
+		printf("Invalid Policer Unit, default set to Bytes!!\n");
+}
+
+static void
+parse_policer_option(const char *optarg)
+{
+	if (!strcmp(optarg, "opt_discard_red"))
+		policer_option = POLICER_OPT_DISCARD_RED;
+	else if (!strcmp(optarg, "opt_color_aware"))
+		policer_option = POLICER_OPT_COLOR_AWARE;
+	else if (!strcmp(optarg, "opt_both"))
+		policer_option = POLICER_OPT_DISCARD_RED | POLICER_OPT_COLOR_AWARE;
+	else
+		printf("Invalid policer option, default set to discard_red!!\n");
+}
+
+static void
+parse_policer_default_color(const char *optarg)
+{
+	if (!strcmp(optarg, "red"))
+		default_color = POLICER_COLOR_RED;
+	else if (!strcmp(optarg, "yellow"))
+		default_color = POLICER_COLOR_YELLOW;
+	else if (!strcmp(optarg, "green"))
+		default_color = POLICER_COLOR_GREEN;
+	else
+		printf("Invalid policer_default_color, default set to RED!!\n");
+}
+
 static const char short_options[] =
 	"p:"  /* portmask */
 	"P"   /* promiscuous */
@@ -443,20 +534,45 @@ static const char short_options[] =
 
 #define CMD_LINE_OPT_NO_MAC_UPDATING "no-mac-updating"
 #define CMD_LINE_OPT_PORTMAP_CONFIG "portmap"
+#define CMD_LINE_OPT_ENABLE_FLOW "no-enable-flow"
+#define CMD_LINE_OPT_RATE_LIMIT_UNIT_CONFIG "policer_unit"
+#define CMD_LINE_OPT_RATE_LIMIT_OPTION_CONFIG "policer_option"
+#define CMD_LINE_OPT_RATE_LIMIT_COLOR_CONFIG "default_color"
+#define CMD_LINE_OPT_CIR_CONFIG "cir"
+#define CMD_LINE_OPT_CBS_CONFIG "cbs"
+#define CMD_LINE_OPT_PIR_CONFIG "pir"
+#define CMD_LINE_OPT_PBS_CONFIG "pbs"
 
 enum {
 	/* long options mapped to a short option */
 
 	/* first long only option value must be >= 256, so that we won't
-	 * conflict with short options */
+	 * conflict with short options
+	 */
 	CMD_LINE_OPT_NO_MAC_UPDATING_NUM = 256,
 	CMD_LINE_OPT_PORTMAP_NUM,
+	CMD_LINE_OPT_ENABLE_FLOW_CTL,
+	CMD_LINE_OPT_RATE_LIMIT_UNIT,
+	CMD_LINE_OPT_RATE_LIMIT_OPTION,
+	CMD_LINE_OPT_RATE_LIMIT_DEFAULT_COLOR,
+	CMD_LINE_OPT_CIR,
+	CMD_LINE_OPT_CBS,
+	CMD_LINE_OPT_PIR,
+	CMD_LINE_OPT_PBS,
 };
 
 static const struct option lgopts[] = {
 	{ CMD_LINE_OPT_NO_MAC_UPDATING, no_argument, 0,
 		CMD_LINE_OPT_NO_MAC_UPDATING_NUM},
 	{ CMD_LINE_OPT_PORTMAP_CONFIG, 1, 0, CMD_LINE_OPT_PORTMAP_NUM},
+	{ CMD_LINE_OPT_ENABLE_FLOW, no_argument, 0, CMD_LINE_OPT_ENABLE_FLOW_CTL},
+	{ CMD_LINE_OPT_RATE_LIMIT_UNIT_CONFIG, 1, 0, CMD_LINE_OPT_RATE_LIMIT_UNIT},
+	{ CMD_LINE_OPT_RATE_LIMIT_OPTION_CONFIG, 1, 0, CMD_LINE_OPT_RATE_LIMIT_OPTION},
+	{ CMD_LINE_OPT_RATE_LIMIT_COLOR_CONFIG, 1, 0, CMD_LINE_OPT_RATE_LIMIT_DEFAULT_COLOR},
+	{ CMD_LINE_OPT_CIR_CONFIG, 1, 0, CMD_LINE_OPT_CIR},
+	{ CMD_LINE_OPT_CBS_CONFIG, 1, 0, CMD_LINE_OPT_CBS},
+	{ CMD_LINE_OPT_PIR_CONFIG, 1, 0, CMD_LINE_OPT_PIR},
+	{ CMD_LINE_OPT_PBS_CONFIG, 1, 0, CMD_LINE_OPT_PBS},
 	{NULL, 0, 0, 0}
 };
 
@@ -556,6 +672,38 @@ l2fwd_parse_args(int argc, char **argv)
 
 		case CMD_LINE_OPT_NO_MAC_UPDATING_NUM:
 			mac_updating = 0;
+			break;
+
+		case CMD_LINE_OPT_ENABLE_FLOW_CTL:
+			enable_flow = 0;
+			break;
+
+		case CMD_LINE_OPT_RATE_LIMIT_UNIT:
+			parse_policer_unit(optarg);
+			break;
+
+		case CMD_LINE_OPT_RATE_LIMIT_OPTION:
+			parse_policer_option(optarg);
+			break;
+
+		case CMD_LINE_OPT_RATE_LIMIT_DEFAULT_COLOR:
+			parse_policer_default_color(optarg);
+			break;
+
+		case CMD_LINE_OPT_CIR:
+			cir = (uint32_t)atoi(optarg);
+			break;
+
+		case CMD_LINE_OPT_CBS:
+			cbs = (uint32_t)atoi(optarg);
+			break;
+
+		case CMD_LINE_OPT_PIR:
+			pir = (uint32_t)atoi(optarg);
+			break;
+
+		case CMD_LINE_OPT_PBS:
+			pbs = (uint32_t)atoi(optarg);
 			break;
 
 		default:
@@ -678,6 +826,75 @@ check_all_ports_link_status(uint32_t port_mask)
 	}
 }
 
+/*
+ * Creating two classification rules based on vlan priorities-
+ * 1. vlan0 (vlan_priority=0) traffic go to TC[0]->q0
+ *    dest_queue.index = 0;
+ * 2. vlan7 (vlan_priority=7) traffic go to TC[1]->q0
+ *    dest_queue.index = 1;
+ *
+ *  On both TC flow_attr.priority = 0;
+ */
+
+#define MAX_PATTERN_NUM 2
+static void
+vlan_port_flow_configure(uint16_t portid, uint8_t nb_rx_queue)
+{
+	struct rte_flow_item_vlan vlan_item[MAX_PATTERN_NUM];
+	struct rte_flow_item_vlan vlan_mask[MAX_PATTERN_NUM];
+	struct rte_flow_action flow_action[MAX_PATTERN_NUM];
+	struct rte_flow_item flow_item[MAX_PATTERN_NUM];
+	struct rte_flow_action_queue dest_queue;
+	struct rte_flow_attr flow_attr;
+	struct rte_flow_error error;
+	void *flow;
+	uint8_t i;
+
+	memset(&flow_attr, 0, sizeof(struct rte_flow_attr));
+	memset(flow_item, 0, MAX_PATTERN_NUM * sizeof(struct rte_flow_item));
+	memset(flow_action, 0, MAX_PATTERN_NUM * sizeof(struct rte_flow_action));
+	memset(&error, 0, sizeof(struct rte_flow_error));
+	memset(vlan_item, 0, sizeof(vlan_item));
+	memset(vlan_mask, 0, sizeof(vlan_mask));
+
+	flow_attr.ingress = 1;
+
+	for (i = 0; i < nb_rx_queue; i++) {
+		flow_attr.group = i;
+		/* priority is set to 0 because using single queue */
+		flow_attr.priority = 0;
+		dest_queue.index = i;
+
+		if (!flow_attr.group) {
+			vlan_item[0].hdr.vlan_tci =
+					rte_cpu_to_be_16((uint16_t)0x0064);
+		} else {
+			vlan_item[0].hdr.vlan_tci =
+					rte_cpu_to_be_16((uint16_t)0xe064);
+		}
+		vlan_item[0].hdr.eth_proto = rte_cpu_to_be_16(RTE_ETHER_TYPE_VLAN);
+		vlan_mask[0].hdr.vlan_tci = RTE_BE16(0xffff);
+
+		flow_item[0].spec = &vlan_item[0];
+		flow_item[0].mask = &vlan_mask[0];
+		flow_item[0].type = RTE_FLOW_ITEM_TYPE_VLAN;
+		flow_item[1].type = RTE_FLOW_ITEM_TYPE_END;
+		flow_action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
+		flow_action[0].conf = &dest_queue;
+		flow_action[1].type = RTE_FLOW_ACTION_TYPE_END;
+
+		/* validate and create the flow rule */
+		if (!rte_flow_validate(portid, &flow_attr, flow_item, flow_action, &error)) {
+			flow = rte_flow_create(portid, &flow_attr, flow_item, flow_action, &error);
+			if (!flow) {
+				rte_exit(EXIT_FAILURE,
+					 "Cannot create flow to RXQ%d on port=%d\n",
+					 nb_rx_queue, portid);
+			}
+		}
+	}
+}
+
 static void
 signal_handler(int signum)
 {
@@ -719,6 +936,7 @@ main(int argc, char **argv)
 	/* >8 End of init EAL. */
 
 	printf("MAC updating %s\n", mac_updating ? "enabled" : "disabled");
+	printf("Flow classification  %s\n", enable_flow ? "enabled" : "disabled");
 
 	/* convert to number of cycles */
 	timer_period *= rte_get_timer_hz();
@@ -845,7 +1063,8 @@ main(int argc, char **argv)
 			local_port_conf.txmode.offloads |=
 				RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
 		/* Configure the number of queues for a port. */
-		ret = rte_eth_dev_configure(portid, 1, 1, &local_port_conf);
+		ret = rte_eth_dev_configure(portid, dev_info.max_rx_queues,
+					    dev_info.max_tx_queues, &local_port_conf);
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE, "Cannot configure device: err=%d, port=%u\n",
 				  ret, portid);
@@ -865,19 +1084,55 @@ main(int argc, char **argv)
 				 "Cannot get MAC address: err=%d, port=%u\n",
 				 ret, portid);
 
+		if (enable_flow) {
+			if ((dev_info.max_rx_queues % 2) != 0)
+				rte_exit(EXIT_FAILURE,
+					 "Flow enabled, but RX queues not even for port=%d\n",
+					 portid);
+			else if (dev_info.max_rx_queues != 1)
+				vlan_port_flow_configure(portid, dev_info.max_rx_queues);
+		}
+
 		/* init one RX queue */
 		fflush(stdout);
+
+		struct sch_attr scheduler_attr;
+		int i;
+
+		/* initialize the scheduler */
+		sch_handle = rte_dpaa2_scheduler_init();
+
+		/* get the scheduler attributes */
+		rte_dpaa2_scheduler_get_attributes(sch_handle, &scheduler_attr);
+
 		rxq_conf = dev_info.default_rxconf;
 		rxq_conf.offloads = local_port_conf.rxmode.offloads;
-		/* RX queue setup. 8< */
-		ret = rte_eth_rx_queue_setup(portid, 0, nb_rxd,
+		rxq_conf.rev.sch.sch_handle = sch_handle;
+
+		for (i = 0; i < dev_info.max_rx_queues; i++) {
+			rxq_conf.rev.sch.wq_priority = i;
+			/* RX queue setup. 8< */
+			ret = rte_eth_rx_queue_setup(portid, i, nb_rxd,
 					     rte_eth_dev_socket_id(portid),
 					     &rxq_conf,
 					     l2fwd_pktmbuf_pool);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE, "rte_eth_rx_queue_setup:err=%d, port=%u\n",
+					 ret, portid);
+
+			/* configure scheduler on each Rx queue */
+			ret = rte_dpaa2_conf_scheduler(portid, i, policer_unit,
+						       policer_option,
+						       default_color,
+						       cir, cbs, pir, pbs);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE, "rte_dpaa2_policer:err=%d,\n", ret);
+			/* >8 End of RX queue setup. */
+		}
+
+		ret = rte_dpaa2_scheduler_start(sch_handle);
 		if (ret < 0)
-			rte_exit(EXIT_FAILURE, "rte_eth_rx_queue_setup:err=%d, port=%u\n",
-				  ret, portid);
-		/* >8 End of RX queue setup. */
+			rte_exit(EXIT_FAILURE, "rte_dpaa2_scheduler_start:err=%d,\n", ret);
 
 		/* Init one TX queue on each port. 8< */
 		fflush(stdout);
