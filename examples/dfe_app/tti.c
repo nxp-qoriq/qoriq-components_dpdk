@@ -23,8 +23,8 @@
 #include "ipc.h"
 #include "tti.h"
 
-struct sched_param param_new = { .sched_priority = APP_SCHED_PRIORITY };
-struct sched_param param_old;
+// struct sched_param param_new = { .sched_priority = APP_SCHED_PRIORITY };
+// struct sched_param param_old;
 
 struct epoll_event ev, events[MAX_EVENTS];
 struct tti tti_t;
@@ -40,10 +40,10 @@ int tti_init(void)
 	app_print_dbg("%s: TTI init, core %u\n", __func__, rte_lcore_id());
 
 	/* save old prio */
-	param_old.sched_priority = sched_getscheduler(0);
+	//param_old.sched_priority = sched_getscheduler(0);
 
 	/* raise app priority to RT */
-	sched_setscheduler(0, SCHED_FIFO, &param_new);
+	//sched_setscheduler(0, SCHED_FIFO, &param_new);
 
 	/* Register Modem & TTI */
 	tti_t.tti_eventfd = -1;
@@ -139,7 +139,7 @@ int tti_close(void)
 	signal_close();
 
 	/* restore prio */
-	sched_setscheduler(0, SCHED_FIFO, &param_old);
+	//sched_setscheduler(0, SCHED_FIFO, &param_old);
 
 	close(epollfd);
 	epollfd = -1;

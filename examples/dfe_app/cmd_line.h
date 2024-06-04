@@ -71,9 +71,14 @@ extern void cmd_config_qec_dco_parsed(void *parsed_result, struct cmdline *cl, v
 extern void cmd_config_qec_fdelay_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_qec_iqtaps_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_config_pattern_new_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_tdd_config_tick_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_config_pattern_fr1fr2_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_tdd_config_ul_ta_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_tdd_time_offset_parsed(void *parsed_result, struct cmdline *cl, void *data);
+#if 0
 extern void cmd_cell_search_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_cell_attach_parsed(void *parsed_result, struct cmdline *cl, void *data);
+#endif
 extern void cmd_rf_switch_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tti_stats_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_wait_response_parsed(void *parsed_result, struct cmdline *cl, void *data);
@@ -808,6 +813,94 @@ static cmdline_parse_inst_t cmd_tdd_config_pattern_fr1fr2 = {
 	}
 };
 
+struct cmd_tdd_config_tick_result {
+	cmdline_fixed_string_t tdd;
+	cmdline_fixed_string_t config;
+	cmdline_fixed_string_t tick;
+	cmdline_fixed_string_t keepalive;
+	cmdline_fixed_string_t args;
+};
+
+static cmdline_parse_token_string_t cmd_tdd_config_tick_tdd_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_tick_result, tdd, "tdd");
+static cmdline_parse_token_string_t cmd_tdd_config_tick_config_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_tick_result, config, "config");
+static cmdline_parse_token_string_t cmd_tdd_config_tick_tick_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_tick_result, tick, "tick");
+static cmdline_parse_token_string_t cmd_tdd_config_tick_keepalive_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_tick_result, keepalive, "keep-alive");
+static cmdline_parse_token_string_t cmd_tdd_config_tick_args_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_tick_result, args, "0#1");
+
+static cmdline_parse_inst_t cmd_tdd_config_tick = {
+	.f = cmd_tdd_config_tick_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_tdd_config_tick_tdd_tok,
+		(void *)&cmd_tdd_config_tick_config_tok,
+		(void *)&cmd_tdd_config_tick_tick_tok,
+		(void *)&cmd_tdd_config_tick_keepalive_tok,
+		(void *)&cmd_tdd_config_tick_args_tok,
+		NULL,
+	}
+};
+
+struct cmd_tdd_config_ta_result {
+	cmdline_fixed_string_t tdd;
+	cmdline_fixed_string_t config;
+	cmdline_fixed_string_t ul_ta;
+	uint32_t ta;
+};
+
+static cmdline_parse_token_string_t cmd_tdd_config_ta_tdd_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_ta_result, tdd, "tdd");
+static cmdline_parse_token_string_t cmd_tdd_config_ta_config_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_ta_result, config, "config");
+static cmdline_parse_token_string_t cmd_tdd_config_ta_ul_ta_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_config_ta_result, ul_ta, "ul-time-advance");
+static cmdline_parse_token_num_t cmd_tdd_config_ta_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_tdd_config_ta_result, ta, RTE_UINT32);
+
+static cmdline_parse_inst_t cmd_tdd_config_ta = {
+	.f = cmd_tdd_config_ul_ta_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_tdd_config_ta_tdd_tok,
+		(void *)&cmd_tdd_config_ta_config_tok,
+		(void *)&cmd_tdd_config_ta_ul_ta_tok,
+		(void *)&cmd_tdd_config_ta_tok,
+		NULL,
+	}
+};
+
+struct cmd_tdd_time_offset_result {
+	cmdline_fixed_string_t tdd;
+	cmdline_fixed_string_t time_offset;
+	int32_t to;
+};
+
+static cmdline_parse_token_string_t cmd_tdd_time_offset_tdd_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_time_offset_result, tdd, "tdd");
+static cmdline_parse_token_string_t cmd_tdd_time_offset_time_offset_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_time_offset_result, time_offset, "time-offset");
+static cmdline_parse_token_num_t cmd_tdd_time_offset_to_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_tdd_time_offset_result, to, RTE_INT32);
+
+static cmdline_parse_inst_t cmd_tdd_time_offset = {
+	.f = cmd_tdd_time_offset_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_tdd_time_offset_tdd_tok,
+		(void *)&cmd_tdd_time_offset_time_offset_tok,
+		(void *)&cmd_tdd_time_offset_to_tok,
+		NULL,
+	}
+};
+
+#if 0 /* future */
 struct cmd_cell_search_result {
 	cmdline_fixed_string_t cell ;
 	cmdline_fixed_string_t search;
@@ -865,6 +958,7 @@ static cmdline_parse_inst_t cmd_cell_attach = {
 		NULL,
 	}
 };
+#endif
 
 struct cmd_rf_switch_result {
 	cmdline_fixed_string_t rf_switch ;
@@ -931,8 +1025,13 @@ static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_config_qec_iqtaps,
 	&cmd_tdd_config_pattern_new,
 	&cmd_tdd_config_pattern_fr1fr2,
+	&cmd_tdd_config_tick,
+	&cmd_tdd_config_ta,
+	&cmd_tdd_time_offset,
+#if 0 /* future */
 	&cmd_cell_search,
 	&cmd_cell_attach,
+#endif
 	&cmd_rf_switch,
 	&cmd_tdd_tti,
 	&cmd_tti_stats,
