@@ -55,6 +55,20 @@ enetc_crc_calc(uint16_t crc, const uint8_t *buffer, size_t len)
 }
 
 int
+enetc4_vf_dev_infos_get(struct rte_eth_dev *dev __rte_unused,
+                    struct rte_eth_dev_info *dev_info)
+{
+	PMD_INIT_FUNC_TRACE();
+
+	dev_info->max_rx_queues = MAX_RX_RINGS;
+	dev_info->max_tx_queues = MAX_TX_RINGS;
+	dev_info->max_rx_pktlen = ENETC_MAC_MAXFRM_SIZE;
+	dev_info->max_mac_addrs = ENETC_MAC_ENTRIES;
+
+	return 0;
+}
+
+int
 enetc4_vf_dev_stop(struct rte_eth_dev *dev __rte_unused)
 {
 	PMD_INIT_FUNC_TRACE();
@@ -234,6 +248,7 @@ enetc4_vf_set_mac_addr(struct rte_eth_dev *dev, struct rte_ether_addr *addr)
 	int err = 0;
 
 	PMD_INIT_FUNC_TRACE();
+
 	reply_msg = rte_zmalloc(NULL, sizeof(*reply_msg), RTE_CACHE_LINE_SIZE);
 	if (!reply_msg) {
 		ENETC_PMD_ERR("Failed to alloc memory for reply_msg");
@@ -264,7 +279,6 @@ enetc4_vf_set_mac_addr(struct rte_eth_dev *dev, struct rte_ether_addr *addr)
 
 	cmd->count = 0;
 	memcpy(&cmd->addr.addr_bytes, addr, sizeof(struct rte_ether_addr));
-
 	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_MAC_FILTER, ENETC_CMD_ID_SET_PRIMARY_MAC, 0, 0, 0);
 
 	/* send the command and wait */
@@ -694,6 +708,98 @@ enetc4_vf_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused
 	return 0;
 }
 
+static int
+enetc4_vf_mac_addr_add(struct rte_eth_dev *dev, struct rte_ether_addr *addr,
+			uint32_t index __rte_unused, uint32_t pool __rte_unused)
+{
+	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct enetc_hw *enetc_hw = &hw->hw;
+	struct enetc_msg_cmd_set_primary_mac *cmd;
+	struct enetc_msg_swbd *msg;
+	struct enetc_psi_reply_msg *reply_msg;
+	int msg_size;
+	int err = 0;
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (!rte_is_valid_assigned_ether_addr(addr))
+		return -EINVAL;
+
+	reply_msg = rte_zmalloc(NULL, sizeof(*reply_msg), RTE_CACHE_LINE_SIZE);
+	if (!reply_msg) {
+		ENETC_PMD_ERR("Failed to alloc memory for reply_msg");
+		return -ENOMEM;
+	}
+
+	msg = rte_zmalloc(NULL, sizeof(*msg), RTE_CACHE_LINE_SIZE);
+	if (!msg) {
+		ENETC_PMD_ERR("Failed to alloc msg");
+		err = -ENOMEM;
+		rte_free(reply_msg);
+		return err;
+	}
+
+	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_cmd_set_primary_mac), ENETC_VSI_PSI_MSG_SIZE);
+	msg->vaddr = rte_zmalloc(NULL, msg_size, 0);
+	if (!msg->vaddr) {
+		ENETC_PMD_ERR("Failed to alloc memory for msg");
+		rte_free(msg);
+		rte_free(reply_msg);
+		return -ENOMEM;
+	}
+
+	msg->dma = rte_mem_virt2iova((const void *) msg->vaddr);
+	msg->size = msg_size;
+
+	cmd = (struct enetc_msg_cmd_set_primary_mac *)msg->vaddr;
+
+	memcpy(&cmd->addr.addr_bytes, addr, sizeof(struct rte_ether_addr));
+	cmd->count = 1;
+
+	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_MAC_FILTER, ENETC_MSG_ADD_EXACT_MAC_ENTRIES, 0, 0, 0);
+
+	/* send the command and wait */
+	err = enetc4_msg_vsi_send(enetc_hw, msg);
+	if (err){
+		ENETC_PMD_ERR("VSI message send error");
+		goto end;
+	}
+
+	enetc4_msg_vsi_reply_msg(enetc_hw, reply_msg);
+
+	if (reply_msg->class_id == ENETC_CLASS_ID_MAC_FILTER) {
+		switch (reply_msg->status) {
+		case ENETC_INVALID_MAC_ADDR:
+			ENETC_PMD_ERR("Invalid MAC address");
+			err = -EINVAL;
+			break;
+		case ENETC_DUPLICATE_MAC_ADDR:
+			ENETC_PMD_ERR("Duplicate MAC address");
+			err = -EINVAL;
+			break;
+		case ENETC_MAC_FILTER_NO_RESOURCE:
+			ENETC_PMD_ERR("Not enough exact-match entries available");
+			err = -EINVAL;
+			break;
+		default:
+			err = -EINVAL;
+			break;
+		}
+	}
+
+	if (err) {
+		ENETC_PMD_ERR("VSI command execute error!");
+		goto end;
+	}
+
+end:
+	/* free memory no longer required */
+	rte_free(msg->vaddr);
+	rte_free(reply_msg);
+	rte_free(msg);
+	return err;
+}
+
 /*
  * The set of PCI devices this driver supports
  */
@@ -709,8 +815,9 @@ static const struct eth_dev_ops enetc4_vf_ops = {
 	.dev_stop             = enetc4_vf_dev_stop,
 	.dev_close            = enetc4_dev_close,
 	.stats_get            = enetc4_vf_stats_get,
-	.dev_infos_get        = enetc4_dev_infos_get,
+	.dev_infos_get        = enetc4_vf_dev_infos_get,
 	.mac_addr_set         = enetc4_vf_set_mac_addr,
+	.mac_addr_add	      = enetc4_vf_mac_addr_add,
 	.promiscuous_enable   = enetc4_vf_promisc_enable,
 	.promiscuous_disable  = enetc4_vf_promisc_disable,
 	.allmulticast_enable  = enetc4_vf_multicast_enable,
@@ -733,7 +840,7 @@ static const struct eth_dev_ops enetc4_vf_ops_no_vsi_m = {
 	.dev_stop             = enetc4_vf_dev_stop,
 	.dev_close            = enetc4_dev_close,
 	.stats_get            = enetc4_vf_stats_get,
-	.dev_infos_get        = enetc4_dev_infos_get,
+	.dev_infos_get        = enetc4_vf_dev_infos_get,
 	.link_update	      = enetc4_vf_link_update_dummy,
 	.rx_queue_setup       = enetc4_rx_queue_setup,
 	.rx_queue_start       = enetc4_rx_queue_start,
@@ -757,7 +864,7 @@ enetc4_vf_mac_init(struct enetc_eth_hw *hw, struct rte_eth_dev *eth_dev)
 	char vf_eth_name[ENETC_ETH_NAMESIZE];
 
 	PMD_INIT_FUNC_TRACE();
-
+	
 	/* Enabling Station Interface */
 	enetc4_wr(enetc_hw, ENETC_SIMR, ENETC_SIMR_EN);
 	*mac = (uint32_t)enetc_rd(enetc_hw, ENETC_SIPMAR0);
@@ -825,6 +932,7 @@ enetc4_vf_dev_init(struct rte_eth_dev *eth_dev)
 	si_cap = enetc_rd(enetc_hw, ENETC_SICAPR0);
 	hw->max_tx_queues = si_cap & ENETC_SICAPR0_BDR_MASK;
 	hw->max_rx_queues = (si_cap >> 16) & ENETC_SICAPR0_BDR_MASK;
+
 
 	ENETC_PMD_DEBUG("Max RX queues = %d Max TX queues = %d\n",
 			hw->max_rx_queues, hw->max_tx_queues);
