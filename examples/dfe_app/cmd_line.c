@@ -313,6 +313,40 @@ cmd_tdd_config_pattern_fr1fr2_parsed(void *parsed_result,
 }
 
 void
+cmd_tdd_config_tick_parsed(void *parsed_result,
+			   __attribute__((unused)) struct cmdline *cl,
+			   __attribute__((unused)) void *data)
+{
+	struct cmd_tdd_config_tick_result *res = parsed_result;
+
+	printf("res->args = %s\n", res->args);
+	cmd_do_config_tick_keepalive(atoi(res->args));
+}
+
+void
+cmd_tdd_config_ul_ta_parsed(void *parsed_result,
+			   __attribute__((unused)) struct cmdline *cl,
+			   __attribute__((unused)) void *data)
+{
+	struct cmd_tdd_config_ta_result *res = parsed_result;
+
+	printf("res->ta = %d\n", res->ta);
+	cmd_do_config_ul_ta(res->ta);
+}
+
+void
+cmd_tdd_time_offset_parsed(void *parsed_result,
+			   __attribute__((unused)) struct cmdline *cl,
+			   __attribute__((unused)) void *data)
+{
+	struct cmd_tdd_time_offset_result *res = parsed_result;
+
+	printf("res->to = %d\n", res->to);
+	cmd_do_config_time_offset(res->to);
+}
+
+#if 0 /* future */
+void
 cmd_cell_search_parsed(void *parsed_result,
 		       __attribute__((unused)) struct cmdline *cl,
 		       __attribute__((unused)) void *data)
@@ -337,6 +371,7 @@ cmd_cell_attach_parsed(void *parsed_result,
 	printf("res->action = %s\n", res->action);
 	printf("res->args = %s\n", res->args);
 }
+#endif
 
 void
 cmd_rf_switch_parsed(void *parsed_result,
