@@ -8,7 +8,7 @@ Supported Platforms (and their derivatives):
 2. DPAA  : LS1043, LS1046
 3. ENETC : LS1028, i.MX95
 4. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX93
-5. QOS   : i.MX 8MP, i.MX93
+5. QOS   : i.MX 8MP, i.MX 8DXL, i.MX93
 ===============================================================================
 NXP DPDK provides a set of data plane libraries and network interface
 controller driver for Layerscape platforms
@@ -392,16 +392,18 @@ u-boot=> saveenv
 
 Note:
 Here <default_board_specific_args> for example, will be like mmcargs=setenv bootargs ${jh_clk} console=${console} root=${mmcroot}.
-Here <hugepages> can be used to add the hugepages: `default_hugepagesz=2m hugepagesz=2m hugepages=448`
+Here <hugepages> can be used to add the hugepages: `default_hugepagesz=2m hugepagesz=2m hugepages=256`
+	Note: <hugepages> depends on system memory, if system memory is less than 1GB select hugepages accordingly.
 Here <imx-95-params> only applicable for i.MX95: `iommu.passthrough=1`
 Here <imx-mem-param> is used to reserve the initial DDR memory from uboot via 'mem' environment variable.
 	It needed to be set to `mem=4096M` on platforms with FEC/eQoS ethernet interfaces
 	as BD ring of FEC/eQoS interfaces can only accept 32 bit addresses.
 Here <core_list> can be used to add CPUs planned to be used for DPDK applications
 	For i.MX 8MM, 8MP: <core_list> : 1-3
+	For i.MX 8DXL: <core_list> : 1
 	For i.MX 93: <core_list> : 1
 	For i.MX 95: <core_list> : 1-5
-	Note: i.MX93 has only 2 cores, but to reserve the core 1 for dpdk we can provide core_list=1 for i.MX93.
+	Note: i.MX8DXL and i.MX93 has only 2 cores, but to reserve the core 1 for dpdk we can provide core_list=1 for both platforms.
 
 For optimized performance on i.MX platforms:
 --------------------------------------------
@@ -423,6 +425,7 @@ System switching to OD mode...
 root@:~# cat /sys/devices/platform/imx93-lpm/mode
 System is in OD mode with DDR 3733 MTS!
 
+Note: If lpm-mode not supported, please skip this step.
 
   1.1 For i.MX8MM (FEC) Platform:
     Bring up the imx-8mm-evk-rev board with latest kernel and dtb.
@@ -550,7 +553,20 @@ Set the env. variable on uboot to enable user space mode:
     => saveenv
     => run dpdk_enable
 
-1.2 For i.MX93 Platform:
+1.2 For i.MX8DXL Platform:
+-------------------------
+Set the env. variable on uboot to enable user space mode:
+
+    Note: All the variables should be defined with appropriate values
+    => setenv dpdk_enable "setenv fdtfile imx8dxl-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
+       setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}';
+       run loadkernel; run loadfdt; fdt addr ${fdt_addr};
+       fdt set /bus@5b000000/ethernet@5b050000 compatible "fsl,imx-enet-qos" "snps,dwmac-5.10a";
+       setenv bootcmd 'mmc dev ${mmcdev};run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
+    => saveenv
+    => run dpdk_enable
+
+1.3 For i.MX93 Platform:
 ------------------------
 Set the env. variable on uboot to enable user space mode:
 Note: All the variables should be defined with appropriate values
@@ -570,7 +586,7 @@ Note: If "FDT_ERR_NOSPACE" error is seen when setting aliases, we can use the be
       to resize fdt to size + padding to 4k addr + some optional <extrasize>
     => fdt resize <extrasize>
 
-Below steps are for running DPDK applications on i.MX8MP and i.MX93 boards.
+Below steps are for running DPDK applications on i.MX8MP, i.MX8DXL and i.MX93 boards.
 2. Manually allocate hugepages
         e.g. echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
 3. Load the non-cacheable module
@@ -581,6 +597,8 @@ Below steps are for running DPDK applications on i.MX8MP and i.MX93 boards.
 5. Run -
 	./dpdk-l2fwd -c 0x3 -n 1 --vdev 'net_enetqos' -- -p 0x1 -q 1
 	./dpdk-testpmd -c 0x3 -n 1 --vdev 'net_enetqos'  -- -i --portmask=0x2 --nb-ports=1 --forward-mode=io
+	./dpdk-l3fwd -c 0x2 -n 1 --vdev 'net_enetqos' -- -p 0x1 --config="(0,0,1)" -P
+	Note: In l3fwd for ENET-QOS Ethernet interface add '--parse-ptype'.
 
 	For testing the forwarding between both FEC and QOS port run:
 		./dpdk-l2fwd -c 0xf -n 1 --vdev 'net_enetqos'  --vdev 'net_enetfec' -- -p 0x3 -T 0 -P
