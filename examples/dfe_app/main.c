@@ -47,7 +47,6 @@ uint16_t sfn_no = 0;
 uint16_t slot_no = 0;
 
 struct sched_param param_new = { .sched_priority = APP_SCHED_PRIORITY };
-//struct sched_param param_old;
 
 /* error to string helper */
 static const char *modem_error_to_text(uint32_t status_code)
