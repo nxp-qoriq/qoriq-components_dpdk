@@ -51,7 +51,11 @@ void cmd_do_tx_rx_addr_config(int msg_type_tx_rx_addr, uint32_t addr);
 void cmd_do_sym_size_config(uint32_t sym_size);
 void cmd_do_rx_antenna_config(uint32_t rx_antenna);
 void cmd_do_qec_config(uint32_t tx_rx, uint32_t mode, uint32_t index, uint32_t value);
+void cmd_do_config_tick_keepalive(uint32_t keepalive);
+void cmd_do_config_ul_ta(uint32_t ta);
+void cmd_do_config_time_offset(uint32_t time_offset);
 void reset_tti_stats(void);
 void dump_tti_stats(void);
-
+int rte_sys_get_tid(void);
+void assign_to_core(int core_id);
 #endif
