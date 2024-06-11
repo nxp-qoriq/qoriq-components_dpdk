@@ -84,6 +84,16 @@
 #define DPAA2_INVALID_FLOW_ID 0xffff
 #define DPAA2_INVALID_CGID 0xff
 
+#define SEC_FLC_DHR_OUTBOUND	(-114)
+#define SEC_FLC_DHR_INBOUND	0
+
+/** Consider aligning with 8 bytes to multiply point size with 2.*/
+#define DPAA2_SEC_SIMPLE_FD_OB_MIN \
+	((-SEC_FLC_DHR_OUTBOUND) + sizeof(void *) * 2)
+
+#define DPAA2_SEC_SIMPLE_FD_IB_MIN \
+	((-SEC_FLC_DHR_INBOUND) + sizeof(void *) * 2)
+
 struct dpaa2_queue;
 
 struct eqresp_metadata {
@@ -462,6 +472,49 @@ dpaa2_mem_va_to_iova_check(void *va, uint64_t size)
 	dpaa2_mem_va_to_iova_check(_vaddr, size)
 #define DPAA2_IOVA_TO_VADDR_AND_CHECK(_iova, size) \
 	rte_fslmc_cold_mem_iova_to_vaddr(_iova, size)
+
+/* 00 00 00 - last 6 bit represent data, annotation,
+ * context stashing setting 01 01 00 (0x14)
+ * (in following order ->DS AS CS)
+ * to enable 1 line data, 1 line annotation.
+ * For LX2, this setting should be 01 00 00 (0x10)
+ */
+#define DPAA2_FLC_STASHING_MAX_BIT_SIZE 2
+#define DPAA2_FLC_STASHING_MAX_CACHE_LINE \
+	((1ULL << DPAA2_FLC_STASHING_MAX_BIT_SIZE) - 1)
+
+enum dpaa2_flc_stashing_type {
+	DPAA2_FLC_CNTX_STASHING = 0,
+	DPAA2_FLC_ANNO_STASHING =
+		DPAA2_FLC_CNTX_STASHING + DPAA2_FLC_STASHING_MAX_BIT_SIZE,
+	DPAA2_FLC_DATA_STASHING =
+		DPAA2_FLC_ANNO_STASHING + DPAA2_FLC_STASHING_MAX_BIT_SIZE,
+	DPAA2_FLC_END_STASHING =
+		DPAA2_FLC_DATA_STASHING + DPAA2_FLC_STASHING_MAX_BIT_SIZE
+};
+
+#define DPAA2_STASHING_ALIGN_SIZE (1 << DPAA2_FLC_END_STASHING)
+
+static inline void
+dpaa2_flc_stashing_set(enum dpaa2_flc_stashing_type type,
+	uint8_t cache_line, uint64_t *flc)
+{
+	RTE_ASSERT(cache_line <= DPAA2_FLC_STASHING_MAX_CACHE_LINE);
+	RTE_ASSERT(type == DPAA2_FLC_CNTX_STASHING ||
+		type == DPAA2_FLC_ANNO_STASHING ||
+		type == DPAA2_FLC_DATA_STASHING);
+
+	(*flc) &= ~(DPAA2_FLC_STASHING_MAX_CACHE_LINE << type);
+	(*flc) |= (cache_line << type);
+}
+
+static inline void
+dpaa2_flc_stashing_clear_all(uint64_t *flc)
+{
+	dpaa2_flc_stashing_set(DPAA2_FLC_CNTX_STASHING, 0, flc);
+	dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING, 0, flc);
+	dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 0, flc);
+}
 
 static inline
 int check_swp_active_dqs(uint16_t dpio_index)

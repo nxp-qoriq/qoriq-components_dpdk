@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2010-2019 Intel Corporation
+ * Copyright 2024 NXP
  */
 
 #ifndef _RTE_COMMON_H_
@@ -164,7 +165,15 @@ typedef uint16_t unaligned_uint16_t;
 #define RTE_PRIORITY_LOG 101
 #define RTE_PRIORITY_BUS 110
 #define RTE_PRIORITY_CLASS 120
+#ifdef RTE_USR_DEF_PRIORITY_LAST
+#if (RTE_USR_DEF_PRIORITY_LAST <= RTE_PRIORITY_CLASS)
+#error "User defined last priority <= Max rte priority."
+#else
+#define RTE_PRIORITY_LAST RTE_USR_DEF_PRIORITY_LAST
+#endif
+#else
 #define RTE_PRIORITY_LAST 65535
+#endif
 
 #define RTE_PRIO(prio) \
 	RTE_PRIORITY_ ## prio

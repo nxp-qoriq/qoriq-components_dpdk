@@ -1147,7 +1147,7 @@ dpaa2_print_ecpri_parse_result(const struct dpaa2_psr_result_parse *psr)
 	}
 
 	DPAA2_PR_PRINT("ECPRI type %d present\r\n", msg_type);
-	rte_memcpy(&ecpri_msg.type0, psr->word8.sp_psr_ctx,
+	rte_memcpy(ecpri_msg.dummy, psr->word8.sp_psr_ctx,
 		DPAA2_SP_PSR_CTX_LEN);
 	if (msg_type == RTE_ECPRI_MSG_TYPE_IQ_DATA ||
 		msg_type == RTE_ECPRI_MSG_TYPE_BIT_SEQ) {
