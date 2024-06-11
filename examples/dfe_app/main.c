@@ -2,6 +2,9 @@
  * Copyright 2024 NXP
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <stdio.h>
 #include <stdint.h>
 #include <errno.h>
@@ -15,6 +18,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <time.h>
+#include <pthread.h>
 
 #include "dfe_host_if.h"
 #include "dfe_app.h"
@@ -24,8 +28,9 @@
 #include "ipc.h"
 #include "tti.h"
 
-#define APP_VERSION       "0.4-bsp-drop-0.3.1"
+#define APP_VERSION       "0.4-bsp-post-0.3.1"
 
+int cpu_id = 0;
 int log_level = APP_DBG_LOG_ERROR;
 int rte_log_level = RTE_LOGTYPE_EAL;
 static struct cmdline *cl;
@@ -40,6 +45,8 @@ uint32_t tti_irq_count = 0;
 uint32_t tti_msg_count = 0;
 uint16_t sfn_no = 0;
 uint16_t slot_no = 0;
+
+struct sched_param param_new = { .sched_priority = APP_SCHED_PRIORITY };
 
 /* error to string helper */
 static const char *modem_error_to_text(uint32_t status_code)
@@ -361,6 +368,74 @@ void cmd_do_config_pattern_new(uint32_t p0,
 		app_print_err("Failed to send IPC message\n");
 }
 
+/* tick keepalive  */
+void cmd_do_config_tick_keepalive(uint32_t keepalive)
+{
+	struct dfe_msg *msg;
+	int ret;
+
+	app_print_info("Send tdd config tick keepalive command\n");
+
+	msg = (struct dfe_msg *)get_tx_buf(BBDEV_IPC_H2M_QUEUE);
+	if (!msg)
+		return;
+
+	msg->type = DFE_TDD_TICK_KEEPALIVE;
+	msg->payload[0] = keepalive;
+
+	/* user wants his answer */
+	wait_response = 1;
+
+	ret = send_dfe_command(msg);
+	if (ret < 0)
+		app_print_err("Failed to send IPC message\n");
+}
+
+/* uplink time advance  */
+void cmd_do_config_ul_ta(uint32_t ta)
+{
+	struct dfe_msg *msg;
+	int ret;
+
+	app_print_info("Send UL TA command\n");
+
+	msg = (struct dfe_msg *)get_tx_buf(BBDEV_IPC_H2M_QUEUE);
+	if (!msg)
+		return;
+
+	msg->type = DFE_TDD_UL_TIME_ADVANCE;
+	msg->payload[0] = ta;
+
+	/* user wants his answer */
+	wait_response = 1;
+
+	ret = send_dfe_command(msg);
+	if (ret < 0)
+		app_print_err("Failed to send IPC message\n");
+}
+
+void cmd_do_config_time_offset(uint32_t time_offset)
+{
+	struct dfe_msg *msg;
+	int ret;
+
+	app_print_info("Send TO correction command\n");
+
+	msg = (struct dfe_msg *)get_tx_buf(BBDEV_IPC_H2M_QUEUE);
+	if (!msg)
+		return;
+
+	msg->type = DFE_TDD_TIME_OFFSET_CORR;
+	msg->payload[0] = time_offset;
+
+	/* user wants his answer */
+	wait_response = 1;
+
+	ret = send_dfe_command(msg);
+	if (ret < 0)
+		app_print_err("Failed to send IPC message\n");
+}
+
 /* vspa dma benchmark */
 void cmd_do_vspa_benchmark(uint32_t size_bytes, uint32_t mode, uint32_t parallel_dma_num, uint32_t iterations)
 {
@@ -446,7 +521,7 @@ static void parse_args(int argc, char **argv)
 {
 	int opt;
 
-	while ((opt = getopt(argc, argv, ":c:l:r:hv")) != -1) {
+	while ((opt = getopt(argc, argv, ":c:i:l:r:hv")) != -1) {
 		switch (opt) {
 		case 'v':
 			print_version();
@@ -455,6 +530,11 @@ static void parse_args(int argc, char **argv)
 			interactive = 0;
 			app_print_dbg("excuting command [%s]\n", optarg);
 			snprintf(cmd_line_to_run, MAX_CMD_LEN - 1, "%s\n", optarg);
+			break;
+		case 'i':
+			cpu_id = strtoul(optarg, NULL, 0);
+			//app_print_dbg
+			printf("assign to core [%d]\n", cpu_id);
 			break;
 		case 'r':
 			rte_log_level = strtoul(optarg, NULL, 0);
@@ -474,12 +554,28 @@ static void parse_args(int argc, char **argv)
 	}
 }
 
+int rte_sys_get_tid(void)
+{
+	return rte_gettid();
+	//return (int)syscall(SYS_gettid);
+}
+
+void assign_to_core(int core_id)
+{
+	cpu_set_t mask;
+
+	CPU_ZERO(&mask);
+	CPU_SET(core_id, &mask);
+	sched_setaffinity(0, sizeof(mask), &mask);
+}
+
 int main(int argc, char **argv)
 {
 	/* avoid giving to app the eal arguments ; hardcode them here */
 	const char* const eal_argv[] = { "dummy", "--vdev=bbdev_la93xx", "-c", "0xF", "-n", "1" };
+	char syscmd[100] = { 0 };
 	int eal_argc = 6;
-
+	int tid;
 	int ret;
 
 	/* catch SIGINT/SIGTERM signals - free the resources */
@@ -491,6 +587,19 @@ int main(int argc, char **argv)
 
 	/* set RTE log level */
 	rte_log_set_global_level(rte_log_level);
+
+	/* assign to core */
+	if (cpu_id > 0)
+		assign_to_core(cpu_id);
+
+	/* raise app priority to RT */
+	sched_setscheduler(0, SCHED_FIFO, &param_new);
+
+	/* chrt */
+	tid = rte_sys_get_tid();
+	sprintf(syscmd, "chrt -p %d %d", APP_SCHED_PRIORITY,tid);
+	if (system(syscmd) < 0)
+		printf("error setting chrt prio\n");
 
 	/* warning due to hardcoding of EAL params */
 #pragma GCC diagnostic push
