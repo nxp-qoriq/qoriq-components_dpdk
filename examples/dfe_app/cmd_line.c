@@ -345,6 +345,24 @@ cmd_tdd_time_offset_parsed(void *parsed_result,
 	cmd_do_config_time_offset(res->to);
 }
 
+void
+cmd_tdd_sfn_slot_parsed(void *parsed_result,
+			   __attribute__((unused)) struct cmdline *cl,
+			   __attribute__((unused)) void *data)
+{
+	struct cmd_tdd_sfn_slot_result *res = parsed_result;
+	enum cmd_tdd_sfn_slot_action cmd_action = CLI_TDD_CONFIG_SFN_SLOT_SET;
+
+	printf("res->action = %s\n", res->action);
+	printf("res->sfn = %d\n", res->sfn);
+	printf("res->slot = %d\n", res->slot);
+
+	if (!strcmp(res->action, "delta"))
+		cmd_action = CLI_TDD_CONFIG_SFN_SLOT_DELTA;
+
+	cmd_do_config_sfn_slot(cmd_action, res->sfn, res->slot);
+}
+
 #if 0 /* future */
 void
 cmd_cell_search_parsed(void *parsed_result,
