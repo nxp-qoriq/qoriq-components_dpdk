@@ -28,7 +28,7 @@
 #include "ipc.h"
 #include "tti.h"
 
-#define APP_VERSION       "0.4-bsp-post-0.3.1"
+#define APP_VERSION       "0.4.1"
 
 int cpu_id = 0;
 int log_level = APP_DBG_LOG_ERROR;
@@ -81,7 +81,7 @@ static void print_help(char *s)
 		"\tShow this help\n", s);
 	printf("%s -v\n"
 		"\tShow version\n", s);
-	printf("%s [-l <app_log_level>] [-r <rte_log_level>] [-c <command to execute >]\n", s);
+	printf("%s [-l <app_log_level>] [-r <rte_log_level>] [-c <command to execute >] [-i <core assignmnent>]\n\n\n", s);
 
 	printf("When '-c' option is used, below is a list of available commands:\n"
 		COMMAND_LIST
@@ -414,6 +414,7 @@ void cmd_do_config_ul_ta(uint32_t ta)
 		app_print_err("Failed to send IPC message\n");
 }
 
+/* time offset correction command */
 void cmd_do_config_time_offset(uint32_t time_offset)
 {
 	struct dfe_msg *msg;
@@ -427,6 +428,30 @@ void cmd_do_config_time_offset(uint32_t time_offset)
 
 	msg->type = DFE_TDD_TIME_OFFSET_CORR;
 	msg->payload[0] = time_offset;
+
+	/* user wants his answer */
+	wait_response = 1;
+
+	ret = send_dfe_command(msg);
+	if (ret < 0)
+		app_print_err("Failed to send IPC message\n");
+}
+
+/* sfn-slot set command */
+void cmd_do_config_sfn_slot(enum cmd_tdd_sfn_slot_action cmd_action, int32_t sfn, int32_t slot)
+{
+	struct dfe_msg *msg;
+	int ret;
+
+	app_print_info("Send SFN-SLOT command (action=%d sfn=%d slot=%d)\n", cmd_action, sfn, slot);
+
+	msg = (struct dfe_msg *)get_tx_buf(BBDEV_IPC_H2M_QUEUE);
+	if (!msg)
+		return;
+
+	msg->type = (cmd_action == CLI_TDD_CONFIG_SFN_SLOT_DELTA) ? DFE_TDD_SFN_SLOT_DELTA : DFE_TDD_SFN_SLOT_SET ;
+	msg->payload[0] = sfn;
+	msg->payload[1] = slot;
 
 	/* user wants his answer */
 	wait_response = 1;

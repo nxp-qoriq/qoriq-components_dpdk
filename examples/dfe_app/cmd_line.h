@@ -30,6 +30,11 @@
 	"\ttdd_tti start/stop\n" \
 	"\ttdd config pattern <D/U>[start_sym:stop_sym],S[start_sym_dl:stop_sym_dl:start_sym_ul:stop_sym_ul],G,...\n" \
 	"\ttdd config pattern_fr1fr2 <dl_slots,dl_syms,ul_slots,ul_syms,g_after_d,g_after_u> ...\n" \
+	"\ttdd time-offset <value>\n" \
+	"\ttdd config ul-time-advance <value>\n" \
+	"\ttdd config tick keep-alive <0/1>\n" \
+	"\ttdd sfn-slot set <sfn> <slot>\n" \
+	"\ttdd sfn-slot delta <sfn_diff> <slot_diff>\n" \
 	"\tconfig scs <scs>\n" \
 	"\tconfig symbol_size <sym_size/128>\n" \
 	"\tconfig rx ant <1-4>\n" \
@@ -75,6 +80,8 @@ extern void cmd_tdd_config_tick_parsed(void *parsed_result, struct cmdline *cl, 
 extern void cmd_tdd_config_pattern_fr1fr2_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_config_ul_ta_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_time_offset_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_tdd_sfn_slot_parsed(void *parsed_result, struct cmdline *cl, void *data);
+
 #if 0
 extern void cmd_cell_search_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_cell_attach_parsed(void *parsed_result, struct cmdline *cl, void *data);
@@ -900,6 +907,44 @@ static cmdline_parse_inst_t cmd_tdd_time_offset = {
 	}
 };
 
+struct cmd_tdd_sfn_slot_result {
+	cmdline_fixed_string_t tdd;
+	cmdline_fixed_string_t sfn_slot;
+	cmdline_fixed_string_t action;
+	int32_t sfn;
+	int32_t slot;
+};
+
+enum cmd_tdd_sfn_slot_action {
+	CLI_TDD_CONFIG_SFN_SLOT_SET,
+	CLI_TDD_CONFIG_SFN_SLOT_DELTA,
+};
+
+static cmdline_parse_token_string_t cmd_tdd_sfn_slot_tdd_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_sfn_slot_result, tdd, "tdd");
+static cmdline_parse_token_string_t cmd_tdd_sfn_slot_sfn_slot_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_sfn_slot_result, sfn_slot, "sfn-slot");
+static cmdline_parse_token_string_t cmd_tdd_sfn_slot_action_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_tdd_sfn_slot_result, action, "set#delta");
+static cmdline_parse_token_num_t cmd_tdd_sfn_slot_sfn_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_tdd_sfn_slot_result, sfn, RTE_INT32);
+static cmdline_parse_token_num_t cmd_tdd_sfn_slot_slot_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_tdd_sfn_slot_result, slot, RTE_INT32);
+
+static cmdline_parse_inst_t cmd_tdd_sfn_slot = {
+	.f = cmd_tdd_sfn_slot_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_tdd_sfn_slot_tdd_tok,
+		(void *)&cmd_tdd_sfn_slot_sfn_slot_tok,
+		(void *)&cmd_tdd_sfn_slot_action_tok,
+		(void *)&cmd_tdd_sfn_slot_sfn_tok,
+		(void *)&cmd_tdd_sfn_slot_slot_tok,
+		NULL,
+	}
+};
+
 #if 0 /* future */
 struct cmd_cell_search_result {
 	cmdline_fixed_string_t cell ;
@@ -1028,6 +1073,7 @@ static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_tdd_config_tick,
 	&cmd_tdd_config_ta,
 	&cmd_tdd_time_offset,
+	&cmd_tdd_sfn_slot,
 #if 0 /* future */
 	&cmd_cell_search,
 	&cmd_cell_attach,
