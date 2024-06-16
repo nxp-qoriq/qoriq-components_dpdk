@@ -14,6 +14,7 @@ all_examples = [
         'bond',
 	'cmdif',
         'cmdline',
+        'dfe_app',
         'distributor',
         'dma',
         'ethtool',
