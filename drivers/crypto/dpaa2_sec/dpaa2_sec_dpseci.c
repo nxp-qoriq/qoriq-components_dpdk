@@ -1913,7 +1913,7 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 		}
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
-	dq_storage = dpaa2_qp->rx_vq.q_storage->dq_storage[0];
+	dq_storage = dpaa2_qp->rx_vq.q_storage[0]->dq_storage[0];
 
 	qbman_pull_desc_clear(&pulldesc);
 	qbman_pull_desc_set_numframes(&pulldesc,
@@ -2004,10 +2004,7 @@ dpaa2_sec_queue_pair_release(struct rte_cryptodev *dev, uint16_t queue_pair_id)
 
 	PMD_INIT_FUNC_TRACE();
 
-	if (qp->rx_vq.q_storage) {
-		dpaa2_free_dq_storage(qp->rx_vq.q_storage);
-		rte_free(qp->rx_vq.q_storage);
-	}
+	dpaa2_queue_storage_free(&qp->rx_vq, 1);
 	rte_mempool_free(qp->fle_pool);
 	rte_free(qp);
 
@@ -2027,7 +2024,7 @@ dpaa2_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 	struct fsl_mc_io *dpseci = (struct fsl_mc_io *)priv->hw;
 	struct dpseci_rx_queue_cfg cfg;
 	int32_t retcode;
-	char str[30];
+	char str[RTE_MEMZONE_NAMESIZE];
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -2041,7 +2038,7 @@ dpaa2_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 		DPAA2_SEC_ERR("Minimum supported nb_descriptors %d,"
 			      " but given %d\n", (2 * FLE_POOL_CACHE_SIZE),
 			      qp_conf->nb_descriptors);
-		return -1;
+		return -EINVAL;
 	}
 
 	DPAA2_SEC_DEBUG("dev =%p, queue =%d, conf =%p",
@@ -2058,18 +2055,10 @@ dpaa2_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 
 	qp->rx_vq.crypto_data = dev->data;
 	qp->tx_vq.crypto_data = dev->data;
-	qp->rx_vq.q_storage = rte_malloc("sec dq storage",
-		sizeof(struct queue_storage_info_t),
-		RTE_CACHE_LINE_SIZE);
-	if (!qp->rx_vq.q_storage) {
-		DPAA2_SEC_ERR("malloc failed for q_storage");
-		return -ENOMEM;
-	}
-	memset(qp->rx_vq.q_storage, 0, sizeof(struct queue_storage_info_t));
-
-	if (dpaa2_alloc_dq_storage(qp->rx_vq.q_storage)) {
-		DPAA2_SEC_ERR("Unable to allocate dequeue storage");
-		return -ENOMEM;
+	retcode = dpaa2_queue_storage_alloc((&qp->rx_vq), 1);
+	if (retcode) {
+		dpaa2_queue_storage_free((&qp->rx_vq), 1);
+		return retcode;
 	}
 
 	dev->data->queue_pairs[qp_id] = qp;
@@ -2087,8 +2076,7 @@ dpaa2_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 		return -ENOMEM;
 	}
 
-	cfg.options = cfg.options | DPSECI_QUEUE_OPT_USER_CTX;
-	cfg.user_ctx = (size_t)(&qp->rx_vq);
+	cfg.dest_cfg.dest_type = DPSECI_DEST_NONE;
 	retcode = dpseci_set_rx_queue(dpseci, CMD_PRI_LOW, priv->token,
 				      qp_id, &cfg);
 	return retcode;
@@ -3102,14 +3090,19 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 	struct alginfo authdata, cipherdata;
 	int bufsize;
 	struct sec_flow_context *flc;
+	uint64_t flc_iova;
 	int ret = -1;
 
 	PMD_INIT_FUNC_TRACE();
 
-	priv = (struct ctxt_priv *)rte_zmalloc(NULL,
-				sizeof(struct ctxt_priv) +
-				sizeof(struct sec_flc_desc),
-				RTE_CACHE_LINE_SIZE);
+	RTE_SET_USED(dev);
+
+	/** Make FLC address to align with stashing, low 6 bits are used
+	 * control stashing.
+	 */
+	priv = rte_zmalloc(NULL, sizeof(struct ctxt_priv) +
+		sizeof(struct sec_flc_desc),
+		DPAA2_STASHING_ALIGN_SIZE);
 
 	if (priv == NULL) {
 		DPAA2_SEC_ERR("No memory for priv CTXT");
@@ -3119,10 +3112,12 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 	flc = &priv->flc_desc[0].flc;
 
 	if (ipsec_xform->life.bytes_hard_limit != 0 ||
-	    ipsec_xform->life.bytes_soft_limit != 0 ||
-	    ipsec_xform->life.packets_hard_limit != 0 ||
-	    ipsec_xform->life.packets_soft_limit != 0)
+		ipsec_xform->life.bytes_soft_limit != 0 ||
+		ipsec_xform->life.packets_hard_limit != 0 ||
+		ipsec_xform->life.packets_soft_limit != 0) {
+		rte_free(priv);
 		return -ENOTSUP;
+	}
 
 	memset(session, 0, sizeof(dpaa2_sec_session));
 
@@ -3346,24 +3341,26 @@ dpaa2_sec_set_ipsec_session(struct rte_cryptodev *dev,
 				1, 0, (rta_sec_era >= RTA_SEC_ERA_10) ?
 				SHR_WAIT : SHR_SERIAL,
 				&decap_pdb, &cipherdata, &authdata);
-	} else
+	} else {
+		ret = -EINVAL;
 		goto out;
+	}
 
 	if (bufsize < 0) {
+		ret = -EINVAL;
 		DPAA2_SEC_ERR("Crypto: Invalid SEC-DESC buffer length");
 		goto out;
 	}
 
 	flc->word1_sdl = (uint8_t)bufsize;
 
-	/* Enable the stashing control bit */
+	flc_iova = DPAA2_VADDR_TO_IOVA(flc);
+	/* Enable the stashing control bit and data stashing only.*/
 	DPAA2_SET_FLC_RSC(flc);
-	flc->word2_rflc_31_0 = lower_32_bits(
-			(size_t)&(((struct dpaa2_sec_qp *)
-			dev->data->queue_pairs[0])->rx_vq) | 0x14);
-	flc->word3_rflc_63_32 = upper_32_bits(
-			(size_t)&(((struct dpaa2_sec_qp *)
-			dev->data->queue_pairs[0])->rx_vq));
+	dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 1,
+		&flc_iova);
+	flc->word2_rflc_31_0 = lower_32_bits(flc_iova);
+	flc->word3_rflc_63_32 = upper_32_bits(flc_iova);
 
 	/* Set EWS bit i.e. enable write-safe */
 	DPAA2_SET_FLC_EWS(flc);
@@ -3397,6 +3394,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 	struct alginfo *p_authdata = NULL;
 	int bufsize = -1;
 	struct sec_flow_context *flc;
+	uint64_t flc_iova;
 #if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
 	int swap = true;
 #else
@@ -3404,6 +3402,8 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 #endif
 
 	PMD_INIT_FUNC_TRACE();
+
+	RTE_SET_USED(dev);
 
 	memset(session, 0, sizeof(dpaa2_sec_session));
 
@@ -3436,6 +3436,7 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 		}
 	} else {
 		DPAA2_SEC_ERR("Invalid crypto type");
+		rte_free(priv);
 		return -EINVAL;
 	}
 
@@ -3642,14 +3643,13 @@ dpaa2_sec_set_pdcp_session(struct rte_cryptodev *dev,
 		goto out;
 	}
 
-	/* Enable the stashing control bit */
+	flc_iova = DPAA2_VADDR_TO_IOVA(flc);
+	/* Enable the stashing control bit and data stashing only.*/
 	DPAA2_SET_FLC_RSC(flc);
-	flc->word2_rflc_31_0 = lower_32_bits(
-			(size_t)&(((struct dpaa2_sec_qp *)
-			dev->data->queue_pairs[0])->rx_vq) | 0x14);
-	flc->word3_rflc_63_32 = upper_32_bits(
-			(size_t)&(((struct dpaa2_sec_qp *)
-			dev->data->queue_pairs[0])->rx_vq));
+	dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 1,
+		&flc_iova);
+	flc->word2_rflc_31_0 = lower_32_bits(flc_iova);
+	flc->word3_rflc_63_32 = upper_32_bits(flc_iova);
 
 	flc->word1_sdl = (uint8_t)bufsize;
 
@@ -4164,7 +4164,7 @@ dpaa2_sec_eventq_attach(const struct rte_cryptodev *dev,
 	cfg.dest_cfg.priority = priority;
 
 	cfg.options |= DPSECI_QUEUE_OPT_USER_CTX;
-	cfg.user_ctx = (size_t)(qp);
+	cfg.user_ctx = (size_t)(&qp->rx_vq);
 	if (event->sched_type == RTE_SCHED_TYPE_ATOMIC) {
 		cfg.options |= DPSECI_QUEUE_OPT_ORDER_PRESERVATION;
 		cfg.order_preservation_en = 1;

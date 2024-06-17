@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2021,2023 NXP
+ * Copyright 2020-2021,2023-2024 NXP
  */
 
 #include <stdlib.h>
@@ -2819,7 +2819,7 @@ setup_la12xx_dev(struct rte_bbdev *dev)
 err:
 	rte_free(hp);
 	rte_free(ipc_priv_ch);
-	if (dev_mem)
+	if (dev_mem >= 0)
 		close(dev_mem);
 	if (dev_ipc >= 0)
 		close(dev_ipc);
@@ -3119,6 +3119,9 @@ la12xx_bbdev_probe(struct rte_vdev_device *vdev)
 
 	PMD_INIT_FUNC_TRACE();
 
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
+
 	if (vdev == NULL)
 		return -EINVAL;
 
@@ -3140,6 +3143,9 @@ la12xx_bbdev_remove(struct rte_vdev_device *vdev)
 	const char *name;
 
 	PMD_INIT_FUNC_TRACE();
+
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
 
 	if (vdev == NULL)
 		return -EINVAL;

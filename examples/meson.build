@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2017-2019 Intel Corporation
-# Copyright 2022-2023 NXP
+# Copyright 2022-2024 NXP
 
 link_whole_libs = []
 if get_option('default_library') == 'static'
@@ -14,8 +14,11 @@ all_examples = [
         'bond',
 	'cmdif',
         'cmdline',
+        'dfe_app',
         'distributor',
         'dma',
+        'geul_ipc_benchmark',
+        'geul_ipc_testapp',
         'ethtool',
         'eventdev_pipeline',
         'fips_validation',
@@ -37,6 +40,7 @@ all_examples = [
         'l2fwd-event',
         'l2fwd-jobstats',
         'l2fwd-keepalive',
+        'l2fwd-policer',
         'l3fwd',
         'l3fwd-graph',
         'l3fwd-power',

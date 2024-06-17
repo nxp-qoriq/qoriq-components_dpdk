@@ -33,6 +33,26 @@ dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
 
 static void enable_tx_tstamp(struct qbman_fd *fd) __rte_unused;
 
+static inline void
+dpaa2_parse_result_offset(struct rte_mbuf *mbuf,
+	const struct dpaa2_annot_hdr *annotation)
+{
+	uint64_t word6;
+	struct dpaa2_psr_result_word6 *decoded;
+	struct dpaa2_dyn_rx_protocol_pos *pos;
+
+	if (dpaa2_rx_protocol_pos_mbuf_offset < 0)
+		return;
+
+	pos = (void *)((uint8_t *)mbuf + dpaa2_rx_protocol_pos_mbuf_offset);
+
+	word6 = rte_cpu_to_be_64(annotation->word6);
+	decoded = (void *)&word6;
+	pos->l3_offset = decoded->l3_off;
+	pos->l4_offset = decoded->l4_off;
+	pos->l5_offset = decoded->l5_off;
+}
+
 static inline rte_mbuf_timestamp_t *
 dpaa2_timestamp_dynfield(struct rte_mbuf *mbuf)
 {
@@ -50,13 +70,20 @@ dpaa2_timestamp_dynfield(struct rte_mbuf *mbuf)
 	DPAA2_RESET_FD_FLC(_fd);		\
 } while (0)
 
-static inline void __rte_hot
+void __rte_hot
 dpaa2_dev_rx_parse_new(struct rte_mbuf *m, const struct qbman_fd *fd,
 		       void *hw_annot_addr)
 {
 	uint16_t frc = DPAA2_GET_FD_FRC_PARSE_SUM(fd);
 	struct dpaa2_annot_hdr *annotation = hw_annot_addr;
 	uint32_t flc_lo, tc, flow;
+
+#if defined(RTE_LIBRTE_IEEE1588)
+	if (BIT_ISSET_AT_POS(annotation->word1, DPAA2_ETH_FAS_PTP)) {
+		m->ol_flags |= RTE_MBUF_F_RX_IEEE1588_PTP;
+		m->ol_flags |= RTE_MBUF_F_RX_IEEE1588_TMST;
+	}
+#endif
 
 	if (unlikely(dpaa2_print_parser_result)) {
 		dpaa2_print_fd_frc(fd);
@@ -248,7 +275,7 @@ parse_done:
 	return pkt_type;
 }
 
-static inline uint32_t __rte_hot
+uint32_t __rte_hot
 dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 {
 	struct dpaa2_annot_hdr *annotation = hw_annot_addr;
@@ -295,6 +322,30 @@ dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 	return dpaa2_dev_rx_parse_slow(mbuf, annotation);
 }
 
+int
+rte_pmd_dpaa2_rx_get_offset(struct rte_mbuf *m,
+	uint8_t *l3_off, uint8_t *l4_off, uint8_t *l5_off)
+{
+	struct dpaa2_dyn_rx_protocol_pos *pos;
+
+	if (unlikely(dpaa2_rx_protocol_pos_mbuf_offset < 0)) {
+		DPAA2_PMD_ERR("%s: Not register for RX protocol pos.\n",
+			__func__);
+
+		return -EINVAL;
+	}
+	pos = (void *)((uint8_t *)m + dpaa2_rx_protocol_pos_mbuf_offset);
+
+	if (l3_off)
+		*l3_off = pos->l3_offset;
+	if (l4_off)
+		*l4_off = pos->l4_offset;
+	if (l5_off)
+		*l5_off = pos->l5_offset;
+
+	return 0;
+}
+
 static inline struct rte_mbuf *__rte_hot
 eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 		  int port_id)
@@ -307,6 +358,8 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 
 	fd_addr = (size_t)DPAA2_IOVA_TO_VADDR(DPAA2_GET_FD_ADDR(fd));
 	hw_annot_addr = (void *)(fd_addr + DPAA2_FD_PTA_SIZE);
+	if (dpaa2_rx_protocol_pos_mbuf_offset >= 0)
+		rte_prefetch0(hw_annot_addr);
 
 	/* Get Scatter gather table address */
 	sgt = (struct qbman_sge *)(fd_addr + DPAA2_GET_FD_OFFSET(fd));
@@ -331,6 +384,8 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 	else
 		first_seg->packet_type =
 			dpaa2_dev_rx_parse(first_seg, hw_annot_addr);
+
+	dpaa2_parse_result_offset(first_seg, hw_annot_addr);
 
 	rte_mbuf_refcnt_set(first_seg, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
@@ -369,7 +424,7 @@ eth_sg_fd_to_mbuf(const struct qbman_fd *fd,
 	return (void *)first_seg;
 }
 
-static inline struct rte_mbuf *__rte_hot
+struct rte_mbuf *__rte_hot
 eth_fd_to_mbuf(const struct qbman_fd *fd,
 	       int port_id)
 {
@@ -377,6 +432,9 @@ eth_fd_to_mbuf(const struct qbman_fd *fd,
 	void *hw_annot_addr = (void *)((size_t)v_addr + DPAA2_FD_PTA_SIZE);
 	struct rte_mbuf *mbuf = DPAA2_INLINE_MBUF_FROM_BUF(v_addr,
 		     rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size);
+
+	if (dpaa2_rx_protocol_pos_mbuf_offset >= 0)
+		rte_prefetch0(hw_annot_addr);
 
 	/* need to repopulated some of the fields,
 	 * as they may have changed in last transmission
@@ -388,6 +446,7 @@ eth_fd_to_mbuf(const struct qbman_fd *fd,
 	mbuf->pkt_len = mbuf->data_len;
 	mbuf->port = port_id;
 	mbuf->next = NULL;
+	mbuf->hash.sched.color = DPAA2_GET_FD_DROPP(fd);
 	rte_mbuf_refcnt_set(mbuf, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
 	rte_mempool_check_cookies(rte_mempool_from_obj((void *)mbuf),
@@ -404,6 +463,8 @@ eth_fd_to_mbuf(const struct qbman_fd *fd,
 		dpaa2_dev_rx_parse_new(mbuf, fd, hw_annot_addr);
 	else
 		mbuf->packet_type = dpaa2_dev_rx_parse(mbuf, hw_annot_addr);
+
+	dpaa2_parse_result_offset(mbuf, hw_annot_addr);
 
 	DPAA2_PMD_DP_DEBUG("to mbuf - mbuf =%p, mbuf->buf_addr =%p, off = %d,"
 		"fd_off=%d fd =%" PRIx64 ", meta = %d  bpid =%d, len=%d\n",
@@ -674,7 +735,7 @@ dump_err_pkts(struct dpaa2_queue *dpaa2_q)
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
 
-	dq_storage = dpaa2_q->q_storage[lcore_id].dq_storage[0];
+	dq_storage = dpaa2_q->q_storage[lcore_id]->dq_storage[0];
 	qbman_pull_desc_clear(&pulldesc);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
@@ -769,7 +830,7 @@ uint16_t
 dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 {
 	/* Function receive frames for a given device and VQ*/
-	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)queue;
+	struct dpaa2_queue *dpaa2_q = queue;
 	struct qbman_result *dq_storage, *dq_storage1 = NULL;
 	uint32_t fqid = dpaa2_q->fqid;
 	int ret, num_rx = 0, pull_size;
@@ -777,10 +838,11 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	struct qbman_swp *swp;
 	const struct qbman_fd *fd;
 	struct qbman_pull_desc pulldesc;
-	struct queue_storage_info_t *q_storage =
-			dpaa2_q->per_core_q_storage[rte_lcore_id()];
+	struct queue_storage_info_t *q_storage;
 	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
 	struct dpaa2_dev_priv *priv = eth_data->dev_private;
+
+	q_storage = dpaa2_q->q_storage[rte_lcore_id()];
 
 	if (unlikely(dpaa2_enable_err_queue))
 		dump_err_pkts(priv->rx_err_vq);
@@ -996,7 +1058,7 @@ uint16_t
 dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 {
 	/* Function receive frames for a given device and VQ */
-	struct dpaa2_queue *dpaa2_q = (struct dpaa2_queue *)queue;
+	struct dpaa2_queue *dpaa2_q = queue;
 	struct qbman_result *dq_storage;
 	uint32_t fqid = dpaa2_q->fqid;
 	int ret, num_rx = 0, next_pull = nb_pkts, num_pulled;
@@ -1022,7 +1084,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	swp = DPAA2_PER_LCORE_PORTAL;
 
 	do {
-		dq_storage = dpaa2_q->q_storage->dq_storage[0];
+		dq_storage = dpaa2_q->q_storage[0]->dq_storage[0];
 		qbman_pull_desc_clear(&pulldesc);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
@@ -1141,7 +1203,7 @@ uint16_t dpaa2_dev_tx_conf(void *queue)
 	swp = DPAA2_PER_LCORE_PORTAL;
 
 	do {
-		dq_storage = dpaa2_q->q_storage->dq_storage[0];
+		dq_storage = dpaa2_q->q_storage[0]->dq_storage[0];
 		qbman_pull_desc_clear(&pulldesc);
 		qbman_pull_desc_set_fq(&pulldesc, fqid);
 		qbman_pull_desc_set_storage(&pulldesc, dq_storage,
@@ -1253,7 +1315,7 @@ dpaa2_dev_prefetch_tx_conf_dynamic(void *queue)
 #endif
 	#define swp_idx (DPAA2_PER_LCORE_ETHRX_DPIO->index)
 
-	q_storage = dpaa2_q->per_core_q_storage[rte_lcore_id()];
+	q_storage = dpaa2_q->q_storage[rte_lcore_id()];
 	if (unlikely(!DPAA2_PER_LCORE_ETHRX_DPIO)) {
 		ret = dpaa2_affine_qbman_ethrx_swp();
 		if (ret) {
@@ -1449,7 +1511,7 @@ dpaa2_dev_tx_conf_dynamic(void *queue)
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
 
-	dq_storage = dpaa2_q->q_storage->dq_storage[0];
+	dq_storage = dpaa2_q->q_storage[0]->dq_storage[0];
 	qbman_pull_desc_clear(&pulldesc);
 	qbman_pull_desc_set_fq(&pulldesc, fqid);
 	qbman_pull_desc_set_storage(&pulldesc, dq_storage,
@@ -2569,13 +2631,13 @@ dpaa2_dev_loopback_rx(void *queue,
 	struct qbman_fd *fd[DPAA2_LX2_DQRR_RING_SIZE];
 	struct qbman_pull_desc pulldesc;
 	struct qbman_eq_desc eqdesc;
-	struct queue_storage_info_t *q_storage =
-			dpaa2_q->per_core_q_storage[rte_lcore_id()];
+	struct queue_storage_info_t *q_storage;
 	struct rte_eth_dev_data *eth_data = dpaa2_q->eth_data;
 	struct dpaa2_dev_priv *priv = eth_data->dev_private;
 	struct dpaa2_queue *tx_q = priv->tx_vq[0];
 	/* todo - currently we are using 1st TX queue only for loopback*/
 
+	q_storage = dpaa2_q->q_storage[rte_lcore_id()];
 	if (unlikely(!DPAA2_PER_LCORE_ETHRX_DPIO)) {
 		ret = dpaa2_affine_qbman_ethrx_swp();
 		if (ret) {

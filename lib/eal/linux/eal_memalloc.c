@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2017-2018 Intel Corporation
+ * Copyright 2024 NXP
  */
 
 #include <errno.h>
@@ -1150,6 +1151,18 @@ eal_memalloc_free_seg(struct rte_memseg *ms)
 		return -1;
 
 	return eal_memalloc_free_seg_bulk(&ms, 1);
+}
+
+struct rte_memseg *
+rte_eal_memalloc_alloc_seg(size_t page_sz, int socket)
+{
+	return eal_memalloc_alloc_seg(page_sz, socket);
+}
+
+int
+rte_eal_memalloc_free_seg(struct rte_memseg *ms)
+{
+	return eal_memalloc_free_seg(ms);
 }
 
 static int

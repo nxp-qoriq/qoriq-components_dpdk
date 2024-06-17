@@ -182,44 +182,18 @@ extern bool dpaa2_print_parser_result;
 
 extern int dpaa2_tx_cnf_fd_overflow;
 
-/* 00 00 00 - last 6 bit represent data, annotation,
- * context stashing setting 01 01 00 (0x14)
- * (in following order ->DS AS CS)
- * to enable 1 line data, 1 line annotation.
- * For LX2, this setting should be 01 00 00 (0x10)
- */
-#define DPAA2_FLC_STASHING_MAX_BIT_SIZE 2
-#define DPAA2_FLC_STASHING_MAX_CACHE_LINE \
-	((1ULL << DPAA2_FLC_STASHING_MAX_BIT_SIZE) - 1)
+extern int dpaa2_rx_protocol_pos_mbuf_offset;
 
-enum dpaa2_flc_stashing_type {
-	DPAA2_FLC_CNTX_STASHING = 0,
-	DPAA2_FLC_ANNO_STASHING =
-		DPAA2_FLC_CNTX_STASHING + DPAA2_FLC_STASHING_MAX_BIT_SIZE,
-	DPAA2_FLC_DATA_STASHING =
-		DPAA2_FLC_ANNO_STASHING + DPAA2_FLC_STASHING_MAX_BIT_SIZE
+struct dpaa2_dyn_rx_protocol_pos {
+	uint8_t l3_offset;
+	uint8_t l4_offset;
+	uint8_t l5_offset;
+	uint8_t rsv;
 };
 
-static inline void
-dpaa2_flc_stashing_set(enum dpaa2_flc_stashing_type type,
-	uint8_t cache_line, uint64_t *flc)
-{
-	RTE_ASSERT(cache_line <= DPAA2_FLC_STASHING_MAX_CACHE_LINE);
-	RTE_ASSERT(type == DPAA2_FLC_CNTX_STASHING ||
-		type == DPAA2_FLC_ANNO_STASHING ||
-		type == DPAA2_FLC_DATA_STASHING);
-
-	(*flc) &= ~(DPAA2_FLC_STASHING_MAX_CACHE_LINE << type);
-	(*flc) |= (cache_line << type);
-}
-
-static inline void
-dpaa2_flc_stashing_clear_all(uint64_t *flc)
-{
-	dpaa2_flc_stashing_set(DPAA2_FLC_CNTX_STASHING, 0, flc);
-	dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING, 0, flc);
-	dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 0, flc);
-}
+#define L3_OFFSET_OF_MBUF_DYN 0
+#define L4_OFFSET_OF_MBUF_DYN 1
+#define L5_OFFSET_OF_MBUF_DYN 2
 
 #define DPAA2_FS_FLC_FS_MARK_OFFSET \
 	(DPAA2_FLC_DATA_STASHING + DPAA2_FLC_STASHING_MAX_BIT_SIZE)
@@ -377,6 +351,9 @@ struct dpaa2_dev_priv {
 	rte_spinlock_t lpbk_qp_lock;
 
 	uint8_t channel_inuse;
+	/* Stores correction offset for one step timestamping */
+	uint16_t ptp_correction_offset;
+
 	struct dpaa2_dev_flow *curr;
 	LIST_HEAD(, dpaa2_dev_flow) flows;
 	LIST_HEAD(nodes, dpaa2_tm_node) nodes;
@@ -587,5 +564,29 @@ rte_pmd_dpaa2_dev_recycle_qp_setup(struct rte_dpaa2_device *dpaa2_dev,
 	eth_tx_burst_t tx_lpbk, eth_rx_burst_t rx_lpbk,
 	struct dpaa2_queue **txq,
 	struct dpaa2_queue **rxq);
+
+struct rte_mbuf *__rte_hot
+eth_fd_to_mbuf(const struct qbman_fd *fd, int port_id);
+
+void __rte_hot
+dpaa2_dev_rx_parse_new(struct rte_mbuf *m,
+			const struct qbman_fd *fd,
+			void *hw_annot_addr);
+uint32_t __rte_hot
+dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr);
+
+/* DPCON prototypes */
+int32_t
+dpaa2_dpcon_start(struct dpaa2_dpcon_dev *dpcon_dev);
+int32_t
+dpaa2_dpcon_stop(struct dpaa2_dpcon_dev *dpcon_dev);
+void
+dpaa2_free_dpcon_dev(struct dpaa2_dpcon_dev *dpcon_dev);
+int
+dpaa2_dpcon_recv(struct dpaa2_dpcon_dev *dpcon_dev,
+		 struct rte_mbuf **mbuf,
+		 uint16_t nb_pkts);
+struct
+dpaa2_dpcon_dev *dpaa2_alloc_dpcon_dev(void);
 
 #endif /* _DPAA2_ETHDEV_H */

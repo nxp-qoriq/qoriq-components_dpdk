@@ -300,7 +300,7 @@ la93xx_start(struct rte_bbdev *dev)
 	}
 
 	if (retries <= 0) {
-		BBDEV_LA93XX_PMD_DP_DEBUG("Timeout waiting for IPC handshakne");
+		BBDEV_LA93XX_PMD_DEBUG("Timeout waiting for IPC handshake");
 		return -1;
 	}
 	return 0;
@@ -665,40 +665,17 @@ get_hugepage_info(struct rte_bbdev *dev)
 	return hp_info;
 }
 
-static int open_ipc_dev(int modem_id)
+static int open_ipc_dev(int modem_id __rte_unused)
 {
-	char dev_initials[32], dev_path[PATH_MAX];
-	struct dirent *entry;
-	int dev_ipc = 0, ret;
-	DIR *dir;
+	char dev_path[PATH_MAX];
+	int dev_ipc = 0;
 
-	dir = opendir("/dev/");
-	if (!dir) {
-		BBDEV_LA93XX_PMD_ERR("Unable to open /dev/");
-		return -1;
-	}
+	sprintf(dev_path, "/dev/%s%s",
+		 LA9310_DEV_NAME_PREFIX, LA9310_IPC_DEVNAME_PREFIX);
 
-	sprintf(dev_initials, "la9310ipcnlm%d", modem_id);
-
-	while ((entry = readdir(dir)) != NULL) {
-		if (!strncmp(dev_initials, entry->d_name,
-		    sizeof(dev_initials) - 1))
-			break;
-	}
-
-	if (!entry) {
-		BBDEV_LA93XX_PMD_ERR("Error: No la9310ipcnlm%d device",
-			modem_id);
-		return -1;
-	}
-
-	sprintf(dev_path, "/dev/%s", entry->d_name);
 	dev_ipc = open(dev_path, O_RDWR);
 	if (dev_ipc  < 0) {
 		BBDEV_LA93XX_PMD_ERR("Error: Cannot open %s", dev_path);
-		ret = closedir(dir);
-		if (ret == -1)
-			BBDEV_LA93XX_PMD_ERR("Unable to close /dev/");
 		return -errno;
 	}
 
@@ -1223,6 +1200,9 @@ la93xx_bbdev_probe(struct rte_vdev_device *vdev)
 
 	PMD_INIT_FUNC_TRACE();
 
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
+
 	if (vdev == NULL)
 		return -EINVAL;
 
@@ -1244,6 +1224,9 @@ la93xx_bbdev_remove(struct rte_vdev_device *vdev)
 	const char *name;
 
 	PMD_INIT_FUNC_TRACE();
+
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
 
 	if (vdev == NULL)
 		return -EINVAL;

@@ -84,6 +84,16 @@
 #define DPAA2_INVALID_FLOW_ID 0xffff
 #define DPAA2_INVALID_CGID 0xff
 
+#define SEC_FLC_DHR_OUTBOUND	(-114)
+#define SEC_FLC_DHR_INBOUND	0
+
+/** Consider aligning with 8 bytes to multiply point size with 2.*/
+#define DPAA2_SEC_SIMPLE_FD_OB_MIN \
+	((-SEC_FLC_DHR_OUTBOUND) + sizeof(void *) * 2)
+
+#define DPAA2_SEC_SIMPLE_FD_IB_MIN \
+	((-SEC_FLC_DHR_INBOUND) + sizeof(void *) * 2)
+
 struct dpaa2_queue;
 
 struct eqresp_metadata {
@@ -168,8 +178,9 @@ struct dpaa2_queue {
 	uint64_t tx_pkts;
 	uint64_t err_pkts;
 	union {
-		struct queue_storage_info_t *q_storage;
-		struct queue_storage_info_t *per_core_q_storage[RTE_MAX_LCORE];
+		/**Ingress*/
+		struct queue_storage_info_t *q_storage[RTE_MAX_LCORE];
+		/**Egress*/
 		struct qbman_result *cscn;
 	};
 	struct rte_event ev;
@@ -191,6 +202,38 @@ struct swp_active_dqs {
 	struct qbman_result *global_active_dqs;
 	uint64_t reserved[7];
 };
+
+#define dpaa2_queue_storage_alloc(q, num) \
+({ \
+	int ret = 0, i; \
+	\
+	for (i = 0; i < (num); i++) { \
+		(q)->q_storage[i] = rte_zmalloc(NULL, \
+			sizeof(struct queue_storage_info_t), \
+			RTE_CACHE_LINE_SIZE); \
+		if (!(q)->q_storage[i]) { \
+			ret = -ENOBUFS; \
+			break; \
+		} \
+		ret = dpaa2_alloc_dq_storage((q)->q_storage[i]); \
+		if (ret) \
+			break; \
+	} \
+	ret; \
+})
+
+#define dpaa2_queue_storage_free(q, num) \
+({ \
+	int i; \
+	\
+	for (i = 0; i < (num); i++) { \
+		if ((q)->q_storage[i]) { \
+			dpaa2_free_dq_storage((q)->q_storage[i]); \
+			rte_free((q)->q_storage[i]); \
+			(q)->q_storage[i] = NULL; \
+		} \
+	} \
+})
 
 #define NUM_MAX_SWP 64
 
@@ -331,6 +374,7 @@ enum qbman_fd_format {
 #define DPAA2_GET_FD_BPID(fd)	(((fd)->simple.bpid_offset & 0x00003FFF))
 #define DPAA2_GET_FD_IVP(fd)   (((fd)->simple.bpid_offset & 0x00004000) >> 14)
 #define DPAA2_GET_FD_OFFSET(fd)	(((fd)->simple.bpid_offset & 0x0FFF0000) >> 16)
+#define DPAA2_GET_FD_DROPP(fd)  (((fd)->simple.ctrl & 0x07000000) >> 24)
 #define DPAA2_GET_FD_FRC(fd)   ((fd)->simple.frc)
 #define DPAA2_GET_FD_FLC(fd) \
 	(((uint64_t)((fd)->simple.flc_hi) << 32) + (fd)->simple.flc_lo)
@@ -428,6 +472,49 @@ dpaa2_mem_va_to_iova_check(void *va, uint64_t size)
 	dpaa2_mem_va_to_iova_check(_vaddr, size)
 #define DPAA2_IOVA_TO_VADDR_AND_CHECK(_iova, size) \
 	rte_fslmc_cold_mem_iova_to_vaddr(_iova, size)
+
+/* 00 00 00 - last 6 bit represent data, annotation,
+ * context stashing setting 01 01 00 (0x14)
+ * (in following order ->DS AS CS)
+ * to enable 1 line data, 1 line annotation.
+ * For LX2, this setting should be 01 00 00 (0x10)
+ */
+#define DPAA2_FLC_STASHING_MAX_BIT_SIZE 2
+#define DPAA2_FLC_STASHING_MAX_CACHE_LINE \
+	((1ULL << DPAA2_FLC_STASHING_MAX_BIT_SIZE) - 1)
+
+enum dpaa2_flc_stashing_type {
+	DPAA2_FLC_CNTX_STASHING = 0,
+	DPAA2_FLC_ANNO_STASHING =
+		DPAA2_FLC_CNTX_STASHING + DPAA2_FLC_STASHING_MAX_BIT_SIZE,
+	DPAA2_FLC_DATA_STASHING =
+		DPAA2_FLC_ANNO_STASHING + DPAA2_FLC_STASHING_MAX_BIT_SIZE,
+	DPAA2_FLC_END_STASHING =
+		DPAA2_FLC_DATA_STASHING + DPAA2_FLC_STASHING_MAX_BIT_SIZE
+};
+
+#define DPAA2_STASHING_ALIGN_SIZE (1 << DPAA2_FLC_END_STASHING)
+
+static inline void
+dpaa2_flc_stashing_set(enum dpaa2_flc_stashing_type type,
+	uint8_t cache_line, uint64_t *flc)
+{
+	RTE_ASSERT(cache_line <= DPAA2_FLC_STASHING_MAX_CACHE_LINE);
+	RTE_ASSERT(type == DPAA2_FLC_CNTX_STASHING ||
+		type == DPAA2_FLC_ANNO_STASHING ||
+		type == DPAA2_FLC_DATA_STASHING);
+
+	(*flc) &= ~(DPAA2_FLC_STASHING_MAX_CACHE_LINE << type);
+	(*flc) |= (cache_line << type);
+}
+
+static inline void
+dpaa2_flc_stashing_clear_all(uint64_t *flc)
+{
+	dpaa2_flc_stashing_set(DPAA2_FLC_CNTX_STASHING, 0, flc);
+	dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING, 0, flc);
+	dpaa2_flc_stashing_set(DPAA2_FLC_DATA_STASHING, 0, flc);
+}
 
 static inline
 int check_swp_active_dqs(uint16_t dpio_index)

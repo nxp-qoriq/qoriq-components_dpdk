@@ -969,6 +969,16 @@ rte_remote_direct_traffic(enum rte_remote_dir_cfg cfg)
 
 				udp_hdr.hdr.dst_port = rte_cpu_to_be_16(cpu_16);
 				udp_mask.hdr.dst_port = 0xffff;
+			} else if (!strcmp("src", s_dir_req[i].fld)) {
+				if (!item->spec)
+					item->spec = &udp_hdr;
+				if (!item->mask)
+					item->mask = &udp_mask;
+
+				cpu_16 = s_dir_req[i].fld_val;
+
+				udp_hdr.hdr.src_port = rte_cpu_to_be_16(cpu_16);
+				udp_mask.hdr.src_port = 0xffff;
 			} else if (s_dir_req[i].fld[0]) {
 				RTE_LOG(ERR, remote_dir,
 					"Unsupported udp field(%s)\n",

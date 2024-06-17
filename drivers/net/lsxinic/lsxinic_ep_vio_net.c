@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2020-2023 NXP  */
+/* Copyright 2020-2024 NXP  */
 
 #include <time.h>
 #include <net/if.h>
@@ -66,7 +66,6 @@
 #include "lsxinic_ep_vio_net.h"
 #include "lsxinic_ep_vio_rxtx.h"
 #include "lsxinic_ep_dma.h"
-#include "lsxinic_ep_tool.h"
 #include "lsxinic_common_helper.h"
 
 #define EP2RC_RING_DMA_ERR(ring_type, notify) \
@@ -167,6 +166,8 @@ lsxvio_init_bar_addr(struct rte_lsx_pciep_device *lsx_dev,
 
 		return ret;
 	}
+	/**Always mark reg bar noncache.*/
+	rte_lsx_pciep_ib_cache_mark(lsx_dev, LSXVIO_CONFIG_BAR_IDX, 0);
 
 	size = LSXVIO_RING_BAR_MAX_SIZE;
 	while (mask && (size & mask))

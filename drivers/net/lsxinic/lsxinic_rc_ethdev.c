@@ -1252,18 +1252,12 @@ lxsnic_dev_stats_reset(struct rte_eth_dev *dev)
 			continue;
 		rx_queue->packets = 0;
 		rx_queue->bytes = 0;
-		tx_queue->errors = 0;
-		rx_queue->packets = 0;
-		tx_queue->bytes = 0;
 		rx_queue->errors = 0;
 	}
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		tx_queue = dev->data->tx_queues[i];
 		if (!tx_queue)
 			continue;
-		tx_queue->packets = 0;
-		tx_queue->bytes = 0;
-		tx_queue->errors = 0;
 		tx_queue->packets = 0;
 		tx_queue->bytes = 0;
 		tx_queue->errors = 0;
@@ -1632,7 +1626,7 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 		LXSNIC_DEV_PRIVATE_TO_HW(eth_dev->data->dev_private);
 	struct lsinic_dev_reg *ep_reg = NULL;
 	struct lsinic_rcs_reg *rcs_reg = NULL;
-	int8_t error = 0;
+	int error = 0, snoop;
 	const struct rte_memzone *rc_ring_mem = NULL;
 	char *penv;
 	struct rte_mem_resource *reg_mem_res;
@@ -1684,6 +1678,16 @@ eth_lsnic_dev_init(struct rte_eth_dev *eth_dev)
 		error = -EIO;
 		goto free_adapter;
 	}
+
+	snoop = lxsnic_br_of_dev_snoop(pci_dev);
+	if (snoop < 0) {
+		LSXINIC_PMD_ERR("Read snoop attr of bridge failed(%d)",
+			snoop);
+		error = snoop;
+		goto free_adapter;
+	}
+
+	LSINIC_WRITE_REG(&ep_reg->snoop, snoop);
 
 	LSXINIC_PMD_DBG("adapter->hw_addr = 0x%p", hw->hw_addr);
 

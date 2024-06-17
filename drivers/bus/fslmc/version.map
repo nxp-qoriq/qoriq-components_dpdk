@@ -44,6 +44,9 @@ INTERNAL {
 	dpcon_get_attributes;
 	dpcon_open;
 	dpcon_close;
+	dpcon_reset;
+	dpcon_enable;
+	dpcon_disable;
 	dpdmai_close;
 	dpdmai_disable;
 	dpdmai_enable;
@@ -87,6 +90,7 @@ INTERNAL {
 	qbman_pull_desc_clear;
 	qbman_pull_desc_set_fq;
 	qbman_pull_desc_set_numframes;
+	qbman_pull_desc_set_channel;
 	qbman_pull_desc_set_storage;
 	qbman_release_desc_clear;
 	qbman_release_desc_set_bpid;

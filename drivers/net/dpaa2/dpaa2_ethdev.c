@@ -38,6 +38,10 @@
 #define CHECK_INTERVAL         100  /* 100ms */
 #define MAX_REPEAT_TIME        90   /* 9s (90 * 100ms) in total */
 
+/* scheduler rfc magic number */
+#define POLICER_RFC_NUM         2698
+#define SHIFT_RESERVED_PRIORITY 16
+
 /* Supported Rx offloads */
 static uint64_t dev_rx_offloads_sup =
 		RTE_ETH_RX_OFFLOAD_CHECKSUM |
@@ -72,6 +76,13 @@ static uint64_t dev_tx_offloads_nodis =
 bool dpaa2_enable_ts[RTE_MAX_ETHPORTS];
 uint64_t dpaa2_timestamp_rx_dynflag;
 int dpaa2_timestamp_dynfield_offset = -1;
+int dpaa2_rx_protocol_pos_mbuf_offset = -1;
+
+static const struct rte_mbuf_dynfield s_dpaa2_rx_protocol_pos_dyn = {
+	.name = "dpaa2_rx_protocol_pos_dyn",
+	.size = sizeof(struct dpaa2_dyn_rx_protocol_pos),
+	.align = __alignof__(struct dpaa2_dyn_rx_protocol_pos),
+};
 
 /* Enable error queue */
 bool dpaa2_enable_err_queue;
@@ -371,9 +382,8 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 	uint8_t num_rxqueue_per_tc;
 	struct dpaa2_queue *mc_q, *mcq;
 	uint32_t tot_queues;
-	int i, j, ret = 0;
+	int i, ret = 0;
 	struct dpaa2_queue *dpaa2_q;
-	struct queue_storage_info_t *per_cqst;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -393,38 +403,10 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 		mc_q->eth_data = dev->data;
 		priv->rx_vq[i] = mc_q++;
 		dpaa2_q = priv->rx_vq[i];
-		dpaa2_q->q_storage = rte_malloc("dq_storage",
-			sizeof(struct queue_storage_info_t),
-			RTE_CACHE_LINE_SIZE);
-		if (!dpaa2_q->q_storage) {
-			ret = -ENOBUFS;
-			goto fail;
-		}
-		for (j = 0; j < RTE_MAX_LCORE; j++) {
-			dpaa2_q->per_core_q_storage[j] = rte_malloc(NULL,
-				sizeof(struct queue_storage_info_t),
-				RTE_CACHE_LINE_SIZE);
-			if (!dpaa2_q->per_core_q_storage[j]) {
-				ret = -ENOBUFS;
-				goto fail;
-			}
-		}
-
-		memset(dpaa2_q->q_storage, 0,
-			sizeof(struct queue_storage_info_t));
-		for (j = 0; j < RTE_MAX_LCORE; j++)
-			memset(dpaa2_q->per_core_q_storage[j], 0,
-				sizeof(struct queue_storage_info_t));
-		ret = dpaa2_alloc_dq_storage(dpaa2_q->q_storage);
+		ret = dpaa2_queue_storage_alloc(dpaa2_q,
+			RTE_MAX_LCORE);
 		if (ret)
 			goto fail;
-
-		for (j = 0; j < RTE_MAX_LCORE; j++) {
-			per_cqst = dpaa2_q->per_core_q_storage[j];
-			ret = dpaa2_alloc_dq_storage(per_cqst);
-			if (ret)
-				goto fail;
-		}
 	}
 
 	if (dpaa2_enable_err_queue) {
@@ -436,22 +418,10 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 		}
 
 		dpaa2_q = priv->rx_err_vq;
-		dpaa2_q->q_storage = rte_malloc("err_dq_storage",
-			sizeof(struct queue_storage_info_t) *
-			RTE_MAX_LCORE,
-			RTE_CACHE_LINE_SIZE);
-		if (!dpaa2_q->q_storage) {
-			ret = -ENOBUFS;
+		ret = dpaa2_queue_storage_alloc(dpaa2_q,
+			RTE_MAX_LCORE);
+		if (ret)
 			goto fail;
-		}
-
-		memset(dpaa2_q->q_storage, 0,
-			sizeof(struct queue_storage_info_t));
-		for (i = 0; i < RTE_MAX_LCORE; i++) {
-			ret = dpaa2_alloc_dq_storage(&dpaa2_q->q_storage[i]);
-			if (ret)
-				goto fail;
-		}
 	}
 
 	for (i = 0; i < priv->nb_tx_queues; i++) {
@@ -459,7 +429,8 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 		mc_q->flow_id = DPAA2_INVALID_FLOW_ID;
 		priv->tx_vq[i] = mc_q++;
 		dpaa2_q = priv->tx_vq[i];
-		dpaa2_q->cscn = rte_malloc(NULL, sizeof(struct qbman_result),
+		dpaa2_q->cscn = rte_malloc(NULL,
+			sizeof(struct qbman_result),
 			RTE_CACHE_LINE_SIZE);
 		if (!dpaa2_q->cscn) {
 			ret = -ENOBUFS;
@@ -475,40 +446,10 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 			mc_q->flow_id = 0;
 			priv->tx_conf_vq[i] = mc_q++;
 			dpaa2_q = priv->tx_conf_vq[i];
-			dpaa2_q->q_storage = rte_malloc("dq_storage",
-				sizeof(struct queue_storage_info_t),
-				RTE_CACHE_LINE_SIZE);
-			if (!dpaa2_q->q_storage) {
-				ret = -ENOBUFS;
-				goto fail_tx_conf;
-			}
-			for (j = 0; j < RTE_MAX_LCORE; j++) {
-				dpaa2_q->per_core_q_storage[j] =
-					rte_malloc(NULL,
-					sizeof(struct queue_storage_info_t),
-					RTE_CACHE_LINE_SIZE);
-				if (!dpaa2_q->per_core_q_storage[j]) {
-					ret = -ENOBUFS;
-					goto fail_tx_conf;
-				}
-			}
-
-			memset(dpaa2_q->q_storage, 0,
-				sizeof(struct queue_storage_info_t));
-			for (j = 0; j < RTE_MAX_LCORE; j++) {
-				memset(dpaa2_q->per_core_q_storage[j], 0,
-					sizeof(struct queue_storage_info_t));
-			}
-			ret = dpaa2_alloc_dq_storage(dpaa2_q->q_storage);
+			ret = dpaa2_queue_storage_alloc(dpaa2_q,
+					RTE_MAX_LCORE);
 			if (ret)
 				goto fail_tx_conf;
-
-			for (j = 0; j < RTE_MAX_LCORE; j++) {
-				per_cqst = dpaa2_q->per_core_q_storage[j];
-				ret = dpaa2_alloc_dq_storage(per_cqst);
-				if (ret)
-					goto fail_tx_conf;
-			}
 		}
 	}
 
@@ -525,7 +466,7 @@ fail_tx_conf:
 	i -= 1;
 	while (i >= 0) {
 		dpaa2_q = priv->tx_conf_vq[i];
-		rte_free(dpaa2_q->q_storage);
+		dpaa2_queue_storage_free(dpaa2_q, RTE_MAX_LCORE);
 		priv->tx_conf_vq[i--] = NULL;
 	}
 	i = priv->nb_tx_queues;
@@ -542,16 +483,13 @@ fail:
 	mc_q = priv->rx_vq[0];
 	while (i >= 0) {
 		dpaa2_q = priv->rx_vq[i];
-		dpaa2_free_dq_storage(dpaa2_q->q_storage);
-		rte_free(dpaa2_q->q_storage);
+		dpaa2_queue_storage_free(dpaa2_q, RTE_MAX_LCORE);
 		priv->rx_vq[i--] = NULL;
 	}
 
 	if (dpaa2_enable_err_queue) {
 		dpaa2_q = priv->rx_err_vq;
-		if (dpaa2_q->q_storage)
-			dpaa2_free_dq_storage(dpaa2_q->q_storage);
-		rte_free(dpaa2_q->q_storage);
+		dpaa2_queue_storage_free(dpaa2_q, RTE_MAX_LCORE);
 	}
 
 	rte_free(mc_q);
@@ -572,7 +510,8 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 		/* cleaning up queue storage */
 		for (i = 0; i < priv->nb_rx_queues; i++) {
 			dpaa2_q = priv->rx_vq[i];
-			rte_free(dpaa2_q->q_storage);
+			dpaa2_queue_storage_free(dpaa2_q,
+				RTE_MAX_LCORE);
 		}
 		/* cleanup tx queue cscn */
 		for (i = 0; i < priv->nb_tx_queues; i++) {
@@ -583,7 +522,8 @@ dpaa2_free_rx_tx_queues(struct rte_eth_dev *dev)
 			/* cleanup tx conf queue storage */
 			for (i = 0; i < priv->nb_tx_queues; i++) {
 				dpaa2_q = priv->tx_conf_vq[i];
-				rte_free(dpaa2_q->q_storage);
+				dpaa2_queue_storage_free(dpaa2_q,
+					RTE_MAX_LCORE);
 			}
 		}
 		/*free memory for all queues (RX+TX) */
@@ -606,6 +546,9 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 	int tx_l4_csum_offload = false;
 	int ret, tc_index;
 	uint32_t max_rx_pktlen;
+#if defined(RTE_LIBRTE_IEEE1588)
+	uint16_t ptp_correction_offset;
+#endif
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -633,6 +576,8 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 		DPAA2_PMD_DEBUG("MTU configured for the device: %d",
 				dev->data->mtu);
 	} else {
+		DPAA2_PMD_ERR("Configured mtu %d and calculated max-pkt-len is %d which should be <= %d",
+			eth_conf->rxmode.mtu, max_rx_pktlen, DPAA2_MAX_RX_PKT_LEN);
 		return -1;
 	}
 
@@ -685,6 +630,11 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 		dpaa2_enable_ts[dev->data->port_id] = true;
 	}
 
+#if defined(RTE_LIBRTE_IEEE1588)
+	/* By default setting ptp correction offset for Ethernet SYNC packets */
+	ptp_correction_offset = RTE_ETHER_HDR_LEN + 8;
+	rte_pmd_dpaa2_set_one_step_ts(dev->data->port_id, ptp_correction_offset, 0);
+#endif
 	if (tx_offloads & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM)
 		tx_l3_csum_offload = true;
 
@@ -852,6 +802,25 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 		if ((dpaa2_svr_family & 0xffff0000) != SVR_LX2160A) {
 			dpaa2_flc_stashing_set(DPAA2_FLC_ANNO_STASHING, 1,
 				&cfg.flc.value);
+		}
+	}
+
+	/*
+	 * if scheduler magic number match then set its configuration parameters.
+	 * Here,
+	 * uint64_t reserved_64s[0] is scheduler uint16_t rfc magic number and
+	 *                                       uint8_t WQ priority
+	 * uint64_t reserved_64s[1] is scheduler handle
+	 */
+	if ((rx_conf->reserved_64s[0] & UINT16_MAX) == POLICER_RFC_NUM) {
+		if (rx_conf->reserved_64s[1]) {
+			struct dpaa2_dpcon_dev *dpcon_dev =
+					(struct dpaa2_dpcon_dev *)rx_conf->reserved_64s[1];
+			cfg.destination.type = DPNI_DEST_DPCON;
+			cfg.destination.id = dpcon_dev->dpcon_id;
+			cfg.destination.priority =
+					(rx_conf->reserved_64s[0] >> SHIFT_RESERVED_PRIORITY) & UINT8_MAX;
+			options |= DPNI_QUEUE_OPT_DEST;
 		}
 	}
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_RX,
@@ -2075,9 +2044,9 @@ dpaa2_dev_set_link_up(struct rte_eth_dev *dev)
 		dev->data->dev_link.link_duplex = RTE_ETH_LINK_FULL_DUPLEX;
 
 	if (state.up)
-		DPAA2_PMD_INFO("Port %d Link is Up", dev->data->port_id);
+		DPAA2_PMD_DEBUG("Port %d Link is Up", dev->data->port_id);
 	else
-		DPAA2_PMD_INFO("Port %d Link is Down", dev->data->port_id);
+		DPAA2_PMD_DEBUG("Port %d Link is Down", dev->data->port_id);
 	return ret;
 }
 
@@ -2908,6 +2877,18 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	if (getenv("DPAA2_TX_CGR_OFF"))
 		priv->flags |= DPAA2_TX_CGR_OFF;
 
+	penv = getenv("DPAA2_RX_GET_PROTOCOL_OFFSET");
+	if (penv) {
+		ret = rte_mbuf_dynfield_register(&s_dpaa2_rx_protocol_pos_dyn);
+		if (ret < 0) {
+			DPAA2_PMD_ERR("Failed to register for protocol pos");
+			goto init_err;
+		}
+		DPAA2_PMD_INFO("Register mbuf offset(%d) for protocol pos",
+			ret);
+		dpaa2_rx_protocol_pos_mbuf_offset = ret;
+	}
+
 	/* Packets with parse error to be dropped in hw */
 	if (getenv("DPAA2_PARSE_ERR_DROP")) {
 		priv->flags |= DPAA2_PARSE_ERR_DROP;
@@ -3127,6 +3108,59 @@ rte_pmd_dpaa2_clean_tx_conf(uint32_t eth_id,
 
 	return dpaa2_dev_tx_conf_dynamic(txq->tx_conf_queue);
 }
+
+#if defined(RTE_LIBRTE_IEEE1588)
+int
+rte_pmd_dpaa2_get_one_step_ts(uint16_t port_id, bool mc_query)
+{
+	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct fsl_mc_io *dpni = priv->eth_dev->process_private;
+	struct dpni_single_step_cfg ptp_cfg;
+	int err;
+
+	if (!mc_query)
+		return priv->ptp_correction_offset;
+
+	err = dpni_get_single_step_cfg(dpni, CMD_PRI_LOW, priv->token, &ptp_cfg);
+	if(err){
+		DPAA2_PMD_ERR("Failed to retrieve onestep configuration");
+		return err;
+	}
+
+	if (!ptp_cfg.ptp_onestep_reg_base){
+		DPAA2_PMD_ERR("1588 onestep reg not available");
+		return -1;
+	}
+
+	priv->ptp_correction_offset = ptp_cfg.offset;
+
+	return priv->ptp_correction_offset;
+}
+
+int
+rte_pmd_dpaa2_set_one_step_ts(uint16_t port_id, uint16_t offset, uint8_t ch_update)
+{
+	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	struct fsl_mc_io *dpni = dev->process_private;
+	struct dpni_single_step_cfg cfg;
+	int err;
+
+	cfg.en = 1;
+	cfg.ch_update = ch_update;
+	cfg.offset = offset;
+	cfg.peer_delay = 0;
+
+	err = dpni_set_single_step_cfg(dpni, CMD_PRI_LOW, priv->token, &cfg);
+	if(err)
+		return err;
+
+	priv->ptp_correction_offset = offset;
+
+	return 0;
+}
+#endif
 
 static int dpaa2_tx_sg_pool_init(void)
 {

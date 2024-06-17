@@ -1346,7 +1346,7 @@ append_bd_dma:
 static void
 lsxvio_recv_bd_burst(struct lsxvio_queue *vq)
 {
-	struct lsinic_dma_job *jobs[DEFAULT_BURST_THRESH];
+	struct lsinic_dma_job *jobs[DEFAULT_BURST_THRESH + 4];
 	uint16_t desc_idxs[DEFAULT_BURST_THRESH];
 	uint16_t heads[DEFAULT_BURST_THRESH];
 	struct rte_mbuf *mbufs[DEFAULT_BURST_THRESH];
@@ -1422,7 +1422,7 @@ lsxvio_recv_bd(struct lsxvio_queue *vq)
 	uint16_t free_entries, i = 0, avail_idx, desc_idx, head, bd_num = 0;
 	uint16_t tx_bd_nb;
 	struct vring_avail *avail;
-	struct lsinic_dma_job *jobs[DEFAULT_BURST_THRESH];
+	struct lsinic_dma_job *jobs[DEFAULT_BURST_THRESH + 4];
 
 	if (vq->shadow_avail)
 		free_entries = vq->shadow_avail->idx - vq->last_avail_idx;
