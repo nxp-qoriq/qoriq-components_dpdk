@@ -334,7 +334,7 @@ soc_dpaa = {
     'part_number': '0xd08',
     'flags': [
         ['RTE_MACHINE', '"dpaa"'],
-        ['RTE_USE_NON_CACHE_MEM', 1],
+        ['RTE_USE_NON_CACHE_MEM', 0],
         ['RTE_MAX_LCORE', 16],
         ['RTE_MAX_NUMA_NODES', 1],
 	['RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST', false],
