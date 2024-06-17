@@ -633,14 +633,14 @@ dpaa2_spsr_fafe_bit_offset(union dpaa2_sp_fafe_parse fafe)
 }
 
 static inline uint32_t
-dpaa2_psr_faf_l_bit_offset(struct dpaa2_faf_l_parse faf_l)
+dpaa2_psr_faf_l_bit_offset(struct dpaa2_faf_l_parse *faf_l)
 {
 	union dpaa2_faf_l_parse_32b faf_l_tmp;
 	uint32_t offset = BIT_LAST_OFFSET(union dpaa2_faf_l_parse_32b);
 
 	memset(&faf_l_tmp, 0, sizeof(union dpaa2_faf_l_parse_32b));
 	faf_l_tmp.faf_l_32b = 1;
-	while (memcmp(&faf_l_tmp.faf_l, &faf_l,
+	while (memcmp(&faf_l_tmp.faf_l, faf_l,
 		sizeof(struct dpaa2_faf_l_parse))) {
 		faf_l_tmp.faf_l_32b = faf_l_tmp.faf_l_32b << 1;
 		offset--;
@@ -650,14 +650,14 @@ dpaa2_psr_faf_l_bit_offset(struct dpaa2_faf_l_parse faf_l)
 }
 
 static inline uint32_t
-dpaa2_psr_faf_h_bit_offset(struct dpaa2_faf_h_parse faf_h)
+dpaa2_psr_faf_h_bit_offset(struct dpaa2_faf_h_parse *faf_h)
 {
 	union dpaa2_faf_h_parse_64b faf_h_tmp;
 	uint32_t offset = BIT_LAST_OFFSET(union dpaa2_faf_h_parse_64b);
 
 	memset(&faf_h_tmp, 0, sizeof(union dpaa2_faf_h_parse_64b));
 	faf_h_tmp.faf_h_64b = 1;
-	while (memcmp(&faf_h_tmp.faf_h, &faf_h,
+	while (memcmp(&faf_h_tmp.faf_h, faf_h,
 		sizeof(struct dpaa2_faf_h_parse))) {
 		faf_h_tmp.faf_h_64b = faf_h_tmp.faf_h_64b << 1;
 		offset--;
@@ -680,49 +680,49 @@ dpaa2_protocol_psr_bit_offset(uint32_t *bit_offset,
 
 	if (protocol == DPAA2_PARSER_MAC_ID) {
 		faf_l.mac = 1;
-		*bit_offset = dpaa2_psr_faf_l_bit_offset(faf_l);
+		*bit_offset = dpaa2_psr_faf_l_bit_offset(&faf_l);
 	} else if (protocol == DPAA2_PARSER_VLAN_ID) {
 		faf_l.vlan_1 = 1;
-		*bit_offset = dpaa2_psr_faf_l_bit_offset(faf_l);
+		*bit_offset = dpaa2_psr_faf_l_bit_offset(&faf_l);
 	} else if (protocol == DPAA2_PARSER_ICMP_ID) {
 		faf_h.icmp = 1;
-		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
+		*bit_offset = dpaa2_psr_faf_h_bit_offset(&faf_h);
 	} else if (protocol == DPAA2_PARSER_IP_ID) {
 		faf_h.ip_1_opt = 1;
-		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
+		*bit_offset = dpaa2_psr_faf_h_bit_offset(&faf_h);
 	} else if (protocol == DPAA2_PARSER_IPV4_ID) {
 		faf_h.ipv4_1 = 1;
-		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
+		*bit_offset = dpaa2_psr_faf_h_bit_offset(&faf_h);
 	} else if (protocol == DPAA2_PARSER_IP_FRAG_ID) {
 		faf_h.ip_1_frag = 1;
-		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
+		*bit_offset = dpaa2_psr_faf_h_bit_offset(&faf_h);
 	} else if (protocol == DPAA2_PARSER_IPV6_ID) {
 		faf_h.ipv6_1 = 1;
-		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
+		*bit_offset = dpaa2_psr_faf_h_bit_offset(&faf_h);
 	} else if (protocol == DPAA2_PARSER_GRE_ID) {
 		faf_h.gre = 1;
-		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
+		*bit_offset = dpaa2_psr_faf_h_bit_offset(&faf_h);
 	} else if (protocol == DPAA2_PARSER_UDP_ID) {
 		faf_h.udp = 1;
-		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
+		*bit_offset = dpaa2_psr_faf_h_bit_offset(&faf_h);
 	} else if (protocol == DPAA2_PARSER_TCP_ID) {
 		faf_h.tcp = 1;
-		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
+		*bit_offset = dpaa2_psr_faf_h_bit_offset(&faf_h);
 	} else if (protocol == DPAA2_PARSER_SCTP_ID) {
 		faf_h.sctp = 1;
-		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
+		*bit_offset = dpaa2_psr_faf_h_bit_offset(&faf_h);
 	} else if (protocol == DPAA2_PARSER_GTP_ID) {
 		faf_h.gtp = 1;
-		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
+		*bit_offset = dpaa2_psr_faf_h_bit_offset(&faf_h);
 	} else if (protocol == DPAA2_PARSER_IPSEC_ESP_ID) {
 		faf_h.ipsec_esp = 1;
-		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
+		*bit_offset = dpaa2_psr_faf_h_bit_offset(&faf_h);
 	} else if (protocol == DPAA2_PARSER_IPSEC_AH_ID) {
 		faf_h.ipsec_ah = 1;
-		*bit_offset = dpaa2_psr_faf_h_bit_offset(faf_h);
+		*bit_offset = dpaa2_psr_faf_h_bit_offset(&faf_h);
 	} else if (protocol == DPAA2_PARSER_VXLAN_ID) {
 		faf_l.vxlan = 1;
-		*bit_offset = dpaa2_psr_faf_l_bit_offset(faf_l);
+		*bit_offset = dpaa2_psr_faf_l_bit_offset(&faf_l);
 	} else if (protocol == DPAA2_PARSER_VXLAN_VLAN_ID) {
 		fafe.ibth_vxlan.vxlan_vlan = 1;
 		*bit_offset = dpaa2_spsr_fafe_bit_offset(fafe);
