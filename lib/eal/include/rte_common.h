@@ -165,7 +165,7 @@ typedef uint16_t unaligned_uint16_t;
 #define RTE_PRIORITY_LOG 101
 #define RTE_PRIORITY_BUS 110
 #define RTE_PRIORITY_CLASS 120
-#ifdef RTE_USR_DEF_PRIORITY_LAST
+#if defined RTE_USR_DEF_PRIORITY_LAST && RTE_USR_DEF_PRIORITY_LAST
 #if (RTE_USR_DEF_PRIORITY_LAST <= RTE_PRIORITY_CLASS)
 #error "User defined last priority <= Max rte priority."
 #else
