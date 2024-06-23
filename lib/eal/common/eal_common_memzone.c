@@ -22,6 +22,11 @@
 #include "eal_private.h"
 #include "eal_memcfg.h"
 
+struct memzone_info {
+	FILE *f;
+	uint64_t t_size;
+};
+
 static inline const struct rte_memzone *
 memzone_lookup_thread_unsafe(const char *name)
 {
@@ -332,7 +337,8 @@ dump_memzone(const struct rte_memzone *mz, void *arg)
 	struct rte_memseg *ms;
 	int mz_idx, ms_idx;
 	size_t page_sz;
-	FILE *f = arg;
+	struct memzone_info *info = arg;
+	FILE *f = info->f;
 
 	mz_idx = rte_fbarray_find_idx(&mcfg->memzones, mz);
 
@@ -345,6 +351,7 @@ dump_memzone(const struct rte_memzone *mz, void *arg)
 			mz->socket_id,
 			mz->flags);
 
+	info->t_size += mz->len;
 	/* go through each page occupied by this memzone */
 	msl = rte_mem_virt2memseg_list(mz->addr);
 	if (!msl) {
@@ -377,7 +384,14 @@ dump_memzone(const struct rte_memzone *mz, void *arg)
 void
 rte_memzone_dump(FILE *f)
 {
-	rte_memzone_walk(dump_memzone, f);
+	struct memzone_info info;
+
+	memset(&info, 0, sizeof(info));
+	info.f = f;
+
+	rte_memzone_walk(dump_memzone, &info);
+	fprintf(f, "Total Memory Zones size = %uM\n", (unsigned)info.t_size
+			/ (1024 * 1024));
 }
 
 /*
