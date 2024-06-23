@@ -529,6 +529,8 @@ void
 rte_dump_physmem_layout(FILE *f)
 {
 	rte_memseg_walk(dump_memseg, f);
+	fprintf(f, "Total Memory Segments memory = %uM\n",
+			(unsigned) rte_eal_get_physmem_size() / (1024 * 1024));
 }
 
 static int
