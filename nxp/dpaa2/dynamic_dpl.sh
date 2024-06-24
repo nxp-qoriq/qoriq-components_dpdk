@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2023 NXP
+# Copyright 2018-2024 NXP
 
 cat > script_help << EOF
 
@@ -96,20 +96,27 @@ script help :----->
 					integer value. "e.g export MAX_QOS=1"
 					Default is set to 1.
 
-		MAX_CGR             = maximum CGR Entries per DPNI
+		MAX_CGS             = maximum CGS Entries per DPNI
 					Set the parameter using below command:
-					'export MAX_CGR=<Num of CGR entries>'
-					where "Number of CGR entries" is an
-					integer value. "e.g export MAX_CGR=16"
+					'export MAX_CGS=<Num of CGS entries>'
+					where "Number of CGS entries" is an
+					integer value. "e.g export MAX_CGS=16"
 					Default is set same as MAX_TCS.
 
 		MAX_OPR             = maximum OPR per DPNI
 					Set the parameter using below command:
 					'export MAX_OPR=<Num of OPR>'
 					where "Number of OPR" is an integer
-					value greater than 0.
+					value.
 					"e.g export MAX_OPR=4"
-					Default is set to 8.
+					Default is set to 0.
+
+		VLAN_ENTRIES        = number of VLAN_ENTRIES per DPNI
+					Set the parameter using below command:
+					'export VLAN_ENTRIES=<Num of vlan entries>'
+					where "Number of vlan entries" is an integer
+					value. "e.g export VLAN_ENTRIES=16"
+					Default is set to 16.
 
 		DPNI_NORMAL_BUF    = Change the mode to use normal buf mode.
 					The default mode is high performance buffer mode.
@@ -299,6 +306,8 @@ get_dpni_parameters() {
 	if [[ -z "$MAX_CGS" ]]
 	then
 		MAX_CGS=`expr $MAX_QUEUES + 8`
+	else
+		echo "Number of congestion groups is ${MAX_CGS}."
 	fi
 	if [[ -z "$MAX_QOS" ]]
 	then
@@ -341,9 +350,16 @@ get_dpni_parameters() {
 	then
 		FS_ENTRIES=1
 	fi
-	if [[ -z "$MAX_OPR" ]]
+	if [[ $MAX_OPR ]]
 	then
-		MAX_OPR=8
+		NUM_OPR="--num-opr=$MAX_OPR"
+		echo "Number of order point records(OPR) is $MAX_OPR!"
+	fi
+	if [[ -z "$VLAN_ENTRIES" ]]
+	then
+		VLAN_ENTRIES=16
+	else
+		echo "Number of vlan entries are ${VLAN_ENTRIES}."
 	fi
 	if [[ -z "$DPSECI_OPTIONS" ]]
 	then
@@ -358,6 +374,7 @@ get_dpni_parameters() {
 	echo -e "\tMAX_CGS = "$MAX_CGS >> dynamic_dpl_logs
 	echo -e "\tDPNI_OPTIONS = "$DPNI_OPTIONS >> dynamic_dpl_logs
 	echo -e "\tDPSECI_OPTIONS = "$DPSECI_OPTIONS >> dynamic_dpl_logs
+	echo -e "\tVLAN_ENTRIES = "$VLAN_ENTRIES >> dynamic_dpl_logs
 	echo >> dynamic_dpl_logs
 	echo >> dynamic_dpl_logs
 
@@ -724,7 +741,7 @@ then
 			else
 				ACTUAL_MAC="00:00:00:00:02:"$num
 			fi
-			OBJ=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS --num-queues=$MAX_QUEUES --num-opr=$MAX_OPR --fs-entries=$FS_ENTRIES --vlan-entries=16 --qos-entries=$MAX_QOS --num-cgs=$MAX_CGS --container=$DPRC)
+			OBJ=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS --num-queues=$MAX_QUEUES $NUM_OPR --fs-entries=$FS_ENTRIES --vlan-entries=$VLAN_ENTRIES --qos-entries=$MAX_QOS --num-cgs=$MAX_CGS --container=$DPRC)
 			restool dprc sync
 			restool dpni update $OBJ --mac-addr=$ACTUAL_MAC
 			echo $OBJ "created with MAC addr = "$ACTUAL_MAC >> dynamic_dpl_logs
@@ -759,7 +776,7 @@ then
 				PRINT_ONCE=1
 			fi
 		fi
-		DPNI=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS $ADD_DPNI_OPTIONS --num-queues=$MAX_QUEUES --num-opr=$MAX_OPR --fs-entries=$FS_ENTRIES --vlan-entries=16 --qos-entries=$MAX_QOS --num-cgs=$MAX_CGS --container=$DPRC)
+		DPNI=$(restool -s dpni create --options=$DPNI_OPTIONS --num-tcs=$MAX_TCS $ADD_DPNI_OPTIONS --num-queues=$MAX_QUEUES $NUM_OPR --fs-entries=$FS_ENTRIES --vlan-entries=$VLAN_ENTRIES --qos-entries=$MAX_QOS --num-cgs=$MAX_CGS --container=$DPRC)
 		restool dprc sync
 		if [[ $TYPE != "dpmac" ]]
 		then
