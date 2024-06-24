@@ -392,6 +392,10 @@ soc_imx = {
         ['RTE_USE_NON_CACHE_MEM', 1],
         ['RTE_MAX_LCORE', 8],
         ['RTE_MAX_NUMA_NODES', 1],
+	# Reserve ring memory of iMX platform using
+	# rte_memzone_reserve_aligned() instead of
+	# rte_eal_memalloc_alloc_seg()
+	['RTE_IMX_MEMZONE_RING_MEMORY', false],
     ],
     'numa': false,
         #disable unwanted drivers/libs for imx platforms
