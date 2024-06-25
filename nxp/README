@@ -7,8 +7,8 @@ Supported Platforms (and their derivatives):
 1. DPAA2 : LS108x, LS208x, LX216x
 2. DPAA  : LS1043, LS1046
 3. ENETC : LS1028, i.MX95
-4. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX93
-5. QOS   : i.MX 8MP, i.MX93
+4. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX91, i.MX93
+5. QOS   : i.MX 8MP, i.MX 8DXL, i.MX91, i.MX93
 ===============================================================================
 NXP DPDK provides a set of data plane libraries and network interface
 controller driver for Layerscape platforms
@@ -173,7 +173,7 @@ application:
      Example: To compile l2fwd and l3fwd applications, execute this command:
               meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gnu_gcc -Dexamples=l2fwd,l3fwd
 
-     NOTE: For i.MX-95 & i.MX-93 [A55 platforms]:
+     NOTE: For i.MX-95, i.MX-93 & i.MX-91 [A55 platforms]:
 		meson arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc -Dexamples=all
 
      NOTE: By default, both Static and Shared compilation is done by DPDK.
@@ -380,26 +380,123 @@ Following are some pre-requisites:
         in either incorrectly configured I/O or I/O loss.
         For details of port numbering, refer the LSDK documentation.
 
-  For i.MX Platform:
-  ~~~~~~~~~~~~~~~~~~
+For i.MX Platform:
+~~~~~~~~~~~~~~~~~~
 
-  1.1 For i.MX8MM (FEC) Platform:
+Generic setup details for all i.MX platforms:
+---------------------------------------------
+
+The descriptions of the variables used in this section are as follows:
+    - mmcdev: MMC/SD device id.
+    - mmcpart: This is the partition on the MMC/SD card containing the kernel image.
+    - loadaddr: The address in the memory where the kernel is loaded.
+    - Image: Linux kernel image.
+    - fdt_addr: The address in the memory where the device tree is loaded.
+    - fdtfile: Used to specify the filename of the device tree file (DTB).
+    - mmcroot: The location of the root file system on the MMC SD card along with directives for the boot command for the rootfs.
+      For example,  mmcargs=setenv bootargs ${jh_clk} console=${console} root=${mmcroot}
+		    bootargs=console=ttyLP0,115200 earlycon root=/dev/mmcblk0p2 rootwait rw
+
+Bring up the board with proper images and add below params in mmcargs:
+
+u-boot=> edit mmcargs
+edit: <default_board_specific_args> <hugepages> isolcpus=<core_list> <imx-95-params> <imx-mem-param>;
+u-boot=> saveenv
+
+Below are the details of mmcargs/bootargs:
+<default_board_specific_args>: The default bootargs for console and rootpath.
+				for example, will be like:
+				"setenv bootargs ${jh_clk} console=${console} root=${mmcroot}"
+
+<hugepages>: Hugepage size and count information. e.g:
+	     `default_hugepagesz=2m hugepagesz=2m hugepages=256`
+
+	     Note: Number of hugepages can be increased/decreased depends on the system memory
+		   availablity and application requirements.
+	     Note: Only 2MB size hugepages are supported on all i.MX SoCs except i.MX95.
+		   i.MX95 also support 1G size hugepages along with 2MB size pages. It is mandatory to have
+		   few 2MB size hugepages even if application need only 1G size hugepages. This is because
+		   ethernet RX/TX rings only use 2MB size hugepage memory. So need to reserve number
+		   of RX and TX rings + addtional few (atleast 4) 2MB size hugepages also along with 1G size
+		   hugepages. Addtional 2MB hugepages are required for DPDK eal library to reserve the
+		   memory from 2MB size hugepages.
+
+		   E.g: if application want to use one 1G hugepage and 6 RX plus 6 TX queues then one must
+		   reserve atleast one 1G and 16 2MB size pages as:
+		   `default_hugepagesz=1024m hugepagesz=1024m hugepages=1 hugepagesz=2m hugepages=16`
+
+		   On kernel console, to use both hugepages, one will have to mount the hugepages as:
+		   mkdir /mnt/huge_1G
+		   mkdir /mnt/huge_2M
+		   mount -t hugetlbfs -o pagesize=1G none /mnt/huge_1G
+		   mount -t hugetlbfs -o pagesize=2M none /mnt/huge_2M
+
+<imx-95-params>: i.MX95 specific parameters: `iommu.passthrough=1`
+
+<imx-mem-param>: is used to reserve the initial DDR memory from uboot via 'mem' environment variable.
+	It needed to be set to `mem=4096M` on platforms with FEC/eQoS ethernet interfaces
+	as BD ring of FEC/eQoS interfaces can only accept 32 bit addresses.
+
+<core_list>: can be used to add CPUs planned to be used for DPDK applications
+	For i.MX 8MM, 8MP: <core_list> : 1-3
+	For i.MX 8DXL: <core_list> : 1
+	For i.MX 93: <core_list> : 1
+	For i.MX 95: <core_list> : 1-5
+	Note: i.MX8DXL and i.MX93 has only 2 cores, but to reserve the core 1 for dpdk we can provide core_list=1 for both platforms.
+	      i.MX91 has only core 0, so option 'isolcpus' should not be used.
+
+For optimized performance on i.MX platforms:
+--------------------------------------------
+1. Add the below params in mmcargs to set the CPU to not go into idle mode:
+	`cpuidle.off=1 cpufreq.off=1`
+2. Also set the system in performance mode:
+	echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+	grep . /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+
+Note: If the governer not supported, check the lpm-mode
+
+For example for imx93 board:
+root@imx93evk:~# cat /sys/devices/platform/imx93-lpm/mode
+System is in OD mode with DDR 3733 MTS!
+ 
+You can set it as :
+root@:~# echo 0 > /sys/devices/platform/imx93-lpm/mode
+System switching to OD mode...
+root@:~# cat /sys/devices/platform/imx93-lpm/mode
+System is in OD mode with DDR 3733 MTS!
+
+Note: If lpm-mode not supported, please skip this step.
+
+Steps to compile the kpage non-cacheable module:
+------------------------------------------------
+Under the dpdk-extras repo,
+https://bitbucket.sw.nxp.com/projects/GITAM/repos/dpdk-extras/browse?at=refs%2Fheads%2Fmain
+
+External repo:
+https://github.com/nxp-qoriq/dpdk-extras
+
+Refer README for kpage_ncache module in linux/kpage_ncache directory.
+
+Steps for ENET-FEC:
+~~~~~~~~~~~~~~~~~~
+Booting steps:
+--------------
+  1.1 For i.MX8MM Platform:
     Bring up the imx-8mm-evk-rev board with latest kernel and dtb.
     Enable User space mode of the kernel driver by using 'imx8mm-evk-dpdk.dtb'.
     On uboot set the dtb & boot linux using below commands:
-    => setenv fdt_file imx8mm-evk-dpdk.dtb
+    => setenv fdtfile imx8mm-evk-dpdk.dtb
     => boot
 
 	or
 
-  1.1 For i.MX8MM (FEC) Platform:
-    
+  1.1 For i.MX8MM Platform:
     Set the env. variable on uboot to enable user space mode:
 
     Note: All the variables should be defined with appropriate values
     => setenv dpdk_enable
-    	"setenv fdt_file imx8mm-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
-    	setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}';
+	"setenv fdtfile imx8mm-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
+	setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}';
     	run loadkernel; run loadfdt; fdt addr ${fdt_addr};
 	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@0 "reset-assert-us";
 	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@0 "reset-deassert-us";
@@ -408,53 +505,60 @@ Following are some pre-requisites:
     => saveenv
     => run dpdk_enable
 
-  1.2 For i.MX8MP (FEC) Platform:
-
+  1.2 For i.MX8MP Platform:
     Set the env. variable on uboot to enable user space mode:
 
     Note: All the variables should be defined with appropriate values
     => setenv dpdk_enable
-    	"setenv fdt_file imx8mp-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
-     	setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}';
+	"setenv fdtfile imx8mp-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
+	setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}';
 	run loadkernel; run loadfdt; fdt addr ${fdt_addr};
      	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-gpios";
      	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-assert-us";
-     	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-deassert-us";
-     	fdt set /soc@0/bus@30800000/ethernet@30be0000 compatible "fsl,imx8mm-fec-uio";
+	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-deassert-us";
+	fdt set /soc@0/bus@30800000/ethernet@30be0000 compatible "fsl,imx8mm-fec-uio";
      	setenv bootcmd 'mmc dev ${mmcdev};run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
     => saveenv
     => run dpdk_enable
 
      or
 
-    => setenv fdt_file imx8mp-evk-dpdk.dtb
+    => setenv fdtfile imx8mp-evk-dpdk.dtb
     => boot
 
-  1.3 For i.MX93 (FEC) Platform:
+  1.3 For i.MX91 Platform:
+    Bring up the iMX91 board with latest kernel.
+    On uboot, enable User space mode of the kernel driver & boot linux after setting the below env. variable:
+
+    Note: All the variables should be defined with appropriate values
+    => setenv dpdk_enable
+	"setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
+	 setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}';
+	 run loadkernel; run loadfdt; fdt addr ${fdt_addr};
+	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-gpios";
+	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-assert-us";
+	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-deassert-us";
+	 fdt set /soc@0/bus@42800000/ethernet@42890000 compatible "fsl,imx8mm-fec-uio";
+	 setenv bootcmd 'mmc dev ${mmcdev}; run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
+    => saveenv
+    => run dpdk_enable
+
+  1.4 For i.MX93 Platform:
     Bring up the iMX93 board with latest kernel.
     On uboot, enable User space mode of the kernel driver & boot linux after setting the below env. variable:
 
     Note: All the variables should be defined with appropriate values
     => setenv dpdk_enable
 	"setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
-	 setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}';
+	 setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}';
 	 run loadkernel; run loadfdt; fdt addr ${fdt_addr};
 	 fdt set /soc@0/bus@42800000/ethernet@42890000 compatible "fsl,imx8mm-fec-uio";
 	 setenv bootcmd 'mmc dev ${mmcdev}; run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
     => saveenv
     => run dpdk_enable
 
-    The descriptions of the variables used above are as follows:
-    - mmcdev: MMC/SD device id.
-    - mmcpart: This is the partition on the MMC/SD card containing the kernel image.
-    - loadaddr: The address in the memory where the kernel is loaded.
-    - Image: Linux kernel image.
-    - fdt_addr: The address in the memory where the device tree is loaded.
-    - fdt_file: Used to specify the filename of the device tree file (DTB).
-    - mmcroot: The location of the root file system on the MMC SD card along with directives for the boot command for the rootfs.
-      For example,  mmcargs=setenv bootargs ${jh_clk} console=${console} root=${mmcroot}
-		    bootargs=console=ttyLP0,115200 earlycon root=/dev/mmcblk0p2 rootwait rw
-
+Run DPDK applications on i.MX8MM, i.MX8MP, i.MX91 and i.MX93 boards:
+------------------------------------------------------------------------------
   2. On Linux mount the hugetlbfs required for DPDK applications:
 	1. mkdir -p /dev/hugepages
 	2. mount -t hugetlbfs hugetlbfs /dev/hugepages
@@ -468,17 +572,10 @@ Following are some pre-requisites:
   5. Run-
      ./dpdk-l2fwd -c 0x1 -n 1 --vdev 'net_enetfec' -- -p 0x1 -T 0 -P
      ./dpdk-l3fwd -c 0x1 --vdev='net_enetfec'  -n 1 -- -p 0x1 --config="(0,0,0)" -P --parse-ptype
+     Note: In l3fwd for ENET-FEC Ethernet interface add '--parse-ptype'.
 
   6. Run/observe traffic
      For functional testing, send the traffic from packet generator which is connected to the port.
-
-  NOTE: For i.MX platforms, all the applications, user must provide the "--vdev"
-	argument with value "net_enetfec" to enable ethernet device. Maximum supported
-	ethernet is currently 1 only.
-  NOTE: For i.MX platforms, reserve the initial DDR memory from uboot via 'mem' environment variable in bootargs.
-	Example: 'mem=4096M'
-
-
 
   NOTE: For all the applications, the value n must be always 1 for all platforms.
 
@@ -497,45 +594,59 @@ Following are some pre-requisites:
 	to use these rings.
 
 Steps for ENET-QOS:
--------------------
+~~~~~~~~~~~~~~~~~~
 
-Steps to compile the kpage non-cacheable module:
-------------------------------------------------
-Under the dpdk-extras repo,
-https://bitbucket.sw.nxp.com/projects/GITAM/repos/dpdk-extras/browse?at=refs%2Fheads%2Fmain
-
-External repo:
-https://github.com/nxp-qoriq/dpdk-extras
-
-Refer README for kpage_ncache module in linux/kpage_ncache directory.
-
-NOTE: Remember for i.MX platforms, reserve the initial DDR memory from uboot
-via 'mem' environment variable in bootargs.
-	Example: 'mem=4096M'
-
-1.1 For i.MX8MP Platform:
--------------------------
-Set the dpdk DTB file.
-    => setenv fdt_file imx8mp-evk-dpdk.dtb
+Booting steps:
+--------------
+  1.1 For i.MX8MP Platform:
+    Set the dpdk DTB file.
+    => setenv fdtfile imx8mp-evk-dpdk.dtb
     => boot
 
-OR
+    or
 
-Set the env. variable on uboot to enable user space mode:
+  1.1 For i.MX8MP Platform:
+    Set the env. variable on uboot to enable user space mode:
 
     Note: All the variables should be defined with appropriate values
-    => setenv dpdk_enable "setenv fdt_file imx8mp-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image'; 
-       setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}';
+    => setenv dpdk_enable "setenv fdtfile imx8mp-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image'; 
+       setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}';
        run loadkernel; run loadfdt; fdt addr ${fdt_addr};
        fdt set /soc@0/bus@30800000/ethernet@30bf0000 compatible "fsl,imx-enet-qos" "snps,dwmac-5.10a";
        setenv bootcmd 'mmc dev ${mmcdev};run mmcargs; booti ${loadaddr} - ${fdt_addr};'" 
     => saveenv
     => run dpdk_enable
 
-1.2 For i.MX93 Platform:
-------------------------
-Set the env. variable on uboot to enable user space mode:
-Note: All the variables should be defined with appropriate values
+  1.2 For i.MX8DXL Platform:
+    Set the env. variable on uboot to enable user space mode:
+
+    Note: All the variables should be defined with appropriate values
+    => setenv dpdk_enable "setenv fdtfile imx8dxl-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
+       setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}';
+       run loadkernel; run loadfdt; fdt addr ${fdt_addr};
+       fdt set /bus@5b000000/ethernet@5b050000 compatible "fsl,imx-enet-qos" "snps,dwmac-5.10a";
+       setenv bootcmd 'mmc dev ${mmcdev};run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
+    => saveenv
+    => run dpdk_enable
+
+  1.3 For i.MX91 Platform:
+    Set the env. variable on uboot to enable user space mode:
+    Note: All the variables should be defined with appropriate values
+
+    => setenv dpdk_enable
+       "setenv loadkernel fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image;
+        setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr_r} ${fdtfile}';
+        run loadkernel; run loadfdt; fdt addr ${fdt_addr_r};
+        fdt set /soc@0/bus@42800000/ethernet@428a0000 compatible "fsl,imx-enet-qos" "snps,dwmac-5.10a";
+        fdt resize 4096;
+        fdt set /aliases "ethernet1" "/soc@0/bus@42800000/ethernet@428a0000";
+        run mmcargs; sleep 1; booti ${loadaddr} - ${fdt_addr};"
+    => saveenv
+    => run dpdk_enable
+
+  1.4 For i.MX93 Platform:
+    Set the env. variable on uboot to enable user space mode:
+    Note: All the variables should be defined with appropriate values
 
     => setenv dpdk_enable
        "setenv loadkernel fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image;
@@ -552,23 +663,35 @@ Note: If "FDT_ERR_NOSPACE" error is seen when setting aliases, we can use the be
       to resize fdt to size + padding to 4k addr + some optional <extrasize>
     => fdt resize <extrasize>
 
-Below steps are for running DPDK applications on i.MX8MP and i.MX93 boards.
-2. Manually allocate hugepages
-        e.g. echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
-3. Load the non-cacheable module
+Run DPDK applications on i.MX8MP, i.MX8DXL, i.MX91 and i.MX93 boards:
+---------------------------------------------------------------------
+
+  2. Manually allocate hugepages
+	e.g. echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+  3. Load the non-cacheable module
 	$ insmod kpage_ncache.ko
-4. Find DPDK applications (dpdk-l2fwd & dpdk-testpmd) under the folder
+  4. Find DPDK applications (dpdk-l2fwd & dpdk-testpmd) under the folder
 	'/usr/share/dpdk/examples/' and dpdk-testpmd at '/usr/bin/'.
 
-5. Run -
+  5. Run -
 	./dpdk-l2fwd -c 0x3 -n 1 --vdev 'net_enetqos' -- -p 0x1 -q 1
 	./dpdk-testpmd -c 0x3 -n 1 --vdev 'net_enetqos'  -- -i --portmask=0x2 --nb-ports=1 --forward-mode=io
+	./dpdk-l3fwd -c 0x2 -n 1 --vdev 'net_enetqos' -- -p 0x1 --config="(0,0,1)" -P
+	Note: In l3fwd for ENET-QOS Ethernet interface add '--parse-ptype'.
 
-	For testing the forwarding between both FEC and QOS port run:
-		./dpdk-l2fwd -c 0xf -n 1 --vdev 'net_enetqos'  --vdev 'net_enetfec' -- -p 0x3 -T 0 -P
-		./dpdk-testpmd -c 0xf -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec'  -- -i --portmask=0x3 --nb-ports=2 --forward-mode=io
+Forwarding between both FEC and QOS:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	To use both FEC and QOS interfaces on supported platforms i.e. i.MX 8MP, i.MX91 & i.MX93
+	follow both ports boot steps, refer sectons- Steps for ENET-FEC(Booting steps) & Steps for ENET-QOS(Booting steps).
+	Run-
+	    ./dpdk-l2fwd -c 0xf -n 1 --vdev 'net_enetqos'  --vdev 'net_enetfec' -- -p 0x3 -T 0 -P
+	    ./dpdk-testpmd -c 0xf -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec'  -- -i --portmask=0x3 --nb-ports=2 --forward-mode=io
 
-6. Run traffic
+	Note: i.MX91 is single core platform, so it has limitaion to use core 0. Also-
+	      dpdk-testpmd is not supported.
+	      dpdk-l2fwd is not supported for multi port case.
+
+  6. Run traffic
 	For functional testing, send the traffic from packet generator
 	which is connected to the port.
 
@@ -583,8 +706,8 @@ Note: For i.MX95 use 13.2 gcc (See details in cross-compilation section)
 	$ meson arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc -Dexamples=all
 	$ ninja -C arm64-build
 
-Steps to run VF(s) in dpdk:
-----------------------------
+Generic steps on i.MX95 before running dpdk:
+--------------------------------------------
 1. Bring up the board with proper images and set "iommu.passthrough=1" in mmcargs:
         setenv mmcargs <user-specific-params> isolcpus=1-5 iommu.passthrough=1;
 2. Set "fdtfile" on uboot with default dtb:
@@ -597,10 +720,45 @@ Steps to run VF(s) in dpdk:
 5. Manually allocate hugepages
 	echo 512 > /proc/sys/vm/nr_hugepages
 
-6. Running VFs in dpdk:
+Multi-queue:
+============
+Devlink utilty in Linux can be used to configure multiple queues in init
+process of PF.
 
-	Run the below steps to bind VFs to dpdk:
-	a. Run below command to create a VF:
+The number of rings allocated to each SI is at least 1.
+
+Run below commands to configure multiple queues:
+------------------------------------------------
+1. Example to set the number of rings of PF to 1, VF0 to 6 and VF1 to 1:
+	$ ./devlink dev param set pci/0002:00:10.0 name si_num_rings cmode driverinit value 353
+	Note: Here,
+	      -> 0002:00:10.0 is PF PCI address.
+	      -> The 'value' is uint32 type value. Each SI occupies 4 bits, of
+		 which PSI (PF) occupies the lowest 4 bits, then VSI0 (VF0) occupies
+		 bits 4 to 7, VSI1 (VF1) occupies bits 8 to 11, and so on.
+		 So, 353 is 0001 0110 0001 in binary, configuring number of rings
+	         of PF to 1, VF0 to 6 and VF1 to 1.
+2. Run devlink reload command to apply the new configuration.
+	$ ./devlink dev reload pci/0002:00:10.0
+3. Verify the value of si_num_rings
+	$ devlink dev param show pci/0002:00:10.0 name si_num_rings
+Example output:
+pci/0002:00:10.0:
+  name si_num_rings type driver-specific
+   values:
+    cmode driverinit value 353
+
+
+Running VFs in DPDK:
+====================
+
+Note:
+Max 2 VFs are supported per ENETC, follow the same steps as below to run DPDK on
+them.
+
+1. Run the below steps to bind VFs to dpdk:
+	a. If multiple queues are to be used, follow above section before creating VFs.
+	   Run below command to create a VF:
 		$ echo 1 > /sys/bus/pci/devices/0002\:00\:00.0/sriov_numvfs
 		Note: Use 'dpdk-devbind.py -s' to identify the PCI address of 1g and 10g ports
 		      like 0002:00:00.0 in the above example.
@@ -608,19 +766,23 @@ Steps to run VF(s) in dpdk:
 		Example kernel logs for VF:
 		[ 2002.156985] fsl_enetc_vf 0002:00:12.0: enabling device (0000 -> 0002)
 		[ 2002.517997] uio_pci_generic 0002:00:12.0: enabling device (0000 -> 0002)
-		[ 2002.543684] uio_pci_generic 0002:00:12.0: No IRQ assigned to device: no support for interrupts?
+		[ 2002.543684] uio_pci_generic 0002:00:12.0: No IRQ assigned to device: no support for interrupts?		
 	c. Use dpdk-devbind.py to bind VF to dpdk:
 		dpdk-devbind.py -b uio_pci_generic <vf-pci-addr>
 		As per the above logs, 0002:00:12.0 will be the <vf-pci-addr>
-7. Enable trust for the specified VF user by specifying the PF eth interface.
+2. Enable trust for the specified VF user by specifying the PF eth interface.
 	ip link set <eth-interface> vf 0 trust on
 	Note: Check eth interface using:
               eg. ./dpdk-devbind.py -s [In below o/p eth0 is the PF eth interface]
                 0002:00:00.0 'Device e101' if=eth0 drv=fsl_enetc4 unused=vfio-pci,uio_pci_generic
-8. Run:
+3. Run:
 	$ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1
 	$ ./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 -P --config="(0,0,1)"
 	$ ./dpdk-testpmd -c 0x3 -n 1 -- -i --portmask=0x1
+
+	Examples to run multiqueue:
+	$ ./dpdk-l3fwd -c 0x3f -n 1 -- -p 0x1 -P --config="(0,0,1) (0,1,2) (0,2,3) (0,3,4) (0,4,5) (0,5,0)"
+	$ ./dpdk-testpmd -c 0x3f -n 1 -- -i --portmask=0x1 --rxq=5 --txq=5
 
 PSI-VSI messaging:
 ------------------
@@ -633,6 +795,9 @@ Currently the following features have been supportd for VF using kernel PF using
     * Enable/Disable allmulti MAC mode
     * Get link status
     * Get link speed
+    * MAC Exact Match filtering
+    * VLAN Exact Match filtering
+    * Enable/Disable VLAN promiscous mode
 
 1. Follow the above steps to run dpdk-testpmd.
 2. Users can control the timeout and delay time counters with env. variables [optional]
@@ -651,6 +816,30 @@ Currently the following features have been supportd for VF using kernel PF using
 	-> set allmulti <port_id> off/on	      /* Enable/Disable allmulti MAC mode */
 	-> show port info <port_id>		      /* Get link status/speed */
 
+To add MAC adddress exact match entry:
+-------------------------------------
+	1. Disable the promiscuous mode to test the MAC entries filtering.
+		-> set promisc <port_id> off
+	2. Run below command to add exact match MAC address entry:
+		-> mac_addr add <port_id> <valid_mac_address>
+
+To add/remove VLAN exact match entry:
+------------------------------------
+Run below commands on dpdk-testpmd cmdline:
+	1. Run below command to disable VLAN promisc mode & set VLAN filter mode for the port:
+		-> vlan set filter on <port_id>
+		Note: By default, VLAN promisc mode is enabled.
+	2. Once the VLAN promisc is off, we can add exact match vlan entries:
+		-> rx_vlan add <vlan_id> <port_id>
+	3. If required the entry can be removed using below command:
+		-> rx_vlan rm <vlan_id> <port_id>
+	4. To enable promisc mode & unset VLAN filter mode for the port:
+		-> vlan set filter off <port_id>
+
+Note:
+Currently, maximum MAC and VLAN address exact match filter table entries that
+can be added are 4 per ENETC.
+
 VF1 validation:
 ---------------
 DPDK support ENETC0(1G RGMII) VF1 and ENETC2(10G UXSGMII) VF1 interfaces.
@@ -663,7 +852,7 @@ PF and VF0 must be owned by kernel while testing.
 	$  echo 2 > /sys/bus/pci/devices/0002\:00\:10.0/sriov_numvfs
 4. Check dmesg logs to identify the PCI address of VF1 created
 	Example kernel logs for VF:
-		[ 107.122861] pci 0002:00:12.0: [1131:ef00] type 00 class 0x020001
+        	[ 107.122861] pci 0002:00:12.0: [1131:ef00] type 00 class 0x020001
 		[ 107.230531] fsl_enetc_vf 0002:00:12.0: enabling device (0000 -> 0002)
 		[ 107.232173] pci 0002:00:14.0: [1131:ef00] type 00 class 0x020001
 		[ 107.342547] fsl_enetc_vf 0002:00:14.0: enabling device (0000 -> 0002)
