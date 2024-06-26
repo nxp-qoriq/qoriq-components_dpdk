@@ -10,6 +10,12 @@
 #include "ethdev_driver.h"
 #include "ethdev_private.h"
 
+int rte_eth_quit;
+
+int rte_eth_get_quit(void)
+{
+	return rte_eth_quit;
+}
 /**
  * A set of values to describe the possible states of a switch domain.
  */
