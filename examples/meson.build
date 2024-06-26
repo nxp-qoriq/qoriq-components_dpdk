@@ -74,7 +74,8 @@ all_examples = [
         'vm_power_manager/guest_cli',
         'vmdq',
         'vmdq_dcb',
-	'port_fwd'
+        'port_fwd',
+        'capture_streaming'
 ]
 
 # on install, skip copying all meson.build files
