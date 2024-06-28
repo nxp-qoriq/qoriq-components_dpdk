@@ -7,8 +7,8 @@ Supported Platforms (and their derivatives):
 1. DPAA2 : LS108x, LS208x, LX216x
 2. DPAA  : LS1043, LS1046
 3. ENETC : LS1028, i.MX95
-4. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX93
-5. QOS   : i.MX 8MP, i.MX 8DXL, i.MX93
+4. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX91, i.MX93
+5. QOS   : i.MX 8MP, i.MX 8DXL, i.MX91, i.MX93
 ===============================================================================
 NXP DPDK provides a set of data plane libraries and network interface
 controller driver for Layerscape platforms
@@ -173,7 +173,7 @@ application:
      Example: To compile l2fwd and l3fwd applications, execute this command:
               meson arm64-build --cross-file config/arm/arm64_dpaa_linux_gnu_gcc -Dexamples=l2fwd,l3fwd
 
-     NOTE: For i.MX-95 & i.MX-93 [A55 platforms]:
+     NOTE: For i.MX-95, i.MX-93 & i.MX-91 [A55 platforms]:
 		meson arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc -Dexamples=all
 
      NOTE: By default, both Static and Shared compilation is done by DPDK.
@@ -417,6 +417,7 @@ Here <core_list> can be used to add CPUs planned to be used for DPDK application
 	For i.MX 93: <core_list> : 1
 	For i.MX 95: <core_list> : 1-5
 	Note: i.MX8DXL and i.MX93 has only 2 cores, but to reserve the core 1 for dpdk we can provide core_list=1 for both platforms.
+	      i.MX91 has only core 0, so option 'isolcpus' should not be used.
 
 For optimized performance on i.MX platforms:
 --------------------------------------------
@@ -440,7 +441,21 @@ System is in OD mode with DDR 3733 MTS!
 
 Note: If lpm-mode not supported, please skip this step.
 
-  1.1 For i.MX8MM (FEC) Platform:
+Steps to compile the kpage non-cacheable module:
+------------------------------------------------
+Under the dpdk-extras repo,
+https://bitbucket.sw.nxp.com/projects/GITAM/repos/dpdk-extras/browse?at=refs%2Fheads%2Fmain
+
+External repo:
+https://github.com/nxp-qoriq/dpdk-extras
+
+Refer README for kpage_ncache module in linux/kpage_ncache directory.
+
+Steps for ENET-FEC:
+~~~~~~~~~~~~~~~~~~
+Booting steps:
+--------------
+  1.1 For i.MX8MM Platform:
     Bring up the imx-8mm-evk-rev board with latest kernel and dtb.
     Enable User space mode of the kernel driver by using 'imx8mm-evk-dpdk.dtb'.
     On uboot set the dtb & boot linux using below commands:
@@ -449,8 +464,7 @@ Note: If lpm-mode not supported, please skip this step.
 
 	or
 
-  1.1 For i.MX8MM (FEC) Platform:
-    
+  1.1 For i.MX8MM Platform:
     Set the env. variable on uboot to enable user space mode:
 
     Note: All the variables should be defined with appropriate values
@@ -465,8 +479,7 @@ Note: If lpm-mode not supported, please skip this step.
     => saveenv
     => run dpdk_enable
 
-  1.2 For i.MX8MP (FEC) Platform:
-
+  1.2 For i.MX8MP Platform:
     Set the env. variable on uboot to enable user space mode:
 
     Note: All the variables should be defined with appropriate values
@@ -487,7 +500,21 @@ Note: If lpm-mode not supported, please skip this step.
     => setenv fdtfile imx8mp-evk-dpdk.dtb
     => boot
 
-  1.3 For i.MX93 (FEC) Platform:
+  1.3 For i.MX91 Platform:
+    Bring up the iMX91 board with latest kernel.
+    On uboot, enable User space mode of the kernel driver & boot linux after setting the below env. variable:
+
+    Note: All the variables should be defined with appropriate values
+    => setenv dpdk_enable
+	"setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
+	 setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}';
+	 run loadkernel; run loadfdt; fdt addr ${fdt_addr};
+	 fdt set /soc@0/bus@42800000/ethernet@42890000 compatible "fsl,imx8mm-fec-uio";
+	 setenv bootcmd 'mmc dev ${mmcdev}; run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
+    => saveenv
+    => run dpdk_enable
+
+  1.4 For i.MX93 Platform:
     Bring up the iMX93 board with latest kernel.
     On uboot, enable User space mode of the kernel driver & boot linux after setting the below env. variable:
 
@@ -501,6 +528,8 @@ Note: If lpm-mode not supported, please skip this step.
     => saveenv
     => run dpdk_enable
 
+Run DPDK applications on i.MX8MM, i.MX8MP, i.MX91 and i.MX93 boards:
+------------------------------------------------------------------------------
   2. On Linux mount the hugetlbfs required for DPDK applications:
 	1. mkdir -p /dev/hugepages
 	2. mount -t hugetlbfs hugetlbfs /dev/hugepages
@@ -514,6 +543,7 @@ Note: If lpm-mode not supported, please skip this step.
   5. Run-
      ./dpdk-l2fwd -c 0x1 -n 1 --vdev 'net_enetfec' -- -p 0x1 -T 0 -P
      ./dpdk-l3fwd -c 0x1 --vdev='net_enetfec'  -n 1 -- -p 0x1 --config="(0,0,0)" -P --parse-ptype
+     Note: In l3fwd for ENET-FEC Ethernet interface add '--parse-ptype'.
 
   6. Run/observe traffic
      For functional testing, send the traffic from packet generator which is connected to the port.
@@ -535,27 +565,19 @@ Note: If lpm-mode not supported, please skip this step.
 	to use these rings.
 
 Steps for ENET-QOS:
--------------------
+~~~~~~~~~~~~~~~~~~
 
-Steps to compile the kpage non-cacheable module:
-------------------------------------------------
-Under the dpdk-extras repo,
-https://bitbucket.sw.nxp.com/projects/GITAM/repos/dpdk-extras/browse?at=refs%2Fheads%2Fmain
-
-External repo:
-https://github.com/nxp-qoriq/dpdk-extras
-
-Refer README for kpage_ncache module in linux/kpage_ncache directory.
-
-1.1 For i.MX8MP Platform:
--------------------------
-Set the dpdk DTB file.
+Booting steps:
+--------------
+  1.1 For i.MX8MP Platform:
+    Set the dpdk DTB file.
     => setenv fdtfile imx8mp-evk-dpdk.dtb
     => boot
 
-OR
+    or
 
-Set the env. variable on uboot to enable user space mode:
+  1.1 For i.MX8MP Platform:
+    Set the env. variable on uboot to enable user space mode:
 
     Note: All the variables should be defined with appropriate values
     => setenv dpdk_enable "setenv fdtfile imx8mp-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image'; 
@@ -566,9 +588,8 @@ Set the env. variable on uboot to enable user space mode:
     => saveenv
     => run dpdk_enable
 
-1.2 For i.MX8DXL Platform:
--------------------------
-Set the env. variable on uboot to enable user space mode:
+  1.2 For i.MX8DXL Platform:
+    Set the env. variable on uboot to enable user space mode:
 
     Note: All the variables should be defined with appropriate values
     => setenv dpdk_enable "setenv fdtfile imx8dxl-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
@@ -579,10 +600,24 @@ Set the env. variable on uboot to enable user space mode:
     => saveenv
     => run dpdk_enable
 
-1.3 For i.MX93 Platform:
-------------------------
-Set the env. variable on uboot to enable user space mode:
-Note: All the variables should be defined with appropriate values
+  1.3 For i.MX91 Platform:
+    Set the env. variable on uboot to enable user space mode:
+    Note: All the variables should be defined with appropriate values
+
+    => setenv dpdk_enable
+       "setenv loadkernel fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image;
+        setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr_r} ${fdtfile}';
+        run loadkernel; run loadfdt; fdt addr ${fdt_addr_r};
+        fdt set /soc@0/bus@42800000/ethernet@428a0000 compatible "fsl,imx-enet-qos" "snps,dwmac-5.10a";
+        fdt resize 4096;
+        fdt set /aliases "ethernet1" "/soc@0/bus@42800000/ethernet@428a0000";
+        run mmcargs; sleep 1; booti ${loadaddr} - ${fdt_addr};"
+    => saveenv
+    => run dpdk_enable
+
+  1.4 For i.MX93 Platform:
+    Set the env. variable on uboot to enable user space mode:
+    Note: All the variables should be defined with appropriate values
 
     => setenv dpdk_enable
        "setenv loadkernel fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image;
@@ -599,25 +634,35 @@ Note: If "FDT_ERR_NOSPACE" error is seen when setting aliases, we can use the be
       to resize fdt to size + padding to 4k addr + some optional <extrasize>
     => fdt resize <extrasize>
 
-Below steps are for running DPDK applications on i.MX8MP, i.MX8DXL and i.MX93 boards.
-2. Manually allocate hugepages
-        e.g. echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
-3. Load the non-cacheable module
+Run DPDK applications on i.MX8MP, i.MX8DXL, i.MX91 and i.MX93 boards:
+---------------------------------------------------------------------
+
+  2. Manually allocate hugepages
+	e.g. echo 448 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+  3. Load the non-cacheable module
 	$ insmod kpage_ncache.ko
-4. Find DPDK applications (dpdk-l2fwd & dpdk-testpmd) under the folder
+  4. Find DPDK applications (dpdk-l2fwd & dpdk-testpmd) under the folder
 	'/usr/share/dpdk/examples/' and dpdk-testpmd at '/usr/bin/'.
 
-5. Run -
+  5. Run -
 	./dpdk-l2fwd -c 0x3 -n 1 --vdev 'net_enetqos' -- -p 0x1 -q 1
 	./dpdk-testpmd -c 0x3 -n 1 --vdev 'net_enetqos'  -- -i --portmask=0x2 --nb-ports=1 --forward-mode=io
 	./dpdk-l3fwd -c 0x2 -n 1 --vdev 'net_enetqos' -- -p 0x1 --config="(0,0,1)" -P
 	Note: In l3fwd for ENET-QOS Ethernet interface add '--parse-ptype'.
 
-	For testing the forwarding between both FEC and QOS port run:
-		./dpdk-l2fwd -c 0xf -n 1 --vdev 'net_enetqos'  --vdev 'net_enetfec' -- -p 0x3 -T 0 -P
-		./dpdk-testpmd -c 0xf -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec'  -- -i --portmask=0x3 --nb-ports=2 --forward-mode=io
+Forwarding between both FEC and QOS:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	To use both FEC and QOS interfaces on supported platforms i.e. i.MX 8MP, i.MX91 & i.MX93
+	follow both ports boot steps, refer sectons- Steps for ENET-FEC(Booting steps) & Steps for ENET-QOS(Booting steps).
+	Run-
+	    ./dpdk-l2fwd -c 0xf -n 1 --vdev 'net_enetqos'  --vdev 'net_enetfec' -- -p 0x3 -T 0 -P
+	    ./dpdk-testpmd -c 0xf -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec'  -- -i --portmask=0x3 --nb-ports=2 --forward-mode=io
 
-6. Run traffic
+	Note: i.MX91 is single core platform, so it has limitaion to use core 0. Also-
+	      dpdk-testpmd is not supported.
+	      dpdk-l2fwd is not supported for multi port case.
+
+  6. Run traffic
 	For functional testing, send the traffic from packet generator
 	which is connected to the port.
 
