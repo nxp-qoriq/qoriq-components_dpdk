@@ -426,6 +426,9 @@ Following are some pre-requisites:
 	"setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
 	 setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}';
 	 run loadkernel; run loadfdt; fdt addr ${fdt_addr};
+	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-gpios";
+	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-assert-us";
+	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-deassert-us";
 	 fdt set /soc@0/bus@42800000/ethernet@42890000 compatible "fsl,imx8mm-fec-uio";
 	 setenv bootcmd 'mmc dev ${mmcdev}; run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
     => saveenv
@@ -570,8 +573,8 @@ Note: For i.MX95 use 13.2 gcc (See details in cross-compilation section)
 	$ meson arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc -Dexamples=all
 	$ ninja -C arm64-build
 
-Steps to run VF(s) in dpdk:
-----------------------------
+Generic steps on i.MX95 before running dpdk:
+--------------------------------------------
 1. Bring up the board with proper images and set "iommu.passthrough=1" in mmcargs:
         setenv mmcargs <user-specific-params> isolcpus=1-5 iommu.passthrough=1;
 2. Set "fdtfile" on uboot with default dtb:
@@ -584,10 +587,45 @@ Steps to run VF(s) in dpdk:
 5. Manually allocate hugepages
 	echo 512 > /proc/sys/vm/nr_hugepages
 
-6. Running VFs in dpdk:
+Multi-queue:
+============
+Devlink utilty in Linux can be used to configure multiple queues in init
+process of PF.
 
-	Run the below steps to bind VFs to dpdk:
-	a. Run below command to create a VF:
+The number of rings allocated to each SI is at least 1.
+
+Run below commands to configure multiple queues:
+------------------------------------------------
+1. Example to set the number of rings of PF to 1, VF0 to 6 and VF1 to 1:
+	$ ./devlink dev param set pci/0002:00:10.0 name si_num_rings cmode driverinit value 353
+	Note: Here,
+	      -> 0002:00:10.0 is PF PCI address.
+	      -> The 'value' is uint32 type value. Each SI occupies 4 bits, of
+		 which PSI (PF) occupies the lowest 4 bits, then VSI0 (VF0) occupies
+		 bits 4 to 7, VSI1 (VF1) occupies bits 8 to 11, and so on.
+		 So, 353 is 0001 0110 0001 in binary, configuring number of rings
+	         of PF to 1, VF0 to 6 and VF1 to 1.
+2. Run devlink reload command to apply the new configuration.
+	$ ./devlink dev reload pci/0002:00:10.0
+3. Verify the value of si_num_rings
+	$ devlink dev param show pci/0002:00:10.0 name si_num_rings
+Example output:
+pci/0002:00:10.0:
+  name si_num_rings type driver-specific
+   values:
+    cmode driverinit value 353
+
+
+Running VFs in DPDK:
+====================
+
+Note:
+Max 2 VFs are supported per ENETC, follow the same steps as below to run DPDK on
+them.
+
+1. Run the below steps to bind VFs to dpdk:
+	a. If multiple queues are to be used, follow above section before creating VFs.
+	   Run below command to create a VF:
 		$ echo 1 > /sys/bus/pci/devices/0002\:00\:00.0/sriov_numvfs
 		Note: Use 'dpdk-devbind.py -s' to identify the PCI address of 1g and 10g ports
 		      like 0002:00:00.0 in the above example.
@@ -599,15 +637,19 @@ Steps to run VF(s) in dpdk:
 	c. Use dpdk-devbind.py to bind VF to dpdk:
 		dpdk-devbind.py -b uio_pci_generic <vf-pci-addr>
 		As per the above logs, 0002:00:12.0 will be the <vf-pci-addr>
-7. Enable trust for the specified VF user by specifying the PF eth interface.
+2. Enable trust for the specified VF user by specifying the PF eth interface.
 	ip link set <eth-interface> vf 0 trust on
 	Note: Check eth interface using:
               eg. ./dpdk-devbind.py -s [In below o/p eth0 is the PF eth interface]
                 0002:00:00.0 'Device e101' if=eth0 drv=fsl_enetc4 unused=vfio-pci,uio_pci_generic
-8. Run:
+3. Run:
 	$ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1
 	$ ./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 -P --config="(0,0,1)"
 	$ ./dpdk-testpmd -c 0x3 -n 1 -- -i --portmask=0x1
+
+	Examples to run multiqueue:
+	$ ./dpdk-l3fwd -c 0x3f -n 1 -- -p 0x1 -P --config="(0,0,1) (0,1,2) (0,2,3) (0,3,4) (0,4,5) (0,5,0)"
+	$ ./dpdk-testpmd -c 0x3f -n 1 -- -i --portmask=0x1 --rxq=5 --txq=5
 
 PSI-VSI messaging:
 ------------------
@@ -620,6 +662,9 @@ Currently the following features have been supportd for VF using kernel PF using
     * Enable/Disable allmulti MAC mode
     * Get link status
     * Get link speed
+    * MAC Exact Match filtering
+    * VLAN Exact Match filtering
+    * Enable/Disable VLAN promiscous mode
 
 1. Follow the above steps to run dpdk-testpmd.
 2. Users can control the timeout and delay time counters with env. variables [optional]
@@ -637,6 +682,30 @@ Currently the following features have been supportd for VF using kernel PF using
 	-> set promisc <port_id> off/on		      /* Enable/Disable promiscuous mode */
 	-> set allmulti <port_id> off/on	      /* Enable/Disable allmulti MAC mode */
 	-> show port info <port_id>		      /* Get link status/speed */
+
+To add MAC adddress exact match entry:
+-------------------------------------
+	1. Disable the promiscuous mode to test the MAC entries filtering.
+		-> set promisc <port_id> off
+	2. Run below command to add exact match MAC address entry:
+		-> mac_addr add <port_id> <valid_mac_address>
+
+To add/remove VLAN exact match entry:
+------------------------------------
+Run below commands on dpdk-testpmd cmdline:
+	1. Run below command to disable VLAN promisc mode & set VLAN filter mode for the port:
+		-> vlan set filter on <port_id>
+		Note: By default, VLAN promisc mode is enabled.
+	2. Once the VLAN promisc is off, we can add exact match vlan entries:
+		-> rx_vlan add <vlan_id> <port_id>
+	3. If required the entry can be removed using below command:
+		-> rx_vlan rm <vlan_id> <port_id>
+	4. To enable promisc mode & unset VLAN filter mode for the port:
+		-> vlan set filter off <port_id>
+
+Note:
+Currently, maximum MAC and VLAN address exact match filter table entries that
+can be added are 4 per ENETC.
 
 VF1 validation:
 ---------------
