@@ -205,56 +205,43 @@ enetc4_dev_infos_get(struct rte_eth_dev *dev,
 }
 
 static int
-mark_memory_ncache(struct enetc_bdr *bdr, const char *mz_name, int size)
+mark_memory_ncache(struct enetc_bdr *bdr, const char *mz_name, unsigned size)
 {
-	const struct rte_memzone *mz;
-	struct rte_memseg *memseg;
-	uint64_t non_alloc_diff;
 	uint64_t huge_page;
 
-	mz = rte_memzone_reserve(mz_name, size, SOCKET_ID_ANY, 0);
+#ifdef RTE_IMX_MEMZONE_RING_MEMORY
+	const struct rte_memzone *mz;
 
-	if (mz) {
+	mz = rte_memzone_reserve_aligned(mz_name,
+			size, SOCKET_ID_ANY,
+			RTE_MEMZONE_2MB, size);
+	if (mz)
 		bdr->bd_base = mz->addr;
-		memseg = rte_mem_virt2memseg((void *)((uintptr_t)mz->addr + size - 1), NULL);
-		non_alloc_diff = (uintptr_t)memseg->addr - (uintptr_t)mz->addr;
-
-		if (non_alloc_diff != 0) {
-			rte_memzone_free(mz);
-			mz = rte_memzone_reserve(mz_name, size + non_alloc_diff, SOCKET_ID_ANY, 0);
-
-			if (mz) {
-				if (bdr->bd_base == mz->addr) {
-					bdr->bd_base =
-						(void *)((uintptr_t)mz->addr + non_alloc_diff);
-				} else {
-					/* If the memzone allocation after freeing it is different
-					 * from the previous allocated, system will reserve
-					 * a 2MB aligned hugepage for BD memory.
-					 */
-					rte_memzone_free(mz);
-					mz = rte_memzone_reserve_aligned(mz_name,
-							SIZE_2MB, SOCKET_ID_ANY,
-							0, SIZE_2MB);
-					if (mz) {
-						bdr->bd_base = mz->addr;
-					} else {
-						ENETC_PMD_ERR("Failed to allocate memzone!!");
-						return -ENOMEM;
-					}
-				}
-
-			} else {
-				ENETC_PMD_ERR("Failed to allocate memzone!!");
-				return -ENOMEM;
-			}
-		}
-	} else {
-		ENETC_PMD_ERR("Failed to allocate memzone!!");
+	else {
+		ENETC_PMD_ERR("Failed to allocate memzone!!,"
+			      " please reserve 2MB size pages\n");
 		return -ENOMEM;
 	}
-
+	if (mz->hugepage_sz != size)
+		ENETC_PMD_WARN("Hugepage size of queue memzone %lx\n",
+				mz->hugepage_sz);
 	bdr->mz = mz;
+#else
+	struct rte_memseg *memseg;
+
+	memseg = rte_eal_memalloc_alloc_seg(SIZE_2MB, 0);
+	if (memseg == NULL)
+		ENETC_PMD_ERR("No 2MB size hugepage available\n");
+
+	bdr->bd_base = memseg->addr;
+	bdr->memseg = memseg;
+	RTE_SET_USED(mz_name);
+#endif
+	/* Double check memzone alignment and hugepage size */
+	if (!rte_is_aligned(bdr->bd_base, size))
+		ENETC_PMD_WARN("Memzone is not aligned to %x\n", size);
+
+	ENETC_PMD_DEBUG("Ring Hugepage start address = %p\n", bdr->bd_base);
 	/* Mark memory NON-CACHEABLE */
 	huge_page =
 		(uint64_t)RTE_PTR_ALIGN_FLOOR(bdr->bd_base, size);
@@ -266,7 +253,6 @@ mark_memory_ncache(struct enetc_bdr *bdr, const char *mz_name, int size)
 static int
 enetc4_alloc_txbdr(uint16_t port_id, struct enetc_bdr *txr, uint16_t nb_desc)
 {
-	int bd_total = SIZE_2MB;
 	char mz_name[RTE_MEMZONE_NAMESIZE];
 	int size;
 
@@ -276,7 +262,7 @@ enetc4_alloc_txbdr(uint16_t port_id, struct enetc_bdr *txr, uint16_t nb_desc)
 		return -ENOMEM;
 
 	snprintf(mz_name, sizeof(mz_name), "bdt_addr_%d_%d", port_id, txr->index);
-	if (mark_memory_ncache(txr, mz_name, bd_total)) {
+	if (mark_memory_ncache(txr, mz_name, SIZE_2MB)) {
 		ENETC_PMD_ERR("Failed to mark BD memory non-cacheable!");
 		rte_free(txr->q_swbd);
 		txr->q_swbd = NULL;
@@ -292,7 +278,13 @@ enetc4_alloc_txbdr(uint16_t port_id, struct enetc_bdr *txr, uint16_t nb_desc)
 static void
 enetc4_free_bdr(struct enetc_bdr *rxr)
 {
+#ifdef RTE_IMX_MEMZONE_RING_MEMORY
 	rte_memzone_free(rxr->mz);
+	rxr->mz = NULL;
+#else
+	rte_eal_memalloc_free_seg(rxr->memseg);
+	rxr->memseg = NULL;
+#endif
 	rte_free(rxr->q_swbd);
 	rxr->q_swbd = NULL;
 	rxr->bd_base = NULL;
@@ -418,7 +410,6 @@ static int
 enetc4_alloc_rxbdr(uint16_t port_id, struct enetc_bdr *rxr,
 		  uint16_t nb_desc)
 {
-	int bd_total = SIZE_2MB;
 	char mz_name[RTE_MEMZONE_NAMESIZE];
 	int size;
 
@@ -428,7 +419,7 @@ enetc4_alloc_rxbdr(uint16_t port_id, struct enetc_bdr *rxr,
 		return -ENOMEM;
 
 	snprintf(mz_name, sizeof(mz_name), "bdr_addr_%d_%d", port_id, rxr->index);
-	if (mark_memory_ncache(rxr, mz_name, bd_total)) {
+	if (mark_memory_ncache(rxr, mz_name, SIZE_2MB)) {
 		ENETC_PMD_ERR("Failed to mark BD memory non-cacheable!");
 		rte_free(rxr->q_swbd);
 		rxr->q_swbd = NULL;
