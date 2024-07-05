@@ -138,14 +138,18 @@ struct enetc_eth_adapter {
 #define ENETC_MSG_CLASS_ID_CMD_TIMEOUT          0x8
 #define ENETC_MSG_CLASS_ID_CMD_DEFERED          0xf
 
-#define ENETC_PROMISC_DISABLE			0x40
-#define ENETC_PROMISC_ENABLE			0x42
-#define ENETC_ALLMULTI_PROMISC_DIS		0x80
-#define ENETC_ALLMULTI_PROMISC_EN		0x82
+#define ENETC_PROMISC_DISABLE			0x41
+#define ENETC_PROMISC_ENABLE			0x43
+#define ENETC_ALLMULTI_PROMISC_DIS		0x81
+#define ENETC_ALLMULTI_PROMISC_EN		0x83
+
+#define ENETC_PROMISC_VLAN_DISABLE		0x1
+#define ENETC_PROMISC_VLAN_ENABLE		0x3
 
 /* Enum for class IDs */
 enum enetc_msg_cmd_class_id {
 	ENETC_CLASS_ID_MAC_FILTER = 0x20,
+	ENETC_CLASS_ID_VLAN_FILTER = 0x21,
 	ENETC_CLASS_ID_LINK_STATUS = 0x80,
 	ENETC_CLASS_ID_LINK_SPEED = 0x81
 };
@@ -153,7 +157,11 @@ enum enetc_msg_cmd_class_id {
 /* Enum for command IDs */
 enum enetc_msg_cmd_id {
 	ENETC_CMD_ID_SET_PRIMARY_MAC = 0,
+	ENETC_MSG_ADD_EXACT_MAC_ENTRIES = 1,
 	ENETC_CMD_ID_SET_MAC_PROMISCUOUS = 5,
+	ENETC_MSG_ADD_EXACT_VLAN_ENTRIES = 0,
+	ENETC_MSG_REMOVE_EXACT_VLAN_ENTRIES = 1,
+	ENETC_CMD_ID_SET_VLAN_PROMISCUOUS = 4,
 	ENETC_CMD_ID_GET_LINK_STATUS = 0,
 	ENETC_CMD_ID_GET_LINK_SPEED = 0
 };
@@ -162,6 +170,14 @@ enum mac_addr_status {
 	ENETC_INVALID_MAC_ADDR = 0x0,
 	ENETC_DUPLICATE_MAC_ADDR = 0X1,
 	ENETC_MAC_ADDR_NOT_FOUND = 0X2,
+	ENETC_MAC_FILTER_NO_RESOURCE = 0x3
+};
+
+enum vlan_status {
+	ENETC_INVALID_VLAN_ENTRY = 0x0,
+	ENETC_DUPLICATE_VLAN_ENTRY = 0X1,
+	ENETC_VLAN_ENTRY_NOT_FOUND = 0x2,
+	ENETC_VLAN_NO_RESOURCE = 0x3
 };
 
 enum link_status {
@@ -221,6 +237,22 @@ struct enetc_msg_cmd_get_link_speed {
 	 struct enetc_msg_cmd_header header;
 };
 
+struct enetc_msg_cmd_set_vlan_promisc {
+	struct enetc_msg_cmd_header header;
+	uint8_t op;
+	uint8_t reserved;
+};
+
+struct enetc_msg_vlan_exact_filter {
+	struct enetc_msg_cmd_header header;
+	uint8_t vlan_count;
+	uint8_t reserved_1;
+	uint16_t reserved_2;
+	uint16_t vlan_id;
+	uint8_t tpid;
+	uint8_t reserved2;
+};
+
 struct enetc_psi_reply_msg {
 	uint8_t class_id;
 	uint8_t status;
@@ -239,12 +271,14 @@ int enetc4_pci_remove(struct rte_pci_device *pci_dev);
 int enetc4_dev_configure(struct rte_eth_dev *dev);
 int enetc4_dev_close(struct rte_eth_dev *dev);
 int enetc4_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused);
-int enetc4_dev_infos_get(struct rte_eth_dev *dev __rte_unused,
-			 struct rte_eth_dev_info *dev_info);
 int enetc4_rx_queue_setup(struct rte_eth_dev *dev, uint16_t rx_queue_id,
 			  uint16_t nb_rx_desc, unsigned int socket_id __rte_unused,
 			  const struct rte_eth_rxconf *rx_conf,
 			  struct rte_mempool *mb_pool);
+int enetc4_dev_infos_get(struct rte_eth_dev *dev,
+				struct rte_eth_dev_info *dev_info);
+int enetc4_vf_dev_infos_get(struct rte_eth_dev *dev,
+				struct rte_eth_dev_info *dev_info);
 int enetc4_rx_queue_start(struct rte_eth_dev *dev, uint16_t qidx);
 int enetc4_rx_queue_stop(struct rte_eth_dev *dev, uint16_t qidx);
 void enetc4_rx_queue_release(struct rte_eth_dev *dev, uint16_t qid);

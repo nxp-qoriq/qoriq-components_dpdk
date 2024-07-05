@@ -18,6 +18,19 @@
 uint16_t enetc_crc_table[ENETC_CRC_TABLE_SIZE];
 bool enetc_crc_gen;
 
+/* Supported Rx offloads */
+static uint64_t dev_rx_offloads_sup =
+	RTE_ETH_RX_OFFLOAD_IPV4_CKSUM |
+	RTE_ETH_RX_OFFLOAD_UDP_CKSUM |
+	RTE_ETH_RX_OFFLOAD_TCP_CKSUM |
+	RTE_ETH_RX_OFFLOAD_VLAN_FILTER;
+
+/* Supported Tx offloads */
+static uint64_t dev_tx_offloads_sup =
+	RTE_ETH_TX_OFFLOAD_IPV4_CKSUM |
+	RTE_ETH_TX_OFFLOAD_UDP_CKSUM |
+	RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
+
 static void
 enetc_gen_crc_table(void)
 {
@@ -52,6 +65,37 @@ enetc_crc_calc(uint16_t crc, const uint8_t *buffer, size_t len)
 		buffer++;
 	}
 	return crc;
+}
+
+int
+enetc4_vf_dev_infos_get(struct rte_eth_dev *dev,
+                    struct rte_eth_dev_info *dev_info)
+{
+	PMD_INIT_FUNC_TRACE();
+
+	struct enetc_eth_hw *hw =
+		ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+
+	dev_info->rx_desc_lim = (struct rte_eth_desc_lim) {
+		.nb_max = MAX_BD_COUNT,
+		.nb_min = MIN_BD_COUNT,
+		.nb_align = BD_ALIGN,
+	};
+	dev_info->tx_desc_lim = (struct rte_eth_desc_lim) {
+		.nb_max = MAX_BD_COUNT,
+		.nb_min = MIN_BD_COUNT,
+		.nb_align = BD_ALIGN,
+	};
+
+	dev_info->max_rx_queues = hw->max_rx_queues;
+	dev_info->max_tx_queues = hw->max_tx_queues;
+	dev_info->max_rx_pktlen = ENETC4_MAC_MAXFRM_SIZE;
+	dev_info->max_mac_addrs = ENETC4_MAC_ENTRIES;
+	dev_info->rx_offload_capa = dev_rx_offloads_sup;
+	dev_info->tx_offload_capa = dev_tx_offloads_sup;
+	dev_info->flow_type_rss_offloads = ENETC_RSS_OFFLOAD_ALL;
+
+	return 0;
 }
 
 int
@@ -106,7 +150,9 @@ enetc_msg_vf_fill_common_hdr(struct enetc_msg_swbd *msg,
 	hdr->len = len;
 	hdr->cookie = cookie;
 	/* Incrementing msg 2 bytes ahead as the first two bytes are for CRC */
-	hdr->csum = rte_cpu_to_be_16(enetc_crc_calc(ENETC_CRC_INIT, (uint8_t *) msg->vaddr + sizeof(uint16_t), msg->size - sizeof(uint16_t)));
+	hdr->csum = rte_cpu_to_be_16(enetc_crc_calc(ENETC_CRC_INIT,
+				(uint8_t *) msg->vaddr + sizeof(uint16_t),
+				msg->size - sizeof(uint16_t)));
 
 	dcbf(hdr);
 }
@@ -248,7 +294,8 @@ enetc4_vf_set_mac_addr(struct rte_eth_dev *dev, struct rte_ether_addr *addr)
 		return err;
         }
 
-	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_cmd_set_primary_mac), ENETC_VSI_PSI_MSG_SIZE);
+	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_cmd_set_primary_mac),
+				ENETC_VSI_PSI_MSG_SIZE);
 	msg->vaddr = rte_zmalloc(NULL, msg_size, 0);
 	if (!msg->vaddr) {
 		ENETC_PMD_ERR("Failed to alloc memory for msg");
@@ -265,7 +312,8 @@ enetc4_vf_set_mac_addr(struct rte_eth_dev *dev, struct rte_ether_addr *addr)
 	cmd->count = 0;
 	memcpy(&cmd->addr.addr_bytes, addr, sizeof(struct rte_ether_addr));
 
-	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_MAC_FILTER, ENETC_CMD_ID_SET_PRIMARY_MAC, 0, 0, 0);
+	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_MAC_FILTER,
+					ENETC_CMD_ID_SET_PRIMARY_MAC, 0, 0, 0);
 
 	/* send the command and wait */
 	err = enetc4_msg_vsi_send(enetc_hw, msg);
@@ -348,7 +396,8 @@ enetc4_vf_promisc_send_message(struct rte_eth_dev *dev, bool promisc_en)
 	else
 		cmd->op_type = ENETC_PROMISC_DISABLE;
 
-	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_MAC_FILTER, ENETC_CMD_ID_SET_MAC_PROMISCUOUS, 0, 0, 0);
+	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_MAC_FILTER,
+				ENETC_CMD_ID_SET_MAC_PROMISCUOUS, 0, 0, 0);
 
 	/* send the command and wait */
 	err = enetc4_msg_vsi_send(enetc_hw, msg);
@@ -381,7 +430,8 @@ enetc4_vf_allmulti_send_message(struct rte_eth_dev *dev, bool mc_promisc)
 		return err;
 	}
 
-	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_cmd_set_promisc), ENETC_VSI_PSI_MSG_SIZE);
+	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_cmd_set_promisc),
+				ENETC_VSI_PSI_MSG_SIZE);
 	msg->vaddr = rte_zmalloc(NULL, msg_size, 0);
 	if (!msg->vaddr) {
 		ENETC_PMD_ERR("Failed to alloc memory for msg");
@@ -404,7 +454,8 @@ enetc4_vf_allmulti_send_message(struct rte_eth_dev *dev, bool mc_promisc)
 	else
 		cmd->op_type = ENETC_ALLMULTI_PROMISC_DIS;
 
-	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_MAC_FILTER, ENETC_CMD_ID_SET_MAC_PROMISCUOUS, 0, 0, 0);
+	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_MAC_FILTER,
+				ENETC_CMD_ID_SET_MAC_PROMISCUOUS, 0, 0, 0);
 
 	/* send the command and wait */
 	err = enetc4_msg_vsi_send(enetc_hw, msg);
@@ -497,7 +548,8 @@ enetc4_vf_get_link_status(struct rte_eth_dev *dev, struct enetc_psi_reply_msg *r
 		return err;
 	}
 
-	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_cmd_get_link_status), ENETC_VSI_PSI_MSG_SIZE);
+	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_cmd_get_link_status),
+			ENETC_VSI_PSI_MSG_SIZE);
 	msg->vaddr = rte_zmalloc(NULL, msg_size, 0);
 	if (!msg->vaddr) {
 		ENETC_PMD_ERR("Failed to alloc memory for msg");
@@ -508,7 +560,8 @@ enetc4_vf_get_link_status(struct rte_eth_dev *dev, struct enetc_psi_reply_msg *r
 	msg->dma = rte_mem_virt2iova((const void *) msg->vaddr);
 	msg->size = msg_size;
 
-	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_LINK_STATUS, ENETC_CMD_ID_GET_LINK_STATUS, 0, 0, 0);
+	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_LINK_STATUS,
+			ENETC_CMD_ID_GET_LINK_STATUS, 0, 0, 0);
 
 	/* send the command and wait */
 	err = enetc4_msg_vsi_send(enetc_hw, msg);
@@ -541,7 +594,8 @@ enetc4_vf_get_link_speed(struct rte_eth_dev *dev, struct enetc_psi_reply_msg *re
 		return err;
 	}
 
-	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_cmd_get_link_speed), ENETC_VSI_PSI_MSG_SIZE);
+	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_cmd_get_link_speed),
+				ENETC_VSI_PSI_MSG_SIZE);
 	msg->vaddr = rte_zmalloc(NULL, msg_size, 0);
 	if (!msg->vaddr) {
 		ENETC_PMD_ERR("Failed to alloc memory for msg");
@@ -552,7 +606,8 @@ enetc4_vf_get_link_speed(struct rte_eth_dev *dev, struct enetc_psi_reply_msg *re
 	msg->dma = rte_mem_virt2iova((const void *) msg->vaddr);
 	msg->size = msg_size;
 
-	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_LINK_SPEED, ENETC_CMD_ID_GET_LINK_SPEED, 0, 0, 0);
+	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_LINK_SPEED,
+			ENETC_CMD_ID_GET_LINK_SPEED, 0, 0, 0);
 
 	/* send the command and wait */
 	err = enetc4_msg_vsi_send(enetc_hw, msg);
@@ -694,6 +749,285 @@ enetc4_vf_link_update(struct rte_eth_dev *dev, int wait_to_complete __rte_unused
 	return 0;
 }
 
+static int
+enetc4_vf_vlan_promisc(struct rte_eth_dev *dev, bool promisc_en)
+{
+	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct enetc_hw *enetc_hw = &hw->hw;
+	struct enetc_msg_cmd_set_vlan_promisc *cmd;
+	struct enetc_msg_swbd *msg;
+	int msg_size;
+	int err = 0;
+
+	msg = rte_zmalloc(NULL, sizeof(*msg), RTE_CACHE_LINE_SIZE);
+	if (!msg) {
+		ENETC_PMD_ERR("Failed to alloc msg");
+		err = -ENOMEM;
+		return err;
+	}
+
+	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_cmd_set_vlan_promisc),
+				ENETC_VSI_PSI_MSG_SIZE);
+	msg->vaddr = rte_zmalloc(NULL, msg_size, 0);
+	if (!msg->vaddr) {
+		ENETC_PMD_ERR("Failed to alloc memory for msg");
+		rte_free(msg);
+		return -ENOMEM;
+	}
+	msg->dma = rte_mem_virt2iova((const void *)msg->vaddr);
+	msg->size = msg_size;
+
+	cmd = (struct enetc_msg_cmd_set_vlan_promisc *)msg->vaddr;
+	/* op is based on the result of message format
+	*	   1	  0
+	*	promisc	flush
+	*/
+
+	if (promisc_en)
+		cmd->op = ENETC_PROMISC_VLAN_ENABLE;
+	else
+		cmd->op = ENETC_PROMISC_VLAN_DISABLE;
+
+	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_VLAN_FILTER,
+				ENETC_CMD_ID_SET_VLAN_PROMISCUOUS, 0, 0, 0);
+
+	/* send the command and wait */
+	err = enetc4_msg_vsi_send(enetc_hw, msg);
+	if (err) {
+		ENETC_PMD_ERR("VSI message send error");
+		goto end;
+	}
+
+end:
+	/* free memory no longer required */
+	rte_free(msg->vaddr);
+	rte_free(msg);
+	return err;
+}
+
+static int
+enetc4_vf_mac_addr_add(struct rte_eth_dev *dev, struct rte_ether_addr *addr,
+			uint32_t index __rte_unused, uint32_t pool __rte_unused)
+{
+	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct enetc_hw *enetc_hw = &hw->hw;
+	struct enetc_msg_cmd_set_primary_mac *cmd;
+	struct enetc_msg_swbd *msg;
+	struct enetc_psi_reply_msg *reply_msg;
+	int msg_size;
+	int err = 0;
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (!rte_is_valid_assigned_ether_addr(addr))
+		return -EINVAL;
+
+	reply_msg = rte_zmalloc(NULL, sizeof(*reply_msg), RTE_CACHE_LINE_SIZE);
+	if (!reply_msg) {
+		ENETC_PMD_ERR("Failed to alloc memory for reply_msg");
+		return -ENOMEM;
+	}
+
+	msg = rte_zmalloc(NULL, sizeof(*msg), RTE_CACHE_LINE_SIZE);
+	if (!msg) {
+		ENETC_PMD_ERR("Failed to alloc msg");
+		err = -ENOMEM;
+		rte_free(reply_msg);
+		return err;
+	}
+
+	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_cmd_set_primary_mac),
+			ENETC_VSI_PSI_MSG_SIZE);
+	msg->vaddr = rte_zmalloc(NULL, msg_size, 0);
+	if (!msg->vaddr) {
+		ENETC_PMD_ERR("Failed to alloc memory for msg");
+		rte_free(msg);
+		rte_free(reply_msg);
+		return -ENOMEM;
+	}
+	msg->dma = rte_mem_virt2iova((const void *) msg->vaddr);
+	msg->size = msg_size;
+	cmd = (struct enetc_msg_cmd_set_primary_mac *)msg->vaddr;
+	memcpy(&cmd->addr.addr_bytes, addr, sizeof(struct rte_ether_addr));
+	cmd->count = 1;
+
+	enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_MAC_FILTER,
+			ENETC_MSG_ADD_EXACT_MAC_ENTRIES, 0, 0, 0);
+
+	/* send the command and wait */
+	err = enetc4_msg_vsi_send(enetc_hw, msg);
+	if (err){
+		ENETC_PMD_ERR("VSI message send error");
+		goto end;
+	}
+
+	enetc4_msg_vsi_reply_msg(enetc_hw, reply_msg);
+
+	if (reply_msg->class_id == ENETC_CLASS_ID_MAC_FILTER) {
+		switch (reply_msg->status) {
+		case ENETC_INVALID_MAC_ADDR:
+			ENETC_PMD_ERR("Invalid MAC address");
+			err = -EINVAL;
+			break;
+		case ENETC_DUPLICATE_MAC_ADDR:
+			ENETC_PMD_ERR("Duplicate MAC address");
+			err = -EINVAL;
+			break;
+		case ENETC_MAC_FILTER_NO_RESOURCE:
+			ENETC_PMD_ERR("Not enough exact-match entries available");
+			err = -EINVAL;
+			break;
+		default:
+			err = -EINVAL;
+			break;
+		}
+	}
+
+	if (err) {
+		ENETC_PMD_ERR("VSI command execute error!");
+		goto end;
+	}
+
+end:
+	/* free memory no longer required */
+	rte_free(msg->vaddr);
+	rte_free(reply_msg);
+	rte_free(msg);
+	return err;
+}
+
+static int enetc4_vf_vlan_filter_set(struct rte_eth_dev *dev, uint16_t vlan_id, int on)
+{
+	struct enetc_eth_hw *hw = ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	struct enetc_hw *enetc_hw = &hw->hw;
+	struct enetc_msg_vlan_exact_filter *cmd;
+	struct enetc_msg_swbd *msg;
+	struct enetc_psi_reply_msg *reply_msg;
+	int msg_size;
+	int err = 0;
+
+	PMD_INIT_FUNC_TRACE();
+
+	reply_msg = rte_zmalloc(NULL, sizeof(*reply_msg), RTE_CACHE_LINE_SIZE);
+	if (!reply_msg) {
+		ENETC_PMD_ERR("Failed to alloc memory for reply_msg");
+		return -ENOMEM;
+	}
+
+	msg = rte_zmalloc(NULL, sizeof(*msg), RTE_CACHE_LINE_SIZE);
+	if (!msg) {
+		ENETC_PMD_ERR("Failed to alloc msg");
+		err = -ENOMEM;
+		rte_free(reply_msg);
+		return err;
+	}
+
+	msg_size = RTE_ALIGN(sizeof(struct enetc_msg_vlan_exact_filter),
+			ENETC_VSI_PSI_MSG_SIZE);
+	msg->vaddr = rte_zmalloc(NULL, msg_size, 0);
+	if (!msg->vaddr) {
+		ENETC_PMD_ERR("Failed to alloc memory for msg");
+		rte_free(msg);
+		rte_free(reply_msg);
+		return -ENOMEM;
+	}
+	msg->dma = rte_mem_virt2iova((const void *)msg->vaddr);
+	msg->size = msg_size;
+	cmd = (struct enetc_msg_vlan_exact_filter *)msg->vaddr;
+	cmd->vlan_count = 1;
+	cmd->vlan_id = vlan_id;
+
+	/* TPID 2-bit encoding value is taken from the H/W block guide:
+	 *	00b Standard C-VLAN 0x8100
+	 *	01b Standard S-VLAN 0x88A8
+	 *	10b Custom VLAN as defined by CVLANR1[ETYPE]
+	 *	11b Custom VLAN as defined by CVLANR2[ETYPE]
+	 * Currently Standard C-VLAN is supported. To support others in future.
+	 */
+	cmd->tpid = 0;
+
+	if (on) {
+		enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_VLAN_FILTER,
+				ENETC_MSG_ADD_EXACT_VLAN_ENTRIES, 0, 0, 0);
+	} else {
+		enetc_msg_vf_fill_common_hdr(msg, ENETC_CLASS_ID_VLAN_FILTER,
+				ENETC_MSG_REMOVE_EXACT_VLAN_ENTRIES, 0, 0, 0);
+	}
+
+	/* send the command and wait */
+	err = enetc4_msg_vsi_send(enetc_hw, msg);
+	if (err) {
+		ENETC_PMD_ERR("VSI message send error");
+		goto end;
+	}
+
+	enetc4_msg_vsi_reply_msg(enetc_hw, reply_msg);
+
+	if (reply_msg->class_id == ENETC_CLASS_ID_VLAN_FILTER) {
+		switch (reply_msg->status) {
+		case ENETC_INVALID_VLAN_ENTRY:
+			ENETC_PMD_ERR("VLAN entry not valid");
+			err = -EINVAL;
+			break;
+		case ENETC_DUPLICATE_VLAN_ENTRY:
+			ENETC_PMD_ERR("Duplicated VLAN entry");
+			err = -EINVAL;
+			break;
+		case ENETC_VLAN_ENTRY_NOT_FOUND:
+			ENETC_PMD_ERR("VLAN entry not found");
+			err = -EINVAL;
+			break;
+		case ENETC_VLAN_NO_RESOURCE:
+			ENETC_PMD_ERR("Not enough exact-match entries available");
+			err = -EINVAL;
+			break;
+		default:
+			err = -EINVAL;
+			break;
+		}
+	}
+
+	if (err) {
+		ENETC_PMD_ERR("VSI command execute error!");
+		goto end;
+	}
+
+end:
+	/* free memory no longer required */
+	rte_free(msg->vaddr);
+	rte_free(reply_msg);
+	rte_free(msg);
+	return err;
+}
+
+static int enetc4_vf_vlan_offload_set(struct rte_eth_dev *dev, int mask __rte_unused)
+{
+	int err = 0;
+
+	PMD_INIT_FUNC_TRACE();
+
+	if (dev->data->dev_conf.rxmode.offloads) {
+		ENETC_PMD_DEBUG("VLAN filter table entry inserted:"
+					"Disabling VLAN promisc mode");
+		err = enetc4_vf_vlan_promisc(dev, false);
+		if (err) {
+			ENETC_PMD_ERR("Added VLAN filter table entry:"
+					"Failed to disable promiscuous mode");
+			return err;
+		}
+	} else {
+		ENETC_PMD_DEBUG("Enabling VLAN promisc mode");
+		err = enetc4_vf_vlan_promisc(dev, true);
+		if (err) {
+			ENETC_PMD_ERR("Vlan filter table empty:"
+					"Failed to enable promiscuous mode");
+			return err;
+		}
+	}
+
+	return 0;
+}
+
 /*
  * The set of PCI devices this driver supports
  */
@@ -709,13 +1043,16 @@ static const struct eth_dev_ops enetc4_vf_ops = {
 	.dev_stop             = enetc4_vf_dev_stop,
 	.dev_close            = enetc4_dev_close,
 	.stats_get            = enetc4_vf_stats_get,
-	.dev_infos_get        = enetc4_dev_infos_get,
+	.dev_infos_get        = enetc4_vf_dev_infos_get,
 	.mac_addr_set         = enetc4_vf_set_mac_addr,
+	.mac_addr_add	      = enetc4_vf_mac_addr_add,
 	.promiscuous_enable   = enetc4_vf_promisc_enable,
 	.promiscuous_disable  = enetc4_vf_promisc_disable,
 	.allmulticast_enable  = enetc4_vf_multicast_enable,
 	.allmulticast_disable = enetc4_vf_multicast_disable,
 	.link_update	      = enetc4_vf_link_update,
+	.vlan_filter_set      = enetc4_vf_vlan_filter_set,
+	.vlan_offload_set     = enetc4_vf_vlan_offload_set,
 	.rx_queue_setup       = enetc4_rx_queue_setup,
 	.rx_queue_start       = enetc4_rx_queue_start,
 	.rx_queue_stop        = enetc4_rx_queue_stop,
@@ -733,7 +1070,7 @@ static const struct eth_dev_ops enetc4_vf_ops_no_vsi_m = {
 	.dev_stop             = enetc4_vf_dev_stop,
 	.dev_close            = enetc4_dev_close,
 	.stats_get            = enetc4_vf_stats_get,
-	.dev_infos_get        = enetc4_dev_infos_get,
+	.dev_infos_get        = enetc4_vf_dev_infos_get,
 	.link_update	      = enetc4_vf_link_update_dummy,
 	.rx_queue_setup       = enetc4_rx_queue_setup,
 	.rx_queue_start       = enetc4_rx_queue_start,
@@ -757,7 +1094,6 @@ enetc4_vf_mac_init(struct enetc_eth_hw *hw, struct rte_eth_dev *eth_dev)
 	char vf_eth_name[ENETC_ETH_NAMESIZE];
 
 	PMD_INIT_FUNC_TRACE();
-
 	/* Enabling Station Interface */
 	enetc4_wr(enetc_hw, ENETC_SIMR, ENETC_SIMR_EN);
 	*mac = (uint32_t)enetc_rd(enetc_hw, ENETC_SIPMAR0);
