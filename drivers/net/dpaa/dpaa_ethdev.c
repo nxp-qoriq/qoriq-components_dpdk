@@ -40,7 +40,6 @@
 
 #include <dpaa_ethdev.h>
 #include <dpaa_rxtx.h>
-#include <dpaa_ptp.c>
 #include <dpaa_flow.h>
 #include <rte_pmd_dpaa.h>
 
