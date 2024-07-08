@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2018-2021 NXP
+# Copyright 2018-2024 NXP
 
 if not is_linux
     build = false
@@ -13,6 +13,7 @@ sources = files(
         'dpaa_fmc.c',
 	'dpaa_oldev.c',
         'dpaa_rxtx.c',
+        'dpaa_ptp.c',
         'fmlib/fm_lib.c',
         'fmlib/fm_vsp.c',
 )

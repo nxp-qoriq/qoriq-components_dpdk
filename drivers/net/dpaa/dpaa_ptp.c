@@ -1,14 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2022 NXP
+ * Copyright 2022-2024 NXP
  */
 
-#include <sys/queue.h>
+/* System headers */
 #include <stdio.h>
-#include <errno.h>
-#include <stdint.h>
-#include <string.h>
+#include <inttypes.h>
 #include <unistd.h>
-#include <stdarg.h>
 
 #include <rte_ethdev.h>
 #include <rte_log.h>
@@ -70,7 +67,7 @@ dpaa_timesync_write_time(struct rte_eth_dev *dev,
 
 	time = rte_timespec_to_ns(ts);
 
-	out_be32(tmr_cnt_l, (uint32_t) time);
+	out_be32(tmr_cnt_l, (uint32_t)time);
 	out_be32(tmr_cnt_h, (uint32_t)(time >> 32));
 
 	return 0;
@@ -102,8 +99,9 @@ dpaa_timesync_read_tx_timestamp(struct rte_eth_dev *dev,
 	if (dpaa_intf->next_tx_conf_queue) {
 		while (!dpaa_intf->tx_timestamp)
 			dpaa_eth_tx_conf(dpaa_intf->next_tx_conf_queue);
-	} else
+	} else {
 		return -1;
+	}
 	*timestamp = rte_ns_to_timespec(dpaa_intf->tx_timestamp);
 
 	return 0;
