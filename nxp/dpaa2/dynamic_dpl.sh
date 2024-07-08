@@ -11,7 +11,7 @@ script help :----->
 	". ./dynamic_dpl.sh -c my.conf dpmac.1 dpmac.2 -b ab:cd:ef:gh:ij:kl dpni-dpni dpni-self..."
 
 	Acceptable arguments are dpni-dpni, dpni-self, dpmac.x, -c and -b
-    -c [optional] = Specify conf file for device count, PARENT_DPRC etc.
+	-c [optional] = Specify conf file for device count, PARENT_DPRC etc.
 		    check vm_dpdk.conf as an example.
 		    If specified this shall be the first argument.
 
@@ -34,7 +34,7 @@ script help :----->
 		    dpni.x = 00:00:00:00:04:I
 		    where I is the index of the argument "dpni-self".
 
-	     dpni = This specify that 1 DPNI object will be created,
+	dpni = This specify that 1 DPNI object will be created,
 		    which will be unconnect.
 		    dpni.x ------------- UNCONNECTED
 
@@ -43,7 +43,7 @@ script help :----->
 		    dpni.x = 00:00:00:00:05:I
 		    where I is the index of the argument "dpni".
 
-	   dpni.x = This specify that 1 DPNI (dpni.y) object will be created,
+	dpni.x = This specify that 1 DPNI (dpni.y) object will be created,
 		    which will be connected to dpni.x
 		    dpni.y <-------connected----->dpni.x
 
@@ -52,22 +52,22 @@ script help :----->
 		    dpni.y = 00:00:00:00:06:I
 		    where I is the index of the argument "dpni.y".
 
-	  dpmac.x = This specify that 1 DPNI  (dpni.y) object will be created,
+	dpmac.x = This specify that 1 DPNI  (dpni.y) object will be created,
 		    which will be connected to dpmac.x.
 		    dpmac.x <-------connected----->dpni.y
 
-                    '-b' option for dpmac is ignored. dpni.y connected to
-                    dpmac.x is assumed to take hardware assigned (firmware)
-                    MAC address when the DPNI is connected to Linux Container.
-                    In other cases, the application is expected to use the MC
-                    API (DPDK).
+		'-b' option for dpmac is ignored. dpni.y connected to
+		dpmac.x is assumed to take hardware assigned (firmware)
+		MAC address when the DPNI is connected to Linux Container.
+		In other cases, the application is expected to use the MC
+		API (DPDK).
 
 	By default, this script will create 16 DPBP, 10 DPIOs, 2 DPCIs, 8 DPCON, 8 DPSEC
 	device and DPNIs depend upon the arguments given during command line.
 
 	Note: Please refer to dynamic_dpl_logs file for script logs
 
-     Optional configuration parameters:
+Optional configuration parameters:
 
 	Below "ENVIRONMENT VARIABLES" are exported to get user defined
 	configuration"
@@ -163,8 +163,8 @@ script help :----->
 
 		DPSECI_PRIORITIES   = num-queues priorities.
 					Set the parameter using below command:
-                                        'export DPSECI_PRIORITIES="Prio-1,Prio-2,..."'
-                                        e.g export DPSECI_PRIORITIES="2,2,2,2,2,2,2,2"
+					'export DPSECI_PRIORITIES="Prio-1,Prio-2,..."'
+					e.g export DPSECI_PRIORITIES="2,2,2,2,2,2,2,2"
 					This shall be used together with DPSEC_QUEUES
 	/**DPIO**:-->
 		DPIO_COUNT	    = DPIO objects count
@@ -176,7 +176,7 @@ script help :----->
 
 		DPIO_PRIORITIES     = number of  priority from 1-8.
 					Set the parameter using below command:
-                                        'export DPIO_PRIORITIES=<Num of prio>'
+					'export DPIO_PRIORITIES=<Num of prio>'
 					where "Number of priorities" is an
 					integer value.
 					"e.g export DPIO_PRIORITIES=8"
@@ -205,7 +205,7 @@ script help :----->
 
 		DPCI_PRIORITIES     = number of  priority from 1-2.
 					Set the parameter using below command:
-                                        'export DPCI_PRIORITIES=<Num of prio>'
+					'export DPCI_PRIORITIES=<Num of prio>'
 					where "Number of priorities" is an
 					integer value.
 					"e.g export DPCI_PRIORITIES=1"
@@ -259,9 +259,9 @@ get_dpni_parameters() {
 	fi
 
 	if [ \
-	     $board_type != "1088" -a $board_type != "2080" -a \
-	     $board_type != "2085" -a $board_type != "2088" -a \
-	     $board_type != "2160" \
+		$board_type != "1088" -a $board_type != "2080" -a \
+		$board_type != "2085" -a $board_type != "2088" -a \
+		$board_type != "2160" \
 	   ]
 	then
 		echo "  Invalid board type ${board_type} specified."
@@ -350,9 +350,11 @@ get_dpni_parameters() {
 	then
 		FS_ENTRIES=1
 	fi
-	if [[ $MAX_OPR ]]
+	if [[ -z $MAX_OPR  || $MAX_OPR == "0" ]]
 	then
-		NUM_OPR="--num-opr=$MAX_OPR"
+        	unset NUM_OPR
+	else
+        	NUM_OPR="--num-opr=$MAX_OPR"
 		echo "Number of order point records(OPR) is $MAX_OPR!"
 	fi
 	if [[ -z "$VLAN_ENTRIES" ]]
@@ -549,7 +551,7 @@ create_actual_mac() {
 	last_octet=$(expr $last_octet + $1)
 	last_octet=$(printf "%0.2x" $last_octet)
 	if [[ 0x$last_octet -gt 0xFF ]]
-        then
+	then
 		last_octet=$(printf "%d" 0x$last_octet)
 		last_octet=`expr $last_octet - 255`
 		last_octet=$(printf "%0.2x" $last_octet)
@@ -605,7 +607,7 @@ then
 	restool dprc list >> dynamic_dpl_logs
 	echo >> dynamic_dpl_logs
 	#/*Option to enable PL bit for INIC RBP case*/
-        DPRC_OPTIONS="DPRC_CFG_OPT_SPAWN_ALLOWED,DPRC_CFG_OPT_ALLOC_ALLOWED,DPRC_CFG_OPT_OBJ_CREATE_ALLOWED"
+	DPRC_OPTIONS="DPRC_CFG_OPT_SPAWN_ALLOWED,DPRC_CFG_OPT_ALLOC_ALLOWED,DPRC_CFG_OPT_OBJ_CREATE_ALLOWED"
 	#/*Option to enable PL bit for INIC RBP case*/
 	if [[ "$ENABLE_PL_BIT" == "1" ]]
 	then
@@ -953,11 +955,11 @@ then
 	echo
 	if [[ -e /sys/module/vfio_iommu_type1 ]];
 	then
-	        echo -e "\tAllow unsafe interrupts" >> dynamic_dpl_logs
-	        echo 1 > /sys/module/vfio_iommu_type1/parameters/allow_unsafe_interrupts
+		echo -e "\tAllow unsafe interrupts" >> dynamic_dpl_logs
+		echo 1 > /sys/module/vfio_iommu_type1/parameters/allow_unsafe_interrupts
 	else
-	        echo -e " Can't Run DPAA2 without VFIO support" >> dynamic_dpl_logs
-	        echo -e $RED" Can't Run DPAA2 without VFIO support"$NC
+		echo -e " Can't Run DPAA2 without VFIO support" >> dynamic_dpl_logs
+		echo -e $RED" Can't Run DPAA2 without VFIO support"$NC
 		[[ "${BASH_SOURCE[0]}" != $0 ]] && return || exit
 	fi
 	if [[ -e $DPRC_LOC ]];
