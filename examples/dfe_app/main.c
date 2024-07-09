@@ -31,6 +31,7 @@
 #define APP_VERSION       "0.4.1"
 
 int cpu_id = 0;
+int cpu_mask = 0x3;
 int log_level = APP_DBG_LOG_ERROR;
 int rte_log_level = RTE_LOGTYPE_EAL;
 static struct cmdline *cl;
@@ -546,7 +547,7 @@ static void parse_args(int argc, char **argv)
 {
 	int opt;
 
-	while ((opt = getopt(argc, argv, ":c:i:l:r:hv")) != -1) {
+	while ((opt = getopt(argc, argv, ":c:i:m:l:r:hv")) != -1) {
 		switch (opt) {
 		case 'v':
 			print_version();
@@ -558,8 +559,11 @@ static void parse_args(int argc, char **argv)
 			break;
 		case 'i':
 			cpu_id = strtoul(optarg, NULL, 0);
-			//app_print_dbg
-			printf("assign to core [%d]\n", cpu_id);
+			app_print_dbg("Assign to core [%d]\n", cpu_id);
+			break;
+		case 'm':
+			cpu_mask = strtoul(optarg, NULL, 0);
+			app_print_dbg("EAL core mask [%d]\n", cpu_mask);
 			break;
 		case 'r':
 			rte_log_level = strtoul(optarg, NULL, 0);
@@ -594,12 +598,24 @@ void assign_to_core(int core_id)
 	sched_setaffinity(0, sizeof(mask), &mask);
 }
 
+#define MAX_EAL_ARGC 6
+#define MAX_EAL_ARGV 32
 int main(int argc, char **argv)
 {
-	/* avoid giving to app the eal arguments ; hardcode them here */
-	const char* const eal_argv[] = { "dummy", "--vdev=bbdev_la93xx", "-c", "0xF", "-n", "1" };
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
+	/* avoid giving to app the eal arguments ; hardcode many of them here */
+	char *eal_argv[MAX_EAL_ARGC] = {
+		"dummy",
+		"--vdev=bbdev_la93xx",
+		"-c",
+		NULL, // coremask
+		"-n",
+		"1"
+	};
+#pragma GCC diagnostic pop
 	char syscmd[100] = { 0 };
-	int eal_argc = 6;
+	int eal_argc = MAX_EAL_ARGC;
 	int tid;
 	int ret;
 
@@ -613,9 +629,10 @@ int main(int argc, char **argv)
 	/* set RTE log level */
 	rte_log_set_global_level(rte_log_level);
 
-	/* assign to core */
-	if (cpu_id > 0)
-		assign_to_core(cpu_id);
+	/* assign to core and modify pre-defined EAL params */
+	eal_argv[3] = (char *) calloc (MAX_EAL_ARGV, sizeof(char));
+	sprintf(eal_argv[3], "%#x", cpu_mask);
+	assign_to_core(cpu_id);
 
 	/* raise app priority to RT */
 	sched_setscheduler(0, SCHED_FIFO, &param_new);
@@ -639,7 +656,7 @@ int main(int argc, char **argv)
 	ret = dfe_init();
 	if (ret < 0) {
 		app_print_err("dfe_init failed\n");
-		return ret;
+		goto free_mem;
 	}
 
 	/* check if interactive mode (no -c param) */
@@ -684,6 +701,9 @@ int main(int argc, char **argv)
 byebye:
 	/* clean-up everything before exiting */
 	dfe_free();
+
+free_mem:
+	free(eal_argv[3]);
 
 	return 0;
 }
