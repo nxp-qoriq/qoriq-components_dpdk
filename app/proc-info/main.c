@@ -20,6 +20,7 @@
 #include <rte_debug.h>
 #include <rte_ethdev.h>
 #include <rte_memory.h>
+#include <rte_malloc.h>
 #include <rte_memzone.h>
 #include <rte_launch.h>
 #include <rte_tailq.h>
@@ -446,6 +447,10 @@ meminfo_display(void)
 	printf("------------ MEMORY_ZONES -------------\n");
 	rte_memzone_dump(stdout);
 	printf("---------- END_MEMORY_ZONES -----------\n");
+
+	printf("------------ HEAP DUMP -------------\n");
+	rte_malloc_dump_heaps(stdout);
+	printf("---------- END_HEAP_DUMP -----------\n");
 
 	printf("------------- TAIL_QUEUES -------------\n");
 	rte_dump_tailq(stdout);
