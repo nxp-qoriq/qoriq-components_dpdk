@@ -73,6 +73,15 @@ __rte_experimental
 int
 rte_pmd_dpaa2_mux_rx_frame_len(uint32_t dpdmux_id, uint16_t max_rx_frame_len);
 
+__rte_experimental
+int
+rte_pmd_dpaa2_mux_default_id(uint32_t dpdmux_id, uint16_t *id);
+
+__rte_experimental
+int
+rte_pmd_dpaa2_mux_ep_name(uint32_t dpdmux_id,
+	uint16_t id, const char **name);
+
 /**
  * Create a custom hash key on basis of offset of start of packet and size.
  * for e.g. if we need GRE packets (non-vlan and without any extra headers)
