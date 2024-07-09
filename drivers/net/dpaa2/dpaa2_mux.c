@@ -958,6 +958,50 @@ rte_pmd_dpaa2_mux_dump_counter(FILE *f, uint32_t dpdmux_id, int num_if)
 	}
 }
 
+int
+rte_pmd_dpaa2_mux_default_id(uint32_t dpdmux_id, uint16_t *id)
+{
+	struct dpaa2_dpdmux_dev *dpdmux_dev;
+	int ret;
+
+	/* Find the DPDMUX from dpdmux_id in our list */
+	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
+	if (!dpdmux_dev) {
+		DPAA2_PMD_ERR("Invalid dpdmux_id: %d", dpdmux_id);
+		return -ENODEV;
+	}
+	ret = dpdmux_if_get_default(&dpdmux_dev->dpdmux, CMD_PRI_LOW,
+		dpdmux_dev->token, id);
+	if (ret) {
+		DPAA2_PMD_ERR("Failed(%d) to get default interface of dpdmux%d",
+			ret, dpdmux_id);
+	}
+
+	return ret;
+}
+
+int
+rte_pmd_dpaa2_mux_ep_name(uint32_t dpdmux_id,
+	uint16_t id, const char **name)
+{
+	struct dpaa2_dpdmux_dev *dpdmux_dev;
+
+	/* Find the DPDMUX from dpdmux_id in our list */
+	dpdmux_dev = get_dpdmux_from_id(dpdmux_id);
+	if (!dpdmux_dev) {
+		DPAA2_PMD_ERR("Invalid dpdmux_id: %d", dpdmux_id);
+		return -ENODEV;
+	}
+	if (id >= (dpdmux_dev->num_ifs + 1)) {
+		DPAA2_PMD_ERR("dpdmux interface ID(%d) >= (%d + 1)",
+			id, dpdmux_dev->num_ifs);
+		return -EINVAL;
+	}
+	*name = dpdmux_dev->mux_eps[id].ep_name;
+
+	return 0;
+}
+
 static int
 dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 	struct vfio_device_info *obj_info __rte_unused,
