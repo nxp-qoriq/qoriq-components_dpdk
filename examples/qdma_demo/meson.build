@@ -7,6 +7,12 @@
 # DPDK instance, use 'make'
 
 deps += ['dmadev']
+if dpdk_conf.has('RTE_NET_DPAA2')
+        deps += ['net_dpaa2']
+endif
+#if dpdk_conf.has('RTE_NET_LSXINIC')
+        deps += ['net_lsxinic']
+#endif
 allow_experimental_apis = true
 sources = files(
 	'main.c'

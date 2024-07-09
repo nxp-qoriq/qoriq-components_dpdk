@@ -8,6 +8,9 @@
 
 allow_experimental_apis = true
 deps += ['acl', 'hash', 'lpm', 'fib', 'eventdev']
+if dpdk_conf.has('RTE_NET_DPAA2')
+        deps += ['net_dpaa2']
+endif
 sources = files(
         'l3fwd_acl.c',
         'l3fwd_em.c',
