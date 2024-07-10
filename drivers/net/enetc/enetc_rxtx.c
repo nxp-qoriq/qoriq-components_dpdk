@@ -655,6 +655,7 @@ enetc_loopback_pkts_nc(void *rxq, void *txq, const uint16_t mode)
 	struct rte_mbuf *pkts[ENETC_LB_BURST];
 	int nb_pkts, tx_pkts, i;
 	struct enetc_bdr *rx_ring = (struct enetc_bdr *)rxq;
+	struct enetc_bdr *tx_ring;
 
 	switch (mode) {
 	case RTE_LB_MODE0:
@@ -669,7 +670,7 @@ enetc_loopback_pkts_nc(void *rxq, void *txq, const uint16_t mode)
 		}
 		break;
 	case RTE_LB_MODE1:
-		struct enetc_bdr *tx_ring = (struct enetc_bdr *)txq;
+		tx_ring = (struct enetc_bdr *)txq;
 		/* Optimized reflector mode, No packet processing */
 		while (!rte_eth_get_quit())
 			enetc_lb_nc(rx_ring, tx_ring);
