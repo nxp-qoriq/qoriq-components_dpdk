@@ -1,9 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2023 NXP
+ * Copyright 2020-2024 NXP
  */
 
 #ifndef _RTE_BBUF_H_
 #define _RTE_BBUF_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <rte_mbuf.h>
 #include <rte_mbuf_pool_ops.h>
@@ -237,5 +241,9 @@ rte_bbuf_dump(FILE *f, const struct rte_bbuf *b, unsigned int dump_len)
 		nb_segs--;
 	}
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
