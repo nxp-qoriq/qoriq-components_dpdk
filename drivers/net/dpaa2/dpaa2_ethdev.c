@@ -1566,6 +1566,7 @@ dpaa2_dev_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
 		DPAA2_PMD_ERR("Setting the max frame length failed");
 		return ret;
 	}
+	dev->data->mtu = mtu;
 	DPAA2_PMD_INFO("MTU configured for the device: %d", mtu);
 	return 0;
 }
@@ -3005,6 +3006,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		DPAA2_PMD_ERR("Unable to set mtu. check config");
 		goto init_err;
 	}
+	eth_dev->data->mtu = RTE_ETHER_MTU;
 
 	/*TODO To enable soft parser support DPAA2 driver needs to integrate
 	 * with external entity to receive byte code for software sequence
