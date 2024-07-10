@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2020-2022 NXP
+# Copyright 2020-2024 NXP
 
 # meson file, for building this example as part of a main DPDK build.
 #
@@ -8,8 +8,11 @@
 
 deps += ['ip_frag']
 
-if dpdk_conf.has('RTE_LIBRTE_DPAA_PMD')
+if dpdk_conf.has('RTE_NET_DPAA')
 	deps += ['net_dpaa']
+endif
+if dpdk_conf.has('RTE_NET_DPAA2')
+	deps += ['net_dpaa2']
 endif
 
 # Enable experimental API flag as l2fwd uses rte_ethdev_set_ptype API

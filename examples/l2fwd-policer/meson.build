@@ -8,6 +8,9 @@
 
 # Enable experimental API flag as l2fwd-policer uses rte_ethdev_set_ptype API
 allow_experimental_apis = true
+if dpdk_conf.has('RTE_NET_DPAA2')
+        deps += ['net_dpaa2']
+endif
 sources = files(
         'main.c',
 )

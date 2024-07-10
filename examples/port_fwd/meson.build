@@ -8,6 +8,10 @@
 # DPDK instance, use 'make'
 
 #allow_experimental_apis = true
+if dpdk_conf.has('RTE_NET_DPAA2')
+        deps += ['net_dpaa2']
+endif
+deps += ['pdump']
 sources = files(
 	'main.c',
 )

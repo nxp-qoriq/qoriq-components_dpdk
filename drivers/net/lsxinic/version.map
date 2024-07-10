@@ -1,0 +1,8 @@
+EXPERIMENTAL {
+	global:
+
+	rte_lsinic_dev_start_poll_rc;
+	rte_lsinic_dev_get_rc_dma;
+
+	local: *;
+};

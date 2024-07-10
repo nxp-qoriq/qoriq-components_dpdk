@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018-2023 NXP
+ * Copyright 2018-2024 NXP
  */
 
 #ifndef _RTE_PMD_LSXINIC_H
@@ -13,9 +13,11 @@
 
 #include <rte_compat.h>
 
+__rte_experimental
 int
 rte_lsinic_dev_start_poll_rc(void *_dev);
 
+__rte_experimental
 int
 rte_lsinic_dev_get_rc_dma(void *_dev,
 	void **pci_vir, uint64_t *pci_phy,
