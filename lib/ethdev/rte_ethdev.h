@@ -359,6 +359,18 @@ struct rte_eth_thresh {
 	uint8_t wthresh; /**< Ring writeback threshold. */
 };
 
+/**
+ *  Loopback mode for the driver.
+ */
+enum rte_lb_mode {
+	/** SW reflector mode using default RX TX functions */
+	RTE_LB_MODE0,
+	/** SW reflector optimized mode */
+	RTE_LB_MODE1,
+	/** HW reflector mode */
+	RTE_LB_MODE2,
+};
+
 /**@{@name Multi-queue mode
  * @see rte_eth_conf.rxmode.mq_mode.
  */
@@ -366,12 +378,6 @@ struct rte_eth_thresh {
 #define RTE_ETH_MQ_RX_DCB_FLAG  RTE_BIT32(1) /**< Enable DCB. */
 #define RTE_ETH_MQ_RX_VMDQ_FLAG RTE_BIT32(2) /**< Enable VMDq. */
 /**@}*/
-
-enum rte_lb_mode {
-	RTE_LB_MODE0,	/** SW reflector mode using default RX TX functions */
-	RTE_LB_MODE1,	/** SW reflector optimized mode */
-	RTE_LB_MODE2,	/** HW reflector mode */
-};
 /**
  *  A set of values to identify what method is to be used to route
  *  packets to multiple queues.
@@ -2426,7 +2432,52 @@ int rte_eth_rx_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
   * be at last index of @param mb_pool.
   * This is required so that HW can allocate the best buffer from a pool
   * for the incoming packets.
-  */
+ * @param port_id
+ *   The port identifier of the Ethernet device.
+ * @param rx_queue_id
+ *   The index of the receive queue to set up.
+ *   The value must be in the range [0, nb_rx_queue - 1] previously supplied
+ *   to rte_eth_dev_configure().
+ * @param nb_rx_desc
+ *   The number of receive descriptors to allocate for the receive ring.
+ *   0 means the PMD will use default value.
+ * @param socket_id
+ *   The *socket_id* argument is the socket identifier in case of NUMA.
+ *   The value can be *SOCKET_ID_ANY* if there is no NUMA constraint for
+ *   the DMA memory allocated for the receive descriptors of the ring.
+ * @param rx_conf
+ *   The pointer to the configuration data to be used for the receive queue.
+ *   NULL value is allowed, in which case default Rx configuration
+ *   will be used.
+ *   The *rx_conf* structure contains an *rx_thresh* structure with the values
+ *   of the Prefetch, Host, and Write-Back threshold registers of the receive
+ *   ring.
+ *   In addition it contains the hardware offloads features to activate using
+ *   the RTE_ETH_RX_OFFLOAD_* flags.
+ *   If an offloading set in rx_conf->offloads
+ *   hasn't been set in the input argument eth_conf->rxmode.offloads
+ *   to rte_eth_dev_configure(), it is a new added offloading, it must be
+ *   per-queue type and it is enabled for the queue.
+ *   No need to repeat any bit in rx_conf->offloads which has already been
+ *   enabled in rte_eth_dev_configure() at port level. An offloading enabled
+ *   at port level can't be disabled at queue level.
+ *   The configuration structure also contains the pointer to the array
+ *   of the receiving buffer segment descriptions, see rx_seg and rx_nseg
+ *   fields, this extended configuration might be used by split offloads like
+ *   RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT. If mb_pool is not NULL,
+ *   the extended configuration fields must be set to NULL and zero.
+ * @param mb_pool
+ *   The pointer to the memory pool from which to allocate *rte_mbuf* network
+ *   memory buffers to populate each descriptor of the receive ring. There are
+ *   two options to provide Rx buffer configuration:
+ *   - single pool:
+ *     mb_pool is not NULL, rx_conf.rx_nseg is 0.
+ *   - multiple segments description:
+ *     mb_pool is NULL, rx_conf.rx_seg is not NULL, rx_conf.rx_nseg is not 0.
+ *     Taken only if flag RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT is set in offloads.
+ * @param nb_mp
+ * 	Number of buffer pool
+ */
 int rte_eth_rx_queue_mpool_setup(uint16_t port_id, uint16_t rx_queue_id,
 				 uint16_t nb_rx_desc, unsigned int socket_id,
 				 const struct rte_eth_rxconf *rx_conf,
