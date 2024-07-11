@@ -27,11 +27,8 @@ Machine 1:
 ----------
 
   ifconfig <Eth0> 198.18.0.5
-  ifconfig <Eth0> up
-  ip route get 198.18.0.5
-  ip addr add 198.18.0.5/24 dev <Eth0>
-  arp -s 198.18.0.10 <MAC1>
   ip route add 198.18.1.5 via 198.18.0.10 dev <Eth0>
+  arp -s 198.18.0.10 <MAC1>
 
   NOTE: Before ping/scp configure DUT and Machine2 as per the steps given in
   this readme. Refer the section "Machine 2" and "DUT".
@@ -49,11 +46,8 @@ Machine 2:
 ----------
 
   ifconfig <Eth3> 198.18.1.5
-  ifconfig <Eth3> up
-  ip route get 198.18.1.5
-  ip addr add 198.18.1.5/24 dev <Eth3>
-  arp -s 198.18.1.10 <MAC2>
   ip route add 198.18.0.5 via 198.18.1.10 dev <Eth3>
+  arp -s 198.18.1.10 <MAC2>
 
   NOTE: Before ping/scp configure DUT and Machine1 as per the steps given in
   this readme. Please refer section "Machine 1" and "DUT".
@@ -114,11 +108,8 @@ Machine 1:
 Kernel dtap0:
 -------------
   ifconfig <dtap0> 198.18.1.5
-  ifconfig <dtap0> up
-  ip route get 198.18.1.5
-  ip addr add 198.18.1.5/24 dev <dtap0>
-  arp -s 198.18.1.10 <MAC2>
   ip route add 198.18.0.5 via 198.18.1.10 dev <dtap0>
+  arp -s 198.18.1.10 <MAC2>
 
   NOTE: Before ping/scp configure DUT and Machine1 as per the steps given above.
   Please refer section "DUT" and "Machine 1".
