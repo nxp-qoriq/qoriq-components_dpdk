@@ -1052,6 +1052,7 @@ remote_direct_rsp(void *arg)
 	int ret, req_qid = -1, rsp_qid = -1;
 	uint16_t port_id = 0, i;
 	struct remote_dir_ingress_flow *in_flow = NULL;
+	bool *quit = arg;
 
 	ring = rte_ring_create("direct_flow_ring",
 		MAX_REDIRECT_FLOW_NUM, 0, 0);
@@ -1120,42 +1121,43 @@ remote_direct_rsp(void *arg)
 		return NULL;
 	}
 	while (1) {
+		if (quit && (*quit))
+			break;
 		flow = _remote_direct_rsp(&port_id, req_qid, rsp_qid);
-		if (flow) {
-			in_flow = rte_malloc(NULL,
-				sizeof(struct remote_dir_ingress_flow), 0);
-			if (!in_flow) {
-				RTE_LOG(ERR, remote_dir,
-					"Malloc remote flow failed\n");
-				ret = rte_flow_destroy(port_id, flow, NULL);
-				if (ret) {
-					RTE_LOG(ERR, remote_dir,
-						"Destroy port(%d)'s flow failed(%d)\n",
-						port_id, ret);
-				}
-				goto recv_next;
-			}
-			in_flow->port_id = port_id;
-			in_flow->flow = flow;
-			ret = rte_ring_enqueue(ring, in_flow);
+		if (!flow)
+			continue;
+		in_flow = rte_malloc(NULL,
+			sizeof(struct remote_dir_ingress_flow), 0);
+		if (!in_flow) {
+			RTE_LOG(ERR, remote_dir,
+				"Malloc remote flow failed\n");
+			ret = rte_flow_destroy(port_id, flow, NULL);
 			if (ret) {
 				RTE_LOG(ERR, remote_dir,
-					"Save port(%d)'s flow failed(%d)\n",
+					"Destroy port(%d)'s flow failed(%d)\n",
 					port_id, ret);
-				ret = rte_flow_destroy(port_id, flow, NULL);
-				if (ret) {
-					RTE_LOG(ERR, remote_dir,
-						"Destroy port(%d)'s flow failed(%d)\n",
-						port_id, ret);
-				}
-				rte_free(in_flow);
-			} else {
-				RTE_LOG(INFO, remote_dir,
-					"Create direct flow from port(%d)\n",
-					port_id);
 			}
+			continue;
 		}
-recv_next:
+		in_flow->port_id = port_id;
+		in_flow->flow = flow;
+		ret = rte_ring_enqueue(ring, in_flow);
+		if (ret) {
+			RTE_LOG(ERR, remote_dir,
+				"Save port(%d)'s flow failed(%d)\n",
+				port_id, ret);
+			ret = rte_flow_destroy(port_id, flow, NULL);
+			if (ret) {
+				RTE_LOG(ERR, remote_dir,
+					"Destroy port(%d)'s flow failed(%d)\n",
+					port_id, ret);
+			}
+			rte_free(in_flow);
+		} else {
+			RTE_LOG(INFO, remote_dir,
+				"Create direct flow from port(%d)\n",
+				port_id);
+		}
 	}
 
 	if (remote_dir_remove_ipc()) {
@@ -1227,7 +1229,7 @@ remote_dir_find_flow(struct rte_remote_dir_flow flows[],
 }
 
 static inline int
-rte_remote_direct_traffic(enum rte_remote_dir_cfg cfg)
+rte_remote_direct_traffic(enum rte_remote_dir_cfg cfg, void *quit)
 {
 	uint16_t i, j, max_idx = 0, this_idx, prior = 0;
 	const char *from;
@@ -1249,7 +1251,7 @@ rte_remote_direct_traffic(enum rte_remote_dir_cfg cfg)
 
 	if (cfg & RTE_REMOTE_DIR_RSP) {
 		ret = pthread_create(&pid, NULL,
-				remote_direct_rsp, NULL);
+				remote_direct_rsp, quit);
 		if (ret)
 			return ret;
 	}

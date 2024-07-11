@@ -1923,7 +1923,7 @@ main(int argc, char **argv)
 		}
 	}
 
-	ret = rte_remote_direct_traffic(s_remote_dir);
+	ret = rte_remote_direct_traffic(s_remote_dir, &force_quit);
 	if (ret) {
 		rte_exit(EXIT_FAILURE,
 			"direct traffic failed!(%d)\n", ret);
