@@ -7,7 +7,7 @@ Supported Platforms (and their derivatives):
 1. DPAA2 : LS108x, LS208x, LX216x
 2. DPAA  : LS1043, LS1046
 3. ENETC : LS1028, i.MX95
-4. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX91, i.MX93
+4. FEC   : i.MX 8M Mini, i.MX 8MP, i.MX91, i.MX93, i.MX8QXP
 5. QOS   : i.MX 8MP, i.MX 8DXL, i.MX91, i.MX93
 ===============================================================================
 NXP DPDK provides a set of data plane libraries and network interface
@@ -436,12 +436,15 @@ Below are the details of mmcargs/bootargs:
 <imx-mem-param>: is used to reserve the initial DDR memory from uboot via 'mem' environment variable.
 	It needed to be set to `mem=4096M` on platforms with FEC/eQoS ethernet interfaces
 	as BD ring of FEC/eQoS interfaces can only accept 32 bit addresses.
+	For IMX8QXP board, this parameter should be set to: `mem=2048M` since
+	only this much System RAM is 32 bit addressable.
 
 <core_list>: can be used to add CPUs planned to be used for DPDK applications
 	For i.MX 8MM, 8MP: <core_list> : 1-3
 	For i.MX 8DXL: <core_list> : 1
 	For i.MX 93: <core_list> : 1
 	For i.MX 95: <core_list> : 1-5
+	For i.MX8QXP: <core_list> : 1-3
 	Note: i.MX8DXL and i.MX93 has only 2 cores, but to reserve the core 1 for dpdk we can provide core_list=1 for both platforms.
 	      i.MX91 has only core 0, so option 'isolcpus' should not be used.
 
@@ -556,6 +559,21 @@ Booting steps:
 	 setenv bootcmd 'mmc dev ${mmcdev}; run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
     => saveenv
     => run dpdk_enable
+
+  1.5 For i.MX8QXP Platform:
+    Bring up the i.MX8QXP board with latest kernel.
+    On uboot, enable User space mode of the kernel driver & boot linux after setting the below env. variable:
+
+    Note: All the variables should be defined with appropriate values
+    =>	setenv dpdk_enable
+	"setenv loadkernel fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image;
+	 setenv loadfdt fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file};
+	 run loadkernel; run loadfdt; fdt addr 0x83000000;
+	 fdt set /bus@5b000000/ethernet@5b040000 compatible fsl,imx8mm-fec-uio;
+	 setenv bootcmd mmc dev ${mmcdev}; run mmcargs;
+	 booti ${loadaddr} - ${fdt_addr};"
+    =>	saveenv
+    =>	run dpdk_enable
 
 Run DPDK applications on i.MX8MM, i.MX8MP, i.MX91 and i.MX93 boards:
 ------------------------------------------------------------------------------
