@@ -90,6 +90,7 @@ enetc4_vf_dev_infos_get(struct rte_eth_dev *dev,
 	dev_info->max_rx_queues = hw->max_rx_queues;
 	dev_info->max_tx_queues = hw->max_tx_queues;
 	dev_info->max_rx_pktlen = ENETC4_MAC_MAXFRM_SIZE;
+	dev_info->max_mtu = dev_info->max_rx_pktlen - (RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN);
 	dev_info->max_mac_addrs = ENETC4_MAC_ENTRIES;
 	dev_info->rx_offload_capa = dev_rx_offloads_sup;
 	dev_info->tx_offload_capa = dev_tx_offloads_sup;
@@ -1028,6 +1029,12 @@ static int enetc4_vf_vlan_offload_set(struct rte_eth_dev *dev, int mask __rte_un
 	return 0;
 }
 
+static int
+enetc4_vf_mtu_set(struct rte_eth_dev *dev __rte_unused, uint16_t mtu __rte_unused)
+{
+	return 0;
+}
+
 /*
  * The set of PCI devices this driver supports
  */
@@ -1044,6 +1051,7 @@ static const struct eth_dev_ops enetc4_vf_ops = {
 	.dev_close            = enetc4_dev_close,
 	.stats_get            = enetc4_vf_stats_get,
 	.dev_infos_get        = enetc4_vf_dev_infos_get,
+	.mtu_set              = enetc4_vf_mtu_set,
 	.mac_addr_set         = enetc4_vf_set_mac_addr,
 	.mac_addr_add	      = enetc4_vf_mac_addr_add,
 	.promiscuous_enable   = enetc4_vf_promisc_enable,
