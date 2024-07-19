@@ -838,10 +838,12 @@ check_all_ports_link_status(uint32_t port_mask)
  * 2. vlan1 (ID=100; priority=1) traffic go to TC[1]->q0
  *    dest_queue.index = 1;
  *    and so on.
+ * 3. All other traffic go to TC[7]
  *  On all TC flow_attr.priority = 0;
  */
 
-#define MAX_PATTERN_NUM 2
+#define MAX_PATTERN_NUM 3
+#define DEFAULT_TC 7
 static void
 vlan_port_flow_configure(uint16_t portid, uint8_t nb_rx_queue,
 			 uint16_t vlan_id, uint16_t vlan_prio)
@@ -922,10 +924,13 @@ vlan_port_flow_configure(uint16_t portid, uint8_t nb_rx_queue,
 		flow_item[0].spec = &vlan_item[0];
 		flow_item[0].mask = &vlan_mask[0];
 		flow_item[0].type = RTE_FLOW_ITEM_TYPE_VLAN;
-		flow_item[1].type = RTE_FLOW_ITEM_TYPE_END;
+		flow_item[1].type = RTE_FLOW_ITEM_TYPE_ANY;
+		flow_item[2].type = RTE_FLOW_ITEM_TYPE_END;
 		flow_action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
 		flow_action[0].conf = &dest_queue;
 		flow_action[1].type = RTE_FLOW_ACTION_TYPE_END;
+
+		flow_attr.reserved = DEFAULT_TC;
 
 		/* validate and create the flow rule */
 		if (!rte_flow_validate(portid, &flow_attr, flow_item, flow_action, &error)) {
