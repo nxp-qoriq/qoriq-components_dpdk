@@ -70,6 +70,7 @@ struct rte_dpaa2_flow_item {
 static const
 enum rte_flow_item_type dpaa2_hp_supported_pattern_type[] = {
 	RTE_FLOW_ITEM_TYPE_END,
+	RTE_FLOW_ITEM_TYPE_ANY,
 	RTE_FLOW_ITEM_TYPE_ETH,
 	RTE_FLOW_ITEM_TYPE_VLAN,
 	RTE_FLOW_ITEM_TYPE_IPV4,
@@ -4397,7 +4398,7 @@ dpaa2_configure_qos_table(struct dpaa2_dev_priv *priv,
 		qos_cfg.discard_on_miss = true;
 	} else {
 		qos_cfg.discard_on_miss = false;
-		qos_cfg.default_tc = 0;
+		qos_cfg.default_tc = priv->default_tc;
 	}
 
 	ret = dpni_set_qos_table(dpni, CMD_PRI_LOW,
@@ -4488,6 +4489,13 @@ dpaa2_generic_flow_set(struct dpaa2_dev_flow *flow,
 	/* Parse pattern list to get the matching parameters */
 	while (!end_of_list) {
 		switch (pattern[i].type) {
+		case RTE_FLOW_ITEM_TYPE_ANY:
+			priv->default_tc = attr->reserved & UINT8_MAX;
+			if (priv->default_tc > MAX_TCS) {
+				DPAA2_PMD_ERR("Invalid default_tc!");
+				goto end_flow_set;
+			}
+			break;
 		case RTE_FLOW_ITEM_TYPE_ETH:
 			ret = dpaa2_configure_flow_eth(flow, dev, attr,
 					&dpaa2_pattern[i],
