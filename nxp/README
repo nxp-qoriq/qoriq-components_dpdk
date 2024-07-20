@@ -449,7 +449,8 @@ For optimized performance on i.MX platforms:
 --------------------------------------------
 1. Add the below params in mmcargs to set the CPU to not go into idle mode:
 	`cpuidle.off=1 cpufreq.off=1`
-2. Also set the system in performance mode:
+2. Also set the system in performance mode (applicable only if system does not support
+   option cpufreq.off=1 in bootargs):
 	echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 	grep . /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 
@@ -769,7 +770,18 @@ them.
 		[ 2002.543684] uio_pci_generic 0002:00:12.0: No IRQ assigned to device: no support for interrupts?		
 	c. Use dpdk-devbind.py to bind VF to dpdk:
 		dpdk-devbind.py -b uio_pci_generic <vf-pci-addr>
+
+		or
+
+		modprobe igb_uio
+		dpdk-devbind.py -b igb_uio <vf-pci-addr>
+
 		As per the above logs, 0002:00:12.0 will be the <vf-pci-addr>
+		Note: only uio_pci_generic and igb_uio frameworks are supported to access device in DPDK.
+		      Use "igb_uio" to bind VF to DPDK to get link status change notifications. igb_uio is a separate
+		      kernel module, so make sure to load it first using modprobe or insmod command
+		      before device binding.
+
 2. Enable trust for the specified VF user by specifying the PF eth interface.
 	ip link set <eth-interface> vf 0 trust on
 	Note: Check eth interface using:
@@ -785,6 +797,9 @@ them.
 	Examples to run multiqueue:
 	$ ./dpdk-l3fwd -c 0x3f -n 1 -- -p 0x1 -P --config="(0,0,1) (0,1,2) (0,2,3) (0,3,4) (0,4,5) (0,5,0)"
 	$ ./dpdk-testpmd -c 0x3f -n 1 -- -i --portmask=0x1 --rxq=5 --txq=5
+
+	Note: Use option "--no-lsc-interrupt" in dpdk-testpmd when using uio_pci_generic framework to avoid
+	      link interrupts registration related errors.
 
 PSI-VSI messaging:
 ------------------
@@ -885,6 +900,8 @@ Notes:
 -> Only ENETC 10G interface is supported with M7 image
 -> ip_fragmentation can receive only up to 2000 bytes fragments.
 -> ip_reassembly can send only up to 2000 bytes reassembled packet.
+-> Link status change notifications are supported with igb_uio framework only.
+-> It may takes few seconds to get link status UP notification.
 
 ===============================================================================
   'dpdk-testpmd' Application
