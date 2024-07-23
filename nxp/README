@@ -779,6 +779,8 @@ them.
 	$ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1
 	$ ./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 -P --config="(0,0,1)"
 	$ ./dpdk-testpmd -c 0x3 -n 1 -- -i --portmask=0x1
+	$ ./dpdk-ip_fragmentation -c 0x2 -n 1 -- -p 0x1
+	$ ./dpdk-ip_reassembly -c 0x2 -n 1 -- -p 0x1
 
 	Examples to run multiqueue:
 	$ ./dpdk-l3fwd -c 0x3f -n 1 -- -p 0x1 -P --config="(0,0,1) (0,1,2) (0,2,3) (0,3,4) (0,4,5) (0,5,0)"
@@ -881,6 +883,8 @@ Notes:
 -> Checksum validation offload is enabled by default.
 -> Only 1G Intel Gigabit PCI-E Network Adapter EXPI9301CTBLK is supported.
 -> Only ENETC 10G interface is supported with M7 image
+-> ip_fragmentation can receive only up to 2000 bytes fragments.
+-> ip_reassembly can send only up to 2000 bytes reassembled packet.
 
 ===============================================================================
   'dpdk-testpmd' Application
