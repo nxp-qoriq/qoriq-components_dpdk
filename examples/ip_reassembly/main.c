@@ -117,6 +117,9 @@ static struct rte_ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 
 #define IPV6_ADDR_LEN 16
 
+/* Maximum transmission unit, update based on device capability */
+uint32_t max_mtu;
+
 /* mask of enabled ports */
 static uint32_t enabled_port_mask = 0;
 
@@ -173,8 +176,7 @@ static struct rte_eth_conf port_conf = {
 	},
 	.txmode = {
 		.mq_mode = RTE_ETH_MQ_TX_NONE,
-		.offloads = (RTE_ETH_TX_OFFLOAD_IPV4_CKSUM |
-			     RTE_ETH_TX_OFFLOAD_MULTI_SEGS),
+		.offloads = RTE_ETH_TX_OFFLOAD_IPV4_CKSUM
 	},
 };
 
@@ -416,6 +418,10 @@ reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queue,
 
 	/* src addr */
 	rte_ether_addr_copy(&ports_eth_addr[dst_port], &eth_hdr->src_addr);
+
+	/* free the mbuf if packet length exceeds from max mtu */
+	if (m->pkt_len > max_mtu)
+		rte_pktmbuf_free(m);
 
 	send_single_packet(m, dst_port);
 }
@@ -1055,6 +1061,9 @@ main(int argc, char **argv)
 		    dev_info.max_mtu,
 		    local_port_conf.rxmode.mtu);
 
+		/* store the maximum transmission unit */
+		max_mtu = dev_info.max_mtu;
+
 		/* get the lcore_id for this port */
 		while (rte_lcore_is_enabled(rx_lcore_id) == 0 ||
 			   qconf->n_rx_queue == (unsigned)rx_queue_per_lcore) {
@@ -1097,7 +1106,11 @@ main(int argc, char **argv)
 		if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE)
 			local_port_conf.txmode.offloads |=
 				RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
-
+		if (dev_info.max_mtu > RTE_MBUF_DEFAULT_BUF_SIZE) {
+			if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MULTI_SEGS)
+				local_port_conf.txmode.offloads |=
+					RTE_ETH_TX_OFFLOAD_MULTI_SEGS;
+		}
 		local_port_conf.rx_adv_conf.rss_conf.rss_hf &=
 			dev_info.flow_type_rss_offloads;
 		if (local_port_conf.rx_adv_conf.rss_conf.rss_hf !=
