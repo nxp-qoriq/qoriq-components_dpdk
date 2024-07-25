@@ -147,13 +147,11 @@ static struct rte_eth_conf port_conf = {
 	.rxmode = {
 		.mtu = JUMBO_FRAME_MAX_SIZE - RTE_ETHER_HDR_LEN -
 			RTE_ETHER_CRC_LEN,
-		.offloads = (RTE_ETH_RX_OFFLOAD_CHECKSUM |
-			     RTE_ETH_RX_OFFLOAD_SCATTER),
+		.offloads = RTE_ETH_RX_OFFLOAD_CHECKSUM
 	},
 	.txmode = {
 		.mq_mode = RTE_ETH_MQ_TX_NONE,
-		.offloads = (RTE_ETH_TX_OFFLOAD_IPV4_CKSUM |
-			     RTE_ETH_TX_OFFLOAD_MULTI_SEGS),
+		.offloads = RTE_ETH_TX_OFFLOAD_IPV4_CKSUM
 	},
 };
 
@@ -919,6 +917,17 @@ main(int argc, char **argv)
 		local_port_conf.rxmode.mtu = RTE_MIN(
 		    dev_info.max_mtu,
 		    local_port_conf.rxmode.mtu);
+
+		if (dev_info.max_rx_pktlen > RTE_MBUF_DEFAULT_BUF_SIZE) {
+			if (dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_SCATTER)
+				local_port_conf.rxmode.offloads |=
+						RTE_ETH_RX_OFFLOAD_SCATTER;
+		}
+		if (dev_info.max_mtu > RTE_MBUF_DEFAULT_BUF_SIZE) {
+			if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MULTI_SEGS)
+				local_port_conf.txmode.offloads |=
+						RTE_ETH_TX_OFFLOAD_MULTI_SEGS;
+		}
 
 		/* get the lcore_id for this port */
 		while (rte_lcore_is_enabled(rx_lcore_id) == 0 ||
