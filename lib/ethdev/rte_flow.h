@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright 2016 6WIND S.A.
  * Copyright 2016 Mellanox Technologies, Ltd
- * Copyright 2023 NXP
+ * Copyright 2023, 2024 NXP
  */
 
 #ifndef RTE_FLOW_H_
@@ -4125,6 +4125,29 @@ int
 rte_flow_destroy(uint16_t port_id,
 		 struct rte_flow *flow,
 		 struct rte_flow_error *error);
+
+/**
+ * Update a flow rule with new actions on a given port.
+ *
+ * @param port_id
+ *   Port identifier of Ethernet device.
+ * @param flow
+ *   Flow rule handle to update.
+ * @param[in] actions
+ *   Associated actions (list terminated by the END action).
+ * @param[out] error
+ *   Perform verbose error reporting if not NULL. PMDs initialize this
+ *   structure in case of error only.
+ *
+ * @return
+ *   0 on success, a negative errno value otherwise and rte_errno is set.
+ */
+__rte_experimental
+int
+rte_flow_actions_update(uint16_t port_id,
+			struct rte_flow *flow,
+			const struct rte_flow_action actions[],
+			struct rte_flow_error *error);
 
 /**
  * Destroy all flow rules associated with a port.

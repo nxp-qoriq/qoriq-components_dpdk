@@ -56,6 +56,12 @@ struct rte_flow_ops {
 		(struct rte_eth_dev *,
 		 struct rte_flow *,
 		 struct rte_flow_error *);
+	/** See rte_flow_actions_update(). */
+	int (*actions_update)
+		(struct rte_eth_dev *dev,
+		 struct rte_flow *flow,
+		 const struct rte_flow_action actions[],
+		 struct rte_flow_error *error);
 	/** See rte_flow_flush(). */
 	int (*flush)
 		(struct rte_eth_dev *,

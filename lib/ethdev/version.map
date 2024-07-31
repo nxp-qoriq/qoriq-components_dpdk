@@ -294,6 +294,7 @@ EXPERIMENTAL {
 	rte_eth_cman_info_get;
 	rte_eth_rx_descriptor_dump;
 	rte_eth_tx_descriptor_dump;
+	rte_flow_actions_update;
 	rte_flow_async_action_handle_query;
 	rte_flow_get_q_aged_flows;
 	rte_mtr_meter_policy_get;
