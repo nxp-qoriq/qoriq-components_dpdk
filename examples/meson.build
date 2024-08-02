@@ -140,10 +140,21 @@ foreach example: examples
     if allow_experimental_apis
         cflags += '-DALLOW_EXPERIMENTAL_API'
     endif
-    executable('dpdk-' + name, sources,
+    if get_option('enable_examples_bin_install')
+      executable('dpdk-' + name, sources,
+            include_directories: includes,
+            link_whole: link_whole_libs,
+            link_args: ldflags,
+            c_args: cflags,
+            dependencies: dep_objs,
+	    install_rpath: join_paths(get_option('prefix'), driver_install_path),
+	    install: true)
+    else
+      executable('dpdk-' + name, sources,
             include_directories: includes,
             link_whole: link_whole_libs,
             link_args: ldflags,
             c_args: cflags,
             dependencies: dep_objs)
+    endif
 endforeach

@@ -26,6 +26,10 @@ option('enable_driver_sdk', type: 'boolean', value: false, description:
        'Install headers to build drivers.')
 option('enable_kmods', type: 'boolean', value: false, description:
        'build kernel modules')
+option('enable_examples_source_install', type: 'boolean', value: true, description:
+       'Install examples source code')
+option('enable_examples_bin_install', type: 'boolean', value: false, description:
+       'Install examples binaries')
 option('examples', type: 'string', value: '', description:
        'Comma-separated list of examples to build by default')
 option('ibverbs_link', type: 'combo', choices : ['static', 'shared', 'dlopen'], value: 'shared', description:
