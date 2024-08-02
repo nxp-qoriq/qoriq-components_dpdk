@@ -86,12 +86,13 @@ subdir('app')
 # build docs
 subdir('doc')
 
-# build any examples explicitly requested - useful for developers - and
-# install any example code into the appropriate install path
+# build any examples explicitly requested
 subdir('examples')
-install_subdir('examples',
+if get_option('enable_examples_source_install')
+  install_subdir('examples',
         install_dir: get_option('datadir') + '/dpdk',
         exclude_files: ex_file_excludes)
+endif
 
 # build kernel modules if enabled
 if get_option('enable_kmods')
