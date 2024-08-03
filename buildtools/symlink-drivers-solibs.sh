@@ -10,8 +10,4 @@
 # 1. directory for installed regular libs e.g. lib64
 # 2. subdirectory of libdir where the pmds are
 
-if [[ -z "$2" || "$2" == '' ]]
-then
-	exit;
-fi
 cd ${MESON_INSTALL_DESTDIR_PREFIX}/$1 && ln -sfv $2/librte_*.so* .
