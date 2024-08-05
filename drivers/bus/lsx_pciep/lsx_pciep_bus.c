@@ -312,7 +312,7 @@ lsx_pciep_scan(void)
 	penv = getenv("LSX_PCIEP_BUS_DISABLE");
 	if ((penv && atoi(penv)) || s_lsx_pciep_disable) {
 		s_lsx_pciep_disable = 1;
-		return -ENODEV;
+		return 0;
 	}
 
 	if (rte_eal_process_type() == RTE_PROC_SECONDARY)
