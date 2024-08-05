@@ -990,8 +990,10 @@ lsx_pciep_find_all_ctls(void)
 			break;
 	}
 
-	LSX_PCIEP_BUS_INFO("PCIe EP finds %d PCIe controller(s))",
-		ctl_nb);
+	if (ctl_nb)
+		LSX_PCIEP_BUS_INFO("LX2 PCIe EP finds %d PCIe controller(s))", ctl_nb);
+	else
+		LSX_PCIEP_BUS_DBG("LX2 PCIe EP finds %d PCIe controller(s))", ctl_nb);
 
 	return ctl_nb;
 }
