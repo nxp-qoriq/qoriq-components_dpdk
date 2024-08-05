@@ -5264,7 +5264,7 @@ dpaa2_flow_remove_invalid_extract(struct rte_eth_dev *dev,
 	struct dpaa2_key_profile *key_profile;
 	int valid[DPKG_MAX_NUM_OF_EXTRACTS], update = 0, ret, ipaddr;
 	enum net_prot prot;
-	uint32_t field;
+	uint32_t field, prev_addr_idx;
 
 	if (type == DPAA2_FLOW_QOS_TYPE)
 		key_extract = &priv->extract.qos_key_extract;
@@ -5377,8 +5377,6 @@ skip_validation:
 		NH_FLD_IP_DST) {
 		key_profile->ip_addr_type = IP_SRC_DST_EXTRACT;
 		key_profile->ip_addr_extract_idx = key_profile->num - 2;
-		key_profile->ip_addr_key_offset =
-			key_profile->key_offset[key_profile->num - 2];
 	} else if (key_profile->num >= 2 &&
 		dpkg->extracts[key_profile->num - 2].type ==
 		DPKG_EXTRACT_FROM_HDR &&
@@ -5394,8 +5392,6 @@ skip_validation:
 		NH_FLD_IP_SRC) {
 		key_profile->ip_addr_type = IP_DST_SRC_EXTRACT;
 		key_profile->ip_addr_extract_idx = key_profile->num - 2;
-		key_profile->ip_addr_key_offset =
-			key_profile->key_offset[key_profile->num - 2];
 	} else if (key_profile->num >= 1 &&
 		dpkg->extracts[key_profile->num - 1].type ==
 		DPKG_EXTRACT_FROM_HDR &&
@@ -5405,8 +5401,6 @@ skip_validation:
 		NH_FLD_IP_SRC) {
 		key_profile->ip_addr_type = IP_SRC_EXTRACT;
 		key_profile->ip_addr_extract_idx = key_profile->num - 1;
-		key_profile->ip_addr_key_offset =
-			key_profile->key_offset[key_profile->num - 1];
 	} else if (key_profile->num >= 1 &&
 		dpkg->extracts[key_profile->num - 1].type ==
 		DPKG_EXTRACT_FROM_HDR &&
@@ -5416,10 +5410,19 @@ skip_validation:
 		NH_FLD_IP_DST) {
 		key_profile->ip_addr_type = IP_DST_EXTRACT;
 		key_profile->ip_addr_extract_idx = key_profile->num - 1;
-		key_profile->ip_addr_key_offset =
-			key_profile->key_offset[key_profile->num - 1];
 	} else {
 		key_profile->ip_addr_type = IP_NONE_ADDR_EXTRACT;
+	}
+
+	if (key_profile->ip_addr_type != IP_NONE_ADDR_EXTRACT) {
+		if (key_profile->ip_addr_extract_idx > 0) {
+			prev_addr_idx = key_profile->ip_addr_extract_idx - 1;
+			key_profile->ip_addr_key_offset =
+				key_profile->key_offset[prev_addr_idx] +
+				key_profile->key_size[prev_addr_idx];
+		} else {
+			key_profile->ip_addr_key_offset = 0;
+		}
 	}
 
 	for (i = 0; i < dpkg->num_extracts; i++) {
