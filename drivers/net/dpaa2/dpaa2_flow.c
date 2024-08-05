@@ -374,8 +374,7 @@ dpaa2_soft_parser_loaded(void)
 		goto exit;
 	}
 
-	RTE_LOG(INFO, PMD,
-		"Parser ID:0x%02x%02x, Rev:major(%02x), minor(%02x)\n",
+	DPAA2_PMD_DEBUG("Soft ParserID:0x%02x%02x, Rev:maj(%02x), min(%02x)",
 		parser_ccsr->psr_id1_h, parser_ccsr->psr_id1_l,
 		parser_ccsr->psr_ver_maj, parser_ccsr->psr_ver_min);
 

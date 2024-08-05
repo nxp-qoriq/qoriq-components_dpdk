@@ -263,8 +263,6 @@ dpaa2_dev_info_get(struct rte_eth_dev *dev,
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 
-	PMD_INIT_FUNC_TRACE();
-
 	dev_info->max_mac_addrs = priv->max_mac_filters;
 	dev_info->max_rx_pktlen = DPAA2_MAX_RX_PKT_LEN;
 	dev_info->min_rx_bufsize = DPAA2_MIN_RX_BUF_SIZE;
@@ -384,8 +382,6 @@ dpaa2_alloc_rx_tx_queues(struct rte_eth_dev *dev)
 	uint32_t tot_queues;
 	int i, ret = 0;
 	struct dpaa2_queue *dpaa2_q;
-
-	PMD_INIT_FUNC_TRACE();
 
 	num_rxqueue_per_tc = (priv->nb_rx_queues / priv->num_rx_tc);
 	if (priv->flags & DPAA2_TX_CONF_ENABLE)
@@ -549,8 +545,6 @@ dpaa2_eth_dev_configure(struct rte_eth_dev *dev)
 #if defined(RTE_LIBRTE_IEEE1588)
 	uint16_t ptp_correction_offset;
 #endif
-
-	PMD_INIT_FUNC_TRACE();
 
 	/* Rx offloads which are enabled by default */
 	if (dev_rx_offloads_nodis & ~rx_offloads) {
@@ -723,8 +717,6 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	uint8_t flow_id;
 	uint32_t bpid;
 	int i, ret;
-
-	PMD_INIT_FUNC_TRACE();
 
 	DPAA2_PMD_DEBUG("dev =%p, queue =%d, pool = %p, conf =%p",
 			dev, rx_queue_id, mb_pool, rx_conf);
@@ -2729,8 +2721,6 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	struct dpni_buffer_layout layout;
 	int ret, hw_id, i;
 	char *penv;
-
-	PMD_INIT_FUNC_TRACE();
 
 	dpni_dev = rte_malloc(NULL, sizeof(struct fsl_mc_io), 0);
 	if (!dpni_dev) {

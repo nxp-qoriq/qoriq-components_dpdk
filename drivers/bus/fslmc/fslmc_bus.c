@@ -244,8 +244,6 @@ rte_fslmc_parse(const char *name, void *addr)
 	uint8_t sep_exists = 0;
 	int ret = -1;
 
-	DPAA2_BUS_DEBUG("Parsing dev=(%s)", name);
-
 	/* There are multiple ways this can be called, with bus:dev, name=dev
 	 * or just dev. In all cases, the 'addr' is actually a string.
 	 */
@@ -270,8 +268,7 @@ rte_fslmc_parse(const char *name, void *addr)
 		   (!strncmp(name, "name", strlen("name")))) {
 			goto jump_out;
 		} else {
-			DPAA2_BUS_DEBUG("Invalid device for matching (%s).",
-					name);
+			DPAA2_BUS_DEBUG("Invalid device for matching (%s).", name);
 			ret = -EINVAL;
 			goto err_out;
 		}
