@@ -796,9 +796,6 @@ fslmc_map_dma(uint64_t vaddr, rte_iova_t iovaddr, size_t len)
 		fslmc_mem_va2iova != (iovaddr - vaddr)) {
 		DPAA2_BUS_WARN("Multiple MEM PA<->VA conversions.");
 	}
-	DPAA2_BUS_DEBUG("%s(%lx): VA(%lx):IOVA(%lx):PHY(%lx)",
-		is_io ? "DMA IO map size" : "DMA MEM map size",
-		len, vaddr, iovaddr, phy);
 
 	if (is_io)
 		goto io_mapping_check;
@@ -903,8 +900,7 @@ end_mapping:
 			fslmc_mem_va2iova = RTE_BAD_IOVA;
 		TAILQ_INSERT_TAIL(&fslmc_memsegs, dmaseg, next);
 	}
-	DPAA2_BUS_LOG(NOTICE,
-		"%s(%lx): VA(%lx):IOVA(%lx):PHY(%lx)",
+	DPAA2_BUS_INFO("%s(%lx): VA(%lx):IOVA(%lx):PHY(%lx)",
 		is_io ? "DMA I/O map size" : "DMA MEM map size",
 		len, vaddr, iovaddr, phy);
 

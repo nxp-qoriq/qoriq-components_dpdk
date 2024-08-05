@@ -227,7 +227,7 @@ dpaa2_create_dpcon_device(int dev_fd __rte_unused,
 	dpcon_dev->dpcon_id = dpcon_id;
 	dpcon_dev->qbman_ch_id = attr.qbman_ch_id;
 	dpcon_dev->num_priorities = attr.num_priorities;
-	DPAA2_PMD_DEBUG("Channel ID = %d\t Priority Num = %d Object ID = %d\n",
+	DPAA2_PMD_DEBUG("Channel ID = %d\t Priority Num = %d Object ID = %d",
 			dpcon_dev->qbman_ch_id, dpcon_dev->num_priorities,
 			dpcon_dev->dpcon_id);
 

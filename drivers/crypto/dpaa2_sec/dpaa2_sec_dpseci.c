@@ -4434,7 +4434,6 @@ dpaa2_sec_dev_init(struct rte_cryptodev *cryptodev)
 	struct dpseci_attr attr;
 	int retcode, hw_id;
 
-	PMD_INIT_FUNC_TRACE();
 	dpaa2_dev = container_of(dev, struct rte_dpaa2_device, device);
 	hw_id = dpaa2_dev->object_id;
 
