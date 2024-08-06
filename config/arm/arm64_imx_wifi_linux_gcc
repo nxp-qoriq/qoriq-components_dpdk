@@ -1,0 +1,22 @@
+[binaries]
+c = ['ccache', 'aarch64-linux-gnu-gcc']
+cpp = ['ccache', 'aarch64-linux-gnu-g++']
+ar = 'aarch64-linux-gnu-ar'
+as = 'aarch64-linux-gnu-as'
+strip = 'aarch64-linux-gnu-strip'
+pkgconfig = 'pkg-config'
+pcap-config = ''
+
+[host_machine]
+system = 'linux'
+cpu_family = 'aarch64'
+cpu = 'armv8-a'
+endian = 'little'
+
+[constants]
+sysroot = '/opt/sysroot/'
+
+[properties]
+platform = 'dpaa'
+c_args = ['-I' + sysroot + 'usr/include', '-fPIC']
+c_link_args = ['-std=c99', '-L' + sysroot + 'usr/lib/', '-L' + sysroot + 'usr/lib64/', '-Wl,-rpath=' + sysroot + 'usr/lib/']
