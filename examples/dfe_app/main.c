@@ -219,7 +219,7 @@ void cmd_do_simple(int msg_type, const char *desc)
 }
 
 /* config rx antenna */
-void cmd_do_rx_antenna_config(uint32_t rx_antenna)
+void cmd_do_rx_antenna_config(uint32_t rx_antenna_mask)
 {
 	struct dfe_msg *msg;
 	int ret;
@@ -231,7 +231,7 @@ void cmd_do_rx_antenna_config(uint32_t rx_antenna)
 		return;
 
 	msg->type = DFE_CFG_RX_ANTENNA;
-	msg->payload[0] = rx_antenna;
+	msg->payload[0] = rx_antenna_mask;
 
 	wait_response = 1;
 	ret = send_dfe_command(msg);

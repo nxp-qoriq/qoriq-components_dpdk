@@ -302,7 +302,7 @@ struct cmd_config_rx_ant_result {
 	cmdline_fixed_string_t config;
 	cmdline_fixed_string_t rx;
 	cmdline_fixed_string_t ant;
-	uint16_t rx_antenna;
+	uint32_t rx_antenna_mask;
 };
 
 static cmdline_parse_token_string_t cmd_config_rx_ant_config_tok =
@@ -312,7 +312,7 @@ static cmdline_parse_token_string_t cmd_config_rx_ant_rx_tok =
 static cmdline_parse_token_string_t cmd_config_rx_ant_ant_tok =
 	TOKEN_STRING_INITIALIZER(struct cmd_config_rx_ant_result, ant, "ant");
 static cmdline_parse_token_num_t cmd_config_rx_ant_rx_antenna_tok =
-	TOKEN_NUM_INITIALIZER(struct cmd_config_rx_ant_result, rx_antenna, RTE_UINT16);
+	TOKEN_NUM_INITIALIZER(struct cmd_config_rx_ant_result, rx_antenna_mask, RTE_UINT32);
 
 static cmdline_parse_inst_t cmd_config_rx_ant = {
 	.f = cmd_config_rx_ant_parsed,
