@@ -25,6 +25,7 @@
 #include "dpaa2_parser_decode.h"
 
 static char *dpaa2_flow_control_log;
+
 static uint16_t dpaa2_flow_miss_flow_id; /* Default miss flow id is 0. */
 static int dpaa2_sp_loaded = -1;
 
@@ -63,6 +64,9 @@ struct dpaa2_dev_flow {
 	enum net_prot ip_key;
 	enum rte_flow_action_type action_type;
 	struct dpni_fs_action_cfg fs_action_cfg;
+	struct dpaa2_dev_priv *priv;
+	/** Valid for redirect action.*/
+	char dst_name[RTE_ETH_NAME_MAX_LEN];
 };
 
 struct rte_dpaa2_flow_item {
@@ -224,26 +228,28 @@ static const struct rte_flow_item_rocev2 dpaa2_flow_item_rocev2_mask = {
 #endif
 
 static inline void
-dpaa2_flow_qos_extracts_log(const struct dpaa2_dev_priv *priv)
+dpaa2_flow_qos_extracts_log(const struct dpaa2_dev_priv *priv,
+	const char *prefix)
 {
 	if (!dpaa2_flow_control_log)
 		return;
 
-	DPAA2_FLOW_DUMP("QoS table: %d extracts\r\n",
+	DPAA2_FLOW_DUMP("\n%s %s's QoS table: %d extracts\r\n",
+		prefix, priv->eth_dev->data->name,
 		priv->extract.qos_key_extract.dpkg.num_extracts);
 	dpaa2_dump_dpkg(&priv->extract.qos_key_extract.dpkg);
 }
 
 static inline void
 dpaa2_flow_fs_extracts_log(const struct dpaa2_dev_priv *priv,
-	int tc_id)
+	const char *prefix, int tc_id)
 {
 	if (!dpaa2_flow_control_log)
 		return;
 
-	DPAA2_FLOW_DUMP("FS table: %d extracts in TC[%d]\r\n",
-		priv->extract.tc_key_extract[tc_id].dpkg.num_extracts,
-		tc_id);
+	DPAA2_FLOW_DUMP("\n%s %s's FS[%d] table: %d extracts\r\n",
+		prefix, priv->eth_dev->data->name, tc_id,
+		priv->extract.tc_key_extract[tc_id].dpkg.num_extracts);
 	dpaa2_dump_dpkg(&priv->extract.tc_key_extract[tc_id].dpkg);
 }
 
@@ -253,21 +259,15 @@ dpaa2_flow_qos_entry_log(const char *log_info,
 {
 	int idx;
 	uint8_t *key, *mask;
+	struct rte_eth_dev *dev = flow->priv->eth_dev;
 
 	if (!dpaa2_flow_control_log)
 		return;
 
-	if (qos_index >= 0) {
-		DPAA2_FLOW_DUMP("%s QoS entry[%d](size %d/%d) for TC[%d]\r\n",
-			log_info, qos_index, flow->qos_rule_size,
-			flow->qos_rule.key_size,
-			flow->tc_id);
-	} else {
-		DPAA2_FLOW_DUMP("%s QoS entry(size %d/%d) for TC[%d]\r\n",
-			log_info, flow->qos_rule_size,
-			flow->qos_rule.key_size,
-			flow->tc_id);
-	}
+	DPAA2_FLOW_DUMP("%s: %s QoS entry[%d](size %d/%d) to select FS[%d]\r\n",
+		dev->data->name, log_info, qos_index, flow->qos_rule_size,
+		flow->qos_rule.key_size,
+		flow->tc_id);
 
 	key = flow->qos_key_addr;
 	mask = flow->qos_mask_addr;
@@ -279,7 +279,7 @@ dpaa2_flow_qos_entry_log(const char *log_info,
 	DPAA2_FLOW_DUMP("\r\nmask:\r\n");
 	for (idx = 0; idx < flow->qos_rule_size; idx++)
 		DPAA2_FLOW_DUMP("%02x ", mask[idx]);
-	DPAA2_FLOW_DUMP("\r\n");
+	DPAA2_FLOW_DUMP("\r\n\n");
 }
 
 static inline void
@@ -288,14 +288,15 @@ dpaa2_flow_fs_entry_log(const char *log_info,
 {
 	int idx;
 	uint8_t *key, *mask;
+	struct rte_eth_dev *dev = flow->priv->eth_dev;
 
 	if (!dpaa2_flow_control_log)
 		return;
 
-	DPAA2_FLOW_DUMP("%s FS/TC entry[%d](size %d/%d) of TC[%d]\r\n",
-		log_info, flow->tc_index,
-		flow->fs_rule_size, flow->fs_rule.key_size,
-		flow->tc_id);
+	DPAA2_FLOW_DUMP("%s: %s FS[%d]/entry[%d](size %d/%d)\r\n",
+		dev->data->name, log_info, flow->tc_id,
+		flow->tc_index, flow->fs_rule_size,
+		flow->fs_rule.key_size);
 
 	key = flow->fs_key_addr;
 	mask = flow->fs_mask_addr;
@@ -307,16 +308,16 @@ dpaa2_flow_fs_entry_log(const char *log_info,
 	DPAA2_FLOW_DUMP("\r\nmask:\r\n");
 	for (idx = 0; idx < flow->fs_rule_size; idx++)
 		DPAA2_FLOW_DUMP("%02x ", mask[idx]);
-	DPAA2_FLOW_DUMP("\r\n");
+	DPAA2_FLOW_DUMP("\r\nAction: ");
 	if (flow->action_type == RTE_FLOW_ACTION_TYPE_QUEUE) {
-		DPAA2_FLOW_DUMP("Receive to flow ID: %d\r\n",
+		DPAA2_FLOW_DUMP("Receive to flow%d\r\n\n",
 			flow->fs_action_cfg.flow_id);
 	} else if (flow->action_type == RTE_FLOW_ACTION_TYPE_PORT_ID ||
 		flow->action_type == RTE_FLOW_ACTION_TYPE_REPRESENTED_PORT) {
-		DPAA2_FLOW_DUMP("Re-direct to port token: %d\r\n",
-			flow->fs_action_cfg.redirect_obj_token);
+		DPAA2_FLOW_DUMP("Re-direct to port %s\r\n\n",
+			flow->dst_name);
 	} else {
-		DPAA2_FLOW_DUMP("Un-supported action type(%d)\r\n",
+		DPAA2_FLOW_DUMP("Un-supported action type(%d)\r\n\n",
 			flow->action_type);
 	}
 }
@@ -483,7 +484,7 @@ dpaa2_flow_add_qos_rule(struct dpaa2_dev_priv *priv,
 		return -EINVAL;
 	}
 
-	dpaa2_flow_qos_entry_log("Start add", flow, qos_index);
+	dpaa2_flow_qos_entry_log("Add", flow, qos_index);
 
 	ret = dpni_add_qos_entry(dpni, CMD_PRI_LOW,
 			priv->token, &flow->qos_rule,
@@ -511,7 +512,7 @@ dpaa2_flow_add_fs_rule(struct dpaa2_dev_priv *priv,
 		return -EINVAL;
 	}
 
-	dpaa2_flow_fs_entry_log("Start add", flow);
+	dpaa2_flow_fs_entry_log("Add", flow);
 
 	ret = dpni_add_fs_entry(dpni, CMD_PRI_LOW,
 			priv->token, flow->tc_id,
@@ -4204,6 +4205,7 @@ dpaa2_configure_flow_fs_action(struct dpaa2_dev_priv *priv,
 		flow->fs_action_cfg.redirect_obj_token =
 			dest_priv->token;
 		flow->fs_action_cfg.flow_id = dest_q->flow_id;
+		strcpy(flow->dst_name, dest_priv->eth_dev->data->name);
 	}
 
 	return 0;
@@ -4290,7 +4292,7 @@ dpaa2_configure_fs_rss_table(struct dpaa2_dev_priv *priv,
 	key_max_size = tc_extract->key_profile.key_max_size;
 	entry_size = dpaa2_flow_entry_size(key_max_size);
 
-	dpaa2_flow_fs_extracts_log(priv, tc_id);
+	dpaa2_flow_fs_extracts_log(priv, "Configure", tc_id);
 	ret = dpkg_prepare_key_cfg(&tc_extract->dpkg,
 			key_cfg_buf);
 	if (ret < 0) {
@@ -4384,7 +4386,7 @@ dpaa2_configure_qos_table(struct dpaa2_dev_priv *priv,
 	key_max_size = qos_extract->key_profile.key_max_size;
 	entry_size = dpaa2_flow_entry_size(key_max_size);
 
-	dpaa2_flow_qos_extracts_log(priv);
+	dpaa2_flow_qos_extracts_log(priv, "Configure");
 
 	ret = dpkg_prepare_key_cfg(&qos_extract->dpkg,
 			key_cfg_buf);
@@ -4982,6 +4984,7 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 		DPAA2_PMD_ERR("Failure to allocate memory for flow");
 		goto mem_failure;
 	}
+	flow->priv = priv;
 
 	/* Allocate DMA'ble memory to write the qos rules */
 	flow->qos_key_addr = rte_zmalloc(NULL,
@@ -5301,6 +5304,18 @@ skip_validation:
 			remove_conut++;
 	}
 
+	if (remove_conut > 0) {
+		if (type == DPAA2_FLOW_QOS_TYPE) {
+			dpaa2_flow_qos_extracts_log(priv,
+				"Before removing extract(s)");
+		} else {
+			dpaa2_flow_fs_extracts_log(priv,
+				"Before removing extract(s)", tc_id);
+		}
+	} else {
+		return 0;
+	}
+
 	i = key_profile->num - 1;
 	while (remove_conut) {
 		if (valid[i]) {
@@ -5466,6 +5481,14 @@ skip_validation:
 		}
 	}
 
+	if (type == DPAA2_FLOW_QOS_TYPE) {
+		dpaa2_flow_qos_extracts_log(priv,
+			"After removing extract(s)");
+	} else {
+		dpaa2_flow_fs_extracts_log(priv,
+			"After removing extract(s)", tc_id);
+	}
+
 	return update;
 }
 
@@ -5500,6 +5523,9 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 				dpaa2_flow_qos_entry_log("Delete failed", flow,
 					tc_idx);
 				goto error;
+			} else {
+				dpaa2_flow_qos_entry_log("Delete success", flow,
+					tc_idx);
 			}
 		}
 
@@ -5511,6 +5537,8 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 				flow->tc_id, ret);
 			dpaa2_flow_fs_entry_log("Delete failed", flow);
 			goto error;
+		} else {
+			dpaa2_flow_fs_entry_log("Delete success", flow);
 		}
 		break;
 	case RTE_FLOW_ACTION_TYPE_RSS:

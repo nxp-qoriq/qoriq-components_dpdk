@@ -480,8 +480,9 @@ dpaa2_dump_dpkg(const struct dpkg_profile_cfg *dpkg)
 		DPAA2_FLOW_DUMP("%s", string);
 		if ((idx + 1) < dpkg->num_extracts)
 			DPAA2_FLOW_DUMP(" / ");
+		else
+			DPAA2_FLOW_DUMP("\r\n\n");
 	}
-	DPAA2_FLOW_DUMP("\r\n");
 }
 
 int dpaa2_distset_to_dpkg_profile_cfg(uint64_t req_dist_set,
