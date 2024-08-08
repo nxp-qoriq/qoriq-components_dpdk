@@ -431,7 +431,7 @@ cmd_config_rx_ant_parsed(void *parsed_result,
 {
 	struct cmd_config_rx_ant_result *res = parsed_result;
 
-	cmd_do_rx_antenna_config(res->rx_antenna);
+	cmd_do_rx_antenna_config(res->rx_antenna_mask);
 }
 
 void
