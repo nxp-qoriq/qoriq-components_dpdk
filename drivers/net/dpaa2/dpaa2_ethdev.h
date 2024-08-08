@@ -211,51 +211,6 @@ struct dpaa2_dyn_rx_protocol_pos {
 
 #define DPAA2_IBTH_MAX_EXTRACT_NB 4
 
-struct ipv4_sd_addr_extract_rule {
-	uint32_t ipv4_src;
-	uint32_t ipv4_dst;
-};
-
-struct ipv6_sd_addr_extract_rule {
-	uint8_t ipv6_src[NH_FLD_IPV6_ADDR_SIZE];
-	uint8_t ipv6_dst[NH_FLD_IPV6_ADDR_SIZE];
-};
-
-struct ipv4_ds_addr_extract_rule {
-	uint32_t ipv4_dst;
-	uint32_t ipv4_src;
-};
-
-struct ipv6_ds_addr_extract_rule {
-	uint8_t ipv6_dst[NH_FLD_IPV6_ADDR_SIZE];
-	uint8_t ipv6_src[NH_FLD_IPV6_ADDR_SIZE];
-};
-
-union ip_addr_extract_rule {
-	struct ipv4_sd_addr_extract_rule ipv4_sd_addr;
-	struct ipv6_sd_addr_extract_rule ipv6_sd_addr;
-	struct ipv4_ds_addr_extract_rule ipv4_ds_addr;
-	struct ipv6_ds_addr_extract_rule ipv6_ds_addr;
-};
-
-union ip_src_addr_extract_rule {
-	uint32_t ipv4_src;
-	uint8_t ipv6_src[NH_FLD_IPV6_ADDR_SIZE];
-};
-
-union ip_dst_addr_extract_rule {
-	uint32_t ipv4_dst;
-	uint8_t ipv6_dst[NH_FLD_IPV6_ADDR_SIZE];
-};
-
-enum ip_addr_extract_type {
-	IP_NONE_ADDR_EXTRACT,
-	IP_SRC_EXTRACT,
-	IP_DST_EXTRACT,
-	IP_SRC_DST_EXTRACT,
-	IP_DST_SRC_EXTRACT
-};
-
 enum key_prot_type {
 	/* HW extracts from standard protocol fields*/
 	DPAA2_NET_PROT_KEY,
@@ -271,14 +226,17 @@ struct key_prot_field {
 	uint32_t key_field;
 };
 
+struct dpaa2_ip_addr_extract {
+	uint32_t field;
+	uint8_t max_size;
+};
+
 struct dpaa2_key_profile {
 	uint8_t num;
 	uint8_t key_offset[DPKG_MAX_NUM_OF_EXTRACTS];
 	uint8_t key_size[DPKG_MAX_NUM_OF_EXTRACTS];
 
-	enum ip_addr_extract_type ip_addr_type;
-	uint8_t ip_addr_extract_idx;
-	uint8_t ip_addr_key_offset;
+	struct dpaa2_ip_addr_extract ip_addr_extracts[2];
 
 	uint8_t l4_sp_present;
 	uint8_t l4_sp_extract_idx;
