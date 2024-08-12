@@ -584,8 +584,8 @@ hw_poll_job_ring(struct sec_job_ring_t *job_ring,
 		/* todo check if it is false alarm no desc present */
 		if (!current_desc_addr) {
 			false_alarm++;
-			printf("false alarm %" PRIu64 "real %" PRIu64
-				" sec_err =0x%x cidx Index =0%d\n",
+			CAAM_JR_ERR("false alarm %" PRIu64 "real %" PRIu64
+				" sec_err =0x%x cidx Index =0%d",
 				false_alarm, real_poll,
 				sec_error_code, job_ring->cidx);
 			rte_panic("CAAM JR descriptor NULL");
@@ -1407,9 +1407,9 @@ err1:
 			rte_pktmbuf_mtod(op->sym->m_src, void *),
 			rte_pktmbuf_data_len(op->sym->m_src));
 
-	printf("\n JD before conversion\n");
+	fprintf(stdout, "\n JD before conversion\n");
 	for (i = 0; i < 12; i++)
-		printf("\n 0x%08x", ctx->jobdes.desc[i]);
+		fprintf(stdout, "\n 0x%08x", ctx->jobdes.desc[i]);
 #endif
 
 	CAAM_JR_DP_DEBUG("Jr[%p] pi[%d] ci[%d].Before sending desc",

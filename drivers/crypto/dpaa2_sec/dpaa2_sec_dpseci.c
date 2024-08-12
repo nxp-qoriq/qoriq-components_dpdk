@@ -1731,7 +1731,7 @@ dpaa2_sec_fd_to_mbuf(const struct qbman_fd *fd,
 }
 
 static void
-dpaa2_sec_dump(struct rte_crypto_op *op)
+dpaa2_sec_dump(struct rte_crypto_op *op, FILE *f)
 {
 	int i;
 	dpaa2_sec_session *sess = NULL;
@@ -1748,18 +1748,18 @@ dpaa2_sec_dump(struct rte_crypto_op *op)
 		goto mbuf_dump;
 
 	priv = (struct ctxt_priv *)sess->ctxt;
-	printf("\n****************************************\n"
+	fprintf(f, "\n****************************************\n"
 		"session params:\n\tContext type:\t%d\n\tDirection:\t%s\n"
 		"\tCipher alg:\t%d\n\tAuth alg:\t%d\n\tAead alg:\t%d\n"
 		"\tCipher key len:\t%zd\n", sess->ctxt_type,
 		(sess->dir == DIR_ENC) ? "DIR_ENC" : "DIR_DEC",
 		sess->cipher_alg, sess->auth_alg, sess->aead_alg,
 		sess->cipher_key.length);
-		rte_hexdump(stdout, "cipher key", sess->cipher_key.data,
+		rte_hexdump(f, "cipher key", sess->cipher_key.data,
 				sess->cipher_key.length);
-		rte_hexdump(stdout, "auth key", sess->auth_key.data,
+		rte_hexdump(f, "auth key", sess->auth_key.data,
 				sess->auth_key.length);
-	printf("\tAuth key len:\t%zd\n\tIV len:\t\t%d\n\tIV offset:\t%d\n"
+	fprintf(f, "\tAuth key len:\t%zd\n\tIV len:\t\t%d\n\tIV offset:\t%d\n"
 		"\tdigest length:\t%d\n\tstatus:\t\t%d\n\taead auth only"
 		" len:\t%d\n\taead cipher text:\t%d\n",
 		sess->auth_key.length, sess->iv.length, sess->iv.offset,
@@ -1776,41 +1776,41 @@ dpaa2_sec_dump(struct rte_crypto_op *op)
 		sess->pdcp.hfn_threshold);
 
 	bufsize = (uint8_t)priv->flc_desc[0].flc.word1_sdl;
-	printf("Descriptor Dump:\n");
+	fprintf(f, "Descriptor Dump:\n");
 	for (i = 0; i < bufsize; i++)
-		printf("\tDESC[%d]:0x%x\n", i, priv->flc_desc[0].desc[i]);
-	printf("input for dump_caam_desc:\n");
+		fprintf(f, "\tDESC[%d]:0x%x\n", i, priv->flc_desc[0].desc[i]);
+	fprintf(f,"input for dump_caam_desc:\n");
 	for (i = 0; i < bufsize; i++)
-		printf("0x%x\n", priv->flc_desc[0].desc[i]);
+		fprintf(f, "0x%x\n", priv->flc_desc[0].desc[i]);
 
 
-	printf("\n");
+	fprintf(f, "\n");
 mbuf_dump:
 	sym_op = op->sym;
 	if (sym_op->m_src) {
 		uint16_t len = sym_op->m_src->data_len;
 		if (len > 1500) {
-			printf("Source mbuf: data_len = %d limiting to 1500 bytes\n", len);
+			fprintf(f, "Source mbuf: data_len = %d limiting to 1500 bytes\n", len);
 			len = 1500;
 		}
-		rte_pktmbuf_dump(stdout, sym_op->m_src, len);
+		rte_pktmbuf_dump(f, sym_op->m_src, len);
 	}
 	if (sym_op->m_dst) {
 		uint16_t len = sym_op->m_dst->data_len;
 		if (len > 1500) {
-			printf("Dest mbuf: data_len = %d limiting to 1500 bytes\n", len);
+			fprintf(f, "Dest mbuf: data_len = %d limiting to 1500 bytes\n", len);
 			len = 1500;
 		}
-		rte_pktmbuf_dump(stdout, sym_op->m_dst, len);
+		rte_pktmbuf_dump(f, sym_op->m_dst, len);
 	}
 
-	printf("Session address = %p\ncipher offset: %d, length: %d\n"
+	fprintf(f, "Session address = %p\ncipher offset: %d, length: %d\n"
 		"auth offset: %d, length:  %d\n aead offset: %d, length: %d\n"
 		, sym_op->session,
 		sym_op->cipher.data.offset, sym_op->cipher.data.length,
 		sym_op->auth.data.offset, sym_op->auth.data.length,
 		sym_op->aead.data.offset, sym_op->aead.data.length);
-	printf("\n");
+	fprintf(f, "\n");
 
 }
 
@@ -2074,7 +2074,7 @@ dpaa2_sec_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 				DPAA2_SEC_DP_ERR("SEC returned Error - %x\n",
 						 fd->simple.frc);
 				if (dpaa2_sec_dp_dump > DPAA2_SEC_DP_ERR_DUMP)
-					dpaa2_sec_dump(ops[num_rx]);
+					dpaa2_sec_dump(ops[num_rx], stdout);
 			}
 
 			dpaa2_qp->rx_vq.err_pkts += 1;
@@ -3107,8 +3107,6 @@ dpaa2_sec_ipsec_proto_init(struct rte_crypto_cipher_xform *cipher_xform,
 	case RTE_CRYPTO_AUTH_SHA384_HMAC:
 		authdata->algtype = OP_PCL_IPSEC_HMAC_SHA2_384_192;
 		authdata->algmode = OP_ALG_AAI_HMAC;
-		authdata->key = DPAA2_VADDR_TO_IOVA(authdata->key);
-		authdata->key_type = RTA_DATA_PTR;
 		break;
 	case RTE_CRYPTO_AUTH_SHA512_HMAC:
 		authdata->algtype = OP_PCL_IPSEC_HMAC_SHA2_512_256;
@@ -4436,7 +4434,6 @@ dpaa2_sec_dev_init(struct rte_cryptodev *cryptodev)
 	struct dpseci_attr attr;
 	int retcode, hw_id;
 
-	PMD_INIT_FUNC_TRACE();
 	dpaa2_dev = container_of(dev, struct rte_dpaa2_device, device);
 	hw_id = dpaa2_dev->object_id;
 

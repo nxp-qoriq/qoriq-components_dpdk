@@ -499,7 +499,7 @@ dpaa2_node_add(struct rte_eth_dev *dev, uint32_t node_id,
 			node->channel_id = priv->channel_inuse;
 			priv->channel_inuse++;
 		} else {
-			printf("error no channel id available\n");
+			DPAA2_PMD_ERR("error no channel id available");
 		}
 	}
 
