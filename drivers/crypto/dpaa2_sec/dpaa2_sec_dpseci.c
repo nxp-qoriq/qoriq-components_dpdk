@@ -2170,7 +2170,7 @@ dpaa2_sec_queue_pair_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 			FLE_POOL_BUF_SIZE,
 			FLE_POOL_CACHE_SIZE, 0,
 			NULL, NULL, NULL, NULL,
-			SOCKET_ID_ANY, MEMPOOL_F_SP_PUT | MEMPOOL_F_SC_GET);
+			SOCKET_ID_ANY, 0);
 	if (!qp->fle_pool) {
 		DPAA2_SEC_ERR("Mempool (%s) creation failed", str);
 		return -ENOMEM;
