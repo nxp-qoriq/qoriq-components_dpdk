@@ -731,14 +731,19 @@ The number of rings allocated to each SI is at least 1.
 Run below commands to configure multiple queues:
 ------------------------------------------------
 1. Example to set the number of rings of PF to 1, VF0 to 6 and VF1 to 1:
-	$ ./devlink dev param set pci/0002:00:10.0 name si_num_rings cmode driverinit value 353
+	$ ./devlink dev param set pci/0002:00:10.0 name si_num_rings cmode driverinit value 0106
 	Note: Here,
 	      -> 0002:00:10.0 is PF PCI address.
-	      -> The 'value' is uint32 type value. Each SI occupies 4 bits, of
-		 which PSI (PF) occupies the lowest 4 bits, then VSI0 (VF0) occupies
-		 bits 4 to 7, VSI1 (VF1) occupies bits 8 to 11, and so on.
-		 So, 353 is 0001 0110 0001 in binary, configuring number of rings
-	         of PF to 1, VF0 to 6 and VF1 to 1.
+	      -> The 'value' is a string type value.
+		 Numerically higher VFs have lower bytes of the string, as an example,
+		 if one ENETC supports 2 VFs, and the string is set to "304" or
+		 "0304", then the ring allocation for each VF is shown below.
+		 VF0 = 0x04
+		 VF1 = 0x03
+
+		Note that the number of rings of PF is not explicitly presented in the
+		string, because the remaining number of rings is reserved for PF.
+
 2. Run devlink reload command to apply the new configuration.
 	$ ./devlink dev reload pci/0002:00:10.0
 3. Verify the value of si_num_rings
@@ -747,7 +752,7 @@ Example output:
 pci/0002:00:10.0:
   name si_num_rings type driver-specific
    values:
-    cmode driverinit value 353
+    cmode driverinit value 0106
 
 
 Running VFs in DPDK:
