@@ -19,9 +19,19 @@ Below steps are to be followed for M7 setup:
 5. Follow the below steps for running VF in dpdk.
 6. Check for M7 logs on other port consoles than linux.
 
-Note: For i.MX95 use 13.2 gcc
+Note: Refer 'Cross compiled toolchain For ARM64' section in nxp/README
         $ meson arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc -Dexamples=all
         $ ninja -C arm64-build
+
+Multi-queue
+-----------
+For M7, VF0 is configured to support 3 queues and VF1 is configured to support 4
+queues.
+
+Examples to run multiqueue:
+
+$ dpdk-l3fwd -c 0xA -n 1 – -p 0x1 -P --config="(0,0,1) (0,1,3)"
+$ dpdk-testpmd -c 0xA -n 1 -- -i --portmask=0x1 --rxq=2 --txq=2
 
 Steps to run VF(s) in dpdk:
 ----------------------------

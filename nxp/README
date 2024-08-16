@@ -69,7 +69,7 @@ Following information can be used to obtain these components:
     Cross compiled toolchain For ARM64
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Get the `gcc-13.2` for latest LF6.6 releases:
+    Get the `gcc-13.3` for latest LF6.6 releases:
     # https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
 
     Thereafter, set the environment variable:
@@ -434,7 +434,7 @@ Below are the details of mmcargs/bootargs:
 <imx-95-params>: i.MX95 specific parameters: `iommu.passthrough=1`
 
 <imx-mem-param>: is used to reserve the initial DDR memory from uboot via 'mem' environment variable.
-	It needed to be set to `mem=4096M` on platforms with FEC/eQoS ethernet interfaces
+	It needed to be set to `mem=2096M` on platforms with FEC/eQoS ethernet interfaces
 	as BD ring of FEC/eQoS interfaces can only accept 32 bit addresses.
 
 <core_list>: can be used to add CPUs planned to be used for DPDK applications
@@ -478,10 +478,24 @@ https://github.com/nxp-qoriq/dpdk-extras
 
 Refer README for kpage_ncache module in linux/kpage_ncache directory.
 
+Important Note (For ENET-FEC and ENET-QOS on all i.MX platforms):
+-----------------------------------------------------------------
+Please check for the following properties ie. "reset-gpios", "reset-assert-us" and "reset-deassert-us"
+for the ethernet node on uboot using the below command:
+=> fdt print
+	-> Refer below platform specific section for command to get fdt.
+
+If these properties are present in the ethernet node, remove it as it might cause
+issues in the forwarding using below command on uboot:
+
+=> fdt rm /<soc>/<bus>/<ethernet>/mdio/<ethernet-phy>/ "property";
+	eg. fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-gpios";
+
 Steps for ENET-FEC:
 ~~~~~~~~~~~~~~~~~~
 Booting steps:
 --------------
+
   1.1 For i.MX8MM Platform:
     Bring up the imx-8mm-evk-rev board with latest kernel and dtb.
     Enable User space mode of the kernel driver by using 'imx8mm-evk-dpdk.dtb'.
@@ -514,8 +528,8 @@ Booting steps:
 	"setenv fdtfile imx8mp-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
 	setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}';
 	run loadkernel; run loadfdt; fdt addr ${fdt_addr};
-     	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-gpios";
-     	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-assert-us";
+	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-gpios";
+	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-assert-us";
 	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-deassert-us";
 	fdt set /soc@0/bus@30800000/ethernet@30be0000 compatible "fsl,imx8mm-fec-uio";
      	setenv bootcmd 'mmc dev ${mmcdev};run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
@@ -536,9 +550,6 @@ Booting steps:
 	"setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
 	 setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}';
 	 run loadkernel; run loadfdt; fdt addr ${fdt_addr};
-	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-gpios";
-	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-assert-us";
-	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-deassert-us";
 	 fdt set /soc@0/bus@42800000/ethernet@42890000 compatible "fsl,imx8mm-fec-uio";
 	 setenv bootcmd 'mmc dev ${mmcdev}; run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
     => saveenv
@@ -554,6 +565,9 @@ Booting steps:
 	 setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}';
 	 run loadkernel; run loadfdt; fdt addr ${fdt_addr};
 	 fdt set /soc@0/bus@42800000/ethernet@42890000 compatible "fsl,imx8mm-fec-uio";
+	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-gpios";
+	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-assert-us";
+	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-deassert-us";
 	 setenv bootcmd 'mmc dev ${mmcdev}; run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
     => saveenv
     => run dpdk_enable
@@ -651,12 +665,15 @@ Booting steps:
 
     => setenv dpdk_enable
        "setenv loadkernel fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image;
-        setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr_r} ${fdtfile}';
-        run loadkernel; run loadfdt; fdt addr ${fdt_addr_r};
-        fdt set /soc@0/bus@42800000/ethernet@428a0000 compatible "fsl,imx-enet-qos" "snps,dwmac-5.10a";
-        fdt resize 4096;
-        fdt set /aliases "ethernet1" "/soc@0/bus@42800000/ethernet@428a0000";
-        run mmcargs; sleep 1; booti ${loadaddr} - ${fdt_addr};"
+	setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr_r} ${fdtfile}';
+	run loadkernel; run loadfdt; fdt addr ${fdt_addr_r};
+	fdt set /soc@0/bus@42800000/ethernet@428a0000 compatible "fsl,imx-enet-qos" "snps,dwmac-5.10a";
+	fdt resize 4096;
+	fdt set /aliases "ethernet1" "/soc@0/bus@42800000/ethernet@428a0000";
+	fdt rm /soc@0/bus@42800000/ethernet@428a0000/mdio/ethernet-phy@1 "reset-gpios";
+	fdt rm /soc@0/bus@42800000/ethernet@428a0000/mdio/ethernet-phy@1 "reset-assert-us";
+	fdt rm /soc@0/bus@42800000/ethernet@428a0000/mdio/ethernet-phy@1 "reset-deassert-us";
+	run mmcargs; sleep 1; booti ${loadaddr} - ${fdt_addr};"
     => saveenv
     => run dpdk_enable
 
@@ -687,6 +704,7 @@ Forwarding between both FEC and QOS:
 	Run-
 	    ./dpdk-l2fwd -c 0xf -n 1 --vdev 'net_enetqos'  --vdev 'net_enetfec' -- -p 0x3 -T 0 -P
 	    ./dpdk-testpmd -c 0xf -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec'  -- -i --portmask=0x3 --nb-ports=2 --forward-mode=io
+	    ./dpdk-l3fwd -c 0x1 -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec' -- -p 0x3 --config="(0,0,0), (1,0,0)" -P --parse-ptype
 
 	Note: i.MX91 is single core platform, so it has limitaion to use core 0. Also-
 	      dpdk-testpmd is not supported.
@@ -703,7 +721,7 @@ ENETC-4 with i.mx95
 Linux kernel on ARM core owned ENETC PF interface
 =================================================
 
-Note: For i.MX95 use 13.2 gcc (See details in cross-compilation section)
+Note: Refer 'Cross compiled toolchain For ARM64' section in nxp/README
 	$ meson arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc -Dexamples=all
 	$ ninja -C arm64-build
 
