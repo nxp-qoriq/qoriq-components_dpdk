@@ -5497,7 +5497,7 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 	struct rte_flow *_flow,
 	struct rte_flow_error *error)
 {
-	int ret = 0, update;
+	int ret = 0, ret1, update;
 	uint8_t tc_id, dist_size;
 	uint16_t tc_idx;
 	struct dpaa2_dev_flow *flow;
@@ -5514,15 +5514,15 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 	case RTE_FLOW_ACTION_TYPE_PORT_ID:
 		if (priv->num_rx_tc > 1) {
 			/* Remove entry from QoS table first */
-			ret = dpni_remove_qos_entry(dpni, CMD_PRI_LOW,
+			ret1 = dpni_remove_qos_entry(dpni, CMD_PRI_LOW,
 					priv->token,
 					&flow->qos_rule);
-			if (ret) {
+			if (ret1) {
 				DPAA2_PMD_ERR("Remove FS QoS entry failed(%d)",
-					ret);
+					ret1);
 				dpaa2_flow_qos_entry_log("Delete failed", flow,
 					tc_idx);
-				goto error;
+				ret = ret1;
 			} else {
 				dpaa2_flow_qos_entry_log("Delete success", flow,
 					tc_idx);
@@ -5530,26 +5530,26 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 		}
 
 		/* Then remove entry from FS table */
-		ret = dpni_remove_fs_entry(dpni, CMD_PRI_LOW, priv->token,
+		ret1 = dpni_remove_fs_entry(dpni, CMD_PRI_LOW, priv->token,
 				flow->tc_id, &flow->fs_rule);
-		if (ret) {
+		if (ret1) {
 			DPAA2_PMD_ERR("Remove entry from FS[%d] failed(%d)",
-				flow->tc_id, ret);
+				flow->tc_id, ret1);
 			dpaa2_flow_fs_entry_log("Delete failed", flow);
-			goto error;
+			ret = ret1;
 		} else {
 			dpaa2_flow_fs_entry_log("Delete success", flow);
 		}
 		break;
 	case RTE_FLOW_ACTION_TYPE_RSS:
 		if (priv->num_rx_tc > 1) {
-			ret = dpni_remove_qos_entry(dpni, CMD_PRI_LOW,
+			ret1 = dpni_remove_qos_entry(dpni, CMD_PRI_LOW,
 					priv->token,
 					&flow->qos_rule);
-			if (ret) {
+			if (ret1) {
 				DPAA2_PMD_ERR("Remove RSS QoS entry failed(%d)",
-					ret);
-				goto error;
+					ret1);
+				ret = ret1;
 			}
 		}
 		break;
@@ -5570,6 +5570,9 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 		rte_free(flow->fs_mask_addr);
 	/* Now free the flow */
 	rte_free(flow);
+
+	if (ret)
+		goto error;
 
 	update = dpaa2_flow_remove_invalid_extract(dev,
 		DPAA2_FLOW_FS_TYPE, tc_id);
@@ -5616,14 +5619,15 @@ dpaa2_flow_flush(struct rte_eth_dev *dev,
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct dpaa2_dev_flow *flow = LIST_FIRST(&priv->flows);
+	int ret = 0;
 
 	while (flow) {
 		struct dpaa2_dev_flow *next = LIST_NEXT(flow, next);
 
-		dpaa2_flow_destroy(dev, (struct rte_flow *)flow, error);
+		ret = dpaa2_flow_destroy(dev, (struct rte_flow *)flow, error);
 		flow = next;
 	}
-	return 0;
+	return ret;
 }
 
 static int
@@ -5650,10 +5654,17 @@ dpaa2_flow_clean(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_flow *flow;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	int ret, tc, idx;
 
 	flow = LIST_FIRST(&priv->flows);
 	while (flow) {
-		dpaa2_flow_destroy(dev, (struct rte_flow *)flow, NULL);
+		tc = flow->tc_id;
+		idx = flow->tc_index;
+		ret = dpaa2_flow_destroy(dev, (struct rte_flow *)flow, NULL);
+		if (ret) {
+			DPAA2_PMD_ERR("Remove FS[%d].entry[%d] failed(%d)",
+				tc, idx, ret);
+		}
 		flow = LIST_FIRST(&priv->flows);
 	}
 }
