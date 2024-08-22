@@ -7,6 +7,7 @@
 
 #include "la93xx_bbdev_ipc.h"
 
+__rte_experimental
 mem_range_t *rte_pmd_la93xx_get_nlm_mem(uint16_t dev_id);
 
 /**
@@ -18,6 +19,7 @@ mem_range_t *rte_pmd_la93xx_get_nlm_mem(uint16_t dev_id);
  * @return
  *   0 - Success, otherwise Failure
  */
+__rte_experimental
 int
 rte_pmd_la93xx_reset(uint16_t dev_id);
 
@@ -30,6 +32,7 @@ rte_pmd_la93xx_reset(uint16_t dev_id);
  * @return
  *   0 - Success, otherwise Failure
  */
+__rte_experimental
 int
 rte_pmd_la93xx_reset_restore_cfg(uint16_t dev_id);
 
@@ -40,5 +43,6 @@ rte_pmd_la93xx_reset_restore_cfg(uint16_t dev_id);
  *
  * @return PPS_OUT counter value
  */
+__rte_experimental
 uint32_t rte_pmd_get_pps_out_count(uint16_t dev_id);
 #endif

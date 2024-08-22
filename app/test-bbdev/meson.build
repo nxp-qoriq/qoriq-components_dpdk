@@ -7,6 +7,8 @@ if is_windows
     subdir_done()
 endif
 
+# Enable experimental API flag as pmd_la12xx APIs
+allow_experimental_apis = true
 sources = files(
         'main.c',
  #       'test_bbdev.c',
@@ -23,11 +25,12 @@ endif
 if dpdk_conf.has('RTE_BASEBAND_ACC')
     deps += ['baseband_acc']
 endif
-if dpdk_conf.has('RTE_LIBRTE_PMD_BBDEV_LA12XX')
-	deps += ['pmd_bbdev_la12xx']
+if dpdk_conf.has('RTE_BASEBAND_LA12XX')
+    deps += ['baseband_la12xx']
 endif
 cmd = run_command('sh', '-c', 'echo $COMMON_HEADERS_DIR')
 COMMON_HEADERS_DIR = cmd.stdout().strip()
 message('COMMON_HEADERS_DIR=' + COMMON_HEADERS_DIR)
+
 includes += [include_directories(COMMON_HEADERS_DIR)]
 includes += include_directories('../../drivers/baseband/la12xx/')

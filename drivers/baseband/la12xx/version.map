@@ -1,0 +1,23 @@
+EXPERIMENTAL {
+	global:
+
+	rte_pmd_bbdev_reset;
+	rte_pmd_get_la12xx_mapaddr;
+	rte_pmd_la12xx_clear_event_fd;
+	rte_pmd_la12xx_dequeue_ops;
+	rte_pmd_la12xx_enqueue_ops;
+	rte_pmd_la12xx_feca_reset;
+	rte_pmd_la12xx_get_event_fd;
+	rte_pmd_la12xx_is_active;
+	rte_pmd_la12xx_ldpc_dec_single_input_dma;
+	rte_pmd_la12xx_ldpc_enc_adj_addr;
+	rte_pmd_la12xx_ldpc_enc_adj_bbuf;
+	rte_pmd_la12xx_map_hugepage_addr;
+	rte_pmd_la12xx_op_init;
+	rte_pmd_la12xx_queue_core_config;
+	rte_pmd_la12xx_queue_input_circ_size;
+	rte_pmd_la12xx_reset;
+	rte_pmd_la12xx_reset_restore_cfg;
+
+	local: *;
+};
