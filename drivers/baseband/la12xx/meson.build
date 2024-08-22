@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2020-2023 NXP
+# Copyright 2020-2024 NXP
 
 deps += ['bbdev', 'bus_vdev', 'ring']
 allow_experimental_apis = true
@@ -14,4 +14,4 @@ COMMON_HEADERS_DIR = cmd.stdout().strip()
 message('COMMON_HEADERS_DIR=' + COMMON_HEADERS_DIR)
 includes += [include_directories(COMMON_HEADERS_DIR)]
 
-install_headers('rte_pmd_bbdev_la12xx.h')
+headers = files('rte_pmd_bbdev_la12xx.h')

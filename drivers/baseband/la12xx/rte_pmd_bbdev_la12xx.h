@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2023 NXP
+ * Copyright 2020-2024 NXP
  */
 
 #ifndef _PMD_LA12XX_H_
@@ -156,6 +156,7 @@ struct rte_pmd_la12xx_op {
 	(p)->polar_params.feca_obj.command_chain_t.ce_command_ch_obj.ce_fz_lut
 #define RTE_PMD_LA12xx_POLAR_OP_DESC(p) \
 	((p)->polar_params.feca_obj)
+__rte_experimental
 void
 rte_pmd_la12xx_op_init(struct rte_mempool *mempool,
 		__rte_unused void *arg, void *element,
@@ -182,6 +183,7 @@ rte_pmd_la12xx_op_init(struct rte_mempool *mempool,
  *   The number of operations actually enqueued (this is the number of processed
  *   entries in the @p ops array).
  */
+__rte_experimental
 uint16_t
 rte_pmd_la12xx_enqueue_ops(uint16_t dev_id, uint16_t queue_id,
 		struct rte_pmd_la12xx_op **ops, uint16_t num_ops);
@@ -208,6 +210,7 @@ rte_pmd_la12xx_enqueue_ops(uint16_t dev_id, uint16_t queue_id,
  *   The number of operations actually dequeued (this is the number of entries
  *   copied into the @p ops array).
  */
+__rte_experimental
 uint16_t
 rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
 		struct rte_pmd_la12xx_op **ops, uint16_t num_ops);
@@ -227,6 +230,7 @@ rte_pmd_la12xx_dequeue_ops(uint16_t dev_id, uint16_t queue_id,
  * @return
  *   0 - Success, otherwise Failure
  */
+__rte_experimental
 uint16_t
 rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
 		uint16_t core_ids[], uint16_t num_queues);
@@ -245,6 +249,7 @@ rte_pmd_la12xx_queue_core_config(uint16_t dev_id, uint16_t queue_ids[],
  * @return
  *   0 - Success, otherwise Failure
  */
+__rte_experimental
 uint16_t
 rte_pmd_la12xx_queue_input_circ_size(uint16_t dev_id, uint16_t queue_id,
 				    uint32_t input_circ_size);
@@ -261,6 +266,7 @@ rte_pmd_la12xx_queue_input_circ_size(uint16_t dev_id, uint16_t queue_id,
  * @return
  *   1 - Device is Active, 0 - Device Needs Reset, < 0 - Error
  */
+__rte_experimental
 int
 rte_pmd_la12xx_is_active(uint16_t dev_id);
 
@@ -273,6 +279,7 @@ rte_pmd_la12xx_is_active(uint16_t dev_id);
  * @return
  *   0 - Success, otherwise Failure
  */
+__rte_experimental
 int
 rte_pmd_la12xx_reset(uint16_t dev_id);
 
@@ -285,6 +292,7 @@ rte_pmd_la12xx_reset(uint16_t dev_id);
  * @return
  *   0 - Success, otherwise Failure
  */
+__rte_experimental
 int
 rte_pmd_bbdev_reset(uint16_t dev_id);
 
@@ -297,6 +305,7 @@ rte_pmd_bbdev_reset(uint16_t dev_id);
  * @return
  *   0 - Success, otherwise Failure
  */
+__rte_experimental
 int
 rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id);
 
@@ -314,6 +323,7 @@ rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id);
  * @return
  *   0 - Success, otherwise Failure (in case enough tailroom is not available)
  */
+__rte_experimental
 int
 rte_pmd_la12xx_ldpc_enc_adj_bbuf(struct rte_bbuf *bbuf, uint64_t num_bytes);
 
@@ -332,6 +342,7 @@ rte_pmd_la12xx_ldpc_enc_adj_bbuf(struct rte_bbuf *bbuf, uint64_t num_bytes);
  * @return
  *   Adjusted start address to write the buffer.
  */
+__rte_experimental
 void *
 rte_pmd_la12xx_ldpc_enc_adj_addr(void *addr, uint64_t num_bytes);
 
@@ -348,6 +359,7 @@ rte_pmd_la12xx_ldpc_enc_adj_addr(void *addr, uint64_t num_bytes);
  * @param dev_id
  *   The identifier of the device.
  */
+__rte_experimental
 void
 rte_pmd_la12xx_ldpc_dec_single_input_dma(uint16_t dev_id);
 
@@ -372,6 +384,7 @@ rte_pmd_la12xx_ldpc_dec_single_input_dma(uint16_t dev_id);
  *   already exists.
  *   < 0 in case of failure.
  */
+__rte_experimental
 int
 rte_pmd_la12xx_map_hugepage_addr(uint16_t dev_id, void *addr);
 
@@ -392,6 +405,7 @@ rte_pmd_la12xx_map_hugepage_addr(uint16_t dev_id, void *addr);
  *   mapped physical address.
   *  0 - if mapping not available.
  */
+__rte_experimental
 int
 rte_pmd_get_la12xx_mapaddr(uint16_t dev_id, void *addr);
 
@@ -407,6 +421,7 @@ rte_pmd_get_la12xx_mapaddr(uint16_t dev_id, void *addr);
  * @return
  *   0 - Success, otherwise Failure
  */
+__rte_experimental
 int
 rte_pmd_la12xx_feca_reset(uint16_t dev_id);
 
@@ -424,6 +439,7 @@ rte_pmd_la12xx_feca_reset(uint16_t dev_id);
  * @return
  *   event_fd, < 0 - Error
  */
+__rte_experimental
 int
 rte_pmd_la12xx_get_event_fd(uint16_t dev_id);
 
@@ -433,6 +449,7 @@ rte_pmd_la12xx_get_event_fd(uint16_t dev_id);
  * @param dev_id
  *   The identifier of the device.
  */
+__rte_experimental
 void
 rte_pmd_la12xx_clear_event_fd(uint16_t dev_id);
 
