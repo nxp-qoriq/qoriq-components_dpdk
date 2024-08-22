@@ -221,9 +221,9 @@ rte_bbuf_dump(FILE *f, const struct rte_bbuf *b, unsigned int dump_len)
 
 	__rte_mbuf_sanity_check(b, 1);
 
-	fprintf(f, "dump bbuf at %p, iova=%"PRIx64", buf_len=%u\n",
+	fprintf(f, "dump bbuf at %p, iova=%" PRIx64 ", buf_len=%u\n",
 		b, (uint64_t)b->buf_iova, (unsigned int)b->buf_len);
-	fprintf(f, "  pkt_len=%"PRIu32", ol_flags=%"PRIx64", nb_segs=%u, in_port=%u\n",
+	fprintf(f, "  pkt_len=%" PRIu32 ", ol_flags=%" PRIx64 ", nb_segs=%u, in_port=%u\n",
 		b->pkt_len, b->ol_flags,
 		(unsigned int)b->nb_segs, (unsigned int)b->port);
 	nb_segs = b->nb_segs;
