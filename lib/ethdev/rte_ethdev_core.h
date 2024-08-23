@@ -89,7 +89,6 @@ struct rte_eth_fp_ops {
 	 */
 	/** PMD receive function. */
 	eth_rx_burst_t rx_pkt_burst;
-	eth_loopback_burst_t lb_pkt_burst;
 	/** Get the number of used Rx descriptors. */
 	eth_rx_queue_count_t rx_queue_count;
 	/** Check the status of a Rx descriptor. */
@@ -112,7 +111,8 @@ struct rte_eth_fp_ops {
 	eth_tx_descriptor_status_t tx_descriptor_status;
 	/** Tx queues data. */
 	struct rte_ethdev_qdata txq;
-	uintptr_t reserved2[3];
+	uintptr_t reserved2[2];
+	eth_loopback_burst_t lb_pkt_burst;
 	/**@}*/
 
 } __rte_cache_aligned;
