@@ -54,7 +54,6 @@ struct rte_eth_rxtx_callback {
 struct rte_eth_dev {
 	eth_rx_burst_t rx_pkt_burst; /**< Pointer to PMD receive function */
 	eth_tx_burst_t tx_pkt_burst; /**< Pointer to PMD transmit function */
-	eth_loopback_burst_t lb_pkt_burst; /**< Pointer to PMD loopback function */
 
 	/** Pointer to PMD transmit prepare function */
 	eth_tx_prep_t tx_pkt_prepare;
@@ -89,6 +88,7 @@ struct rte_eth_dev {
 
 	enum rte_eth_dev_state state; /**< Flag indicating the port state */
 	void *security_ctx; /**< Context for security ops */
+	eth_loopback_burst_t lb_pkt_burst; /**< Pointer to PMD loopback function */
 } __rte_cache_aligned;
 
 struct rte_eth_dev_sriov;
