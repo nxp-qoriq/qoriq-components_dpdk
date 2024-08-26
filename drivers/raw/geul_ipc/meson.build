@@ -17,10 +17,10 @@ includes += [include_directories(COMMON_HEADERS_DIR)]
 build = false
 
 if cc.has_header('geul_cpe_ipc.h', include_directories: includes)
-            build = true
+	build = true
 else
-	reason = 'geul_cpi_ipc.h not available'
+	reason = 'geul_cpe_ipc.h not available'
 	subdir_done()
 endif
 
-install_headers('rte_pmd_geul_ipc_rawdev.h')
+headers = files('rte_pmd_geul_ipc_rawdev.h')

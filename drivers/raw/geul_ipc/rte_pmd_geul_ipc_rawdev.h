@@ -14,6 +14,8 @@
  *
  */
 #include <gul_host_if.h>
+#include <geul_cpe_ipc.h>
+#include <geul_cpe_ipc_api.h>
 
 #define GEUL_IPC_RAWDEV_NAME_PREFIX "geul_ipc_dev"
 

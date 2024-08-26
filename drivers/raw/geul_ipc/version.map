@@ -1,11 +1,8 @@
-DPDK_18.11 {
+DPDK_23 {
 	global:
 
-	ipc_mempool_type_t;
-	ipc_mempool_size_t;
 	ipc_ch_type_t;
 	ipc_sh_buf_t;
-	ipc_mem_pool_t;
 	ipc_host_init;
 	ipc_configure_channel;
 	ipc_init_ptr_buf_list;
