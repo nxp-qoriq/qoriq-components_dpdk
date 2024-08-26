@@ -293,13 +293,14 @@ struct dpaa2_key_profile {
 struct dpaa2_key_extract {
 	struct dpkg_profile_cfg dpkg;
 	struct dpaa2_key_profile key_profile;
+	uint8_t *extract_param;
+	int entry_num;
+	uint8_t *entry_map;
 };
 
 struct extract_s {
 	struct dpaa2_key_extract qos_key_extract;
 	struct dpaa2_key_extract tc_key_extract[MAX_TCS];
-	uint8_t *qos_extract_param;
-	uint8_t *tc_extract_param[MAX_TCS];
 };
 
 struct dpaa2_dev_priv {
