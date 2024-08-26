@@ -34,7 +34,7 @@ Note: Please first read nxp/README.
 
   2.1 Test same ingress traffic with multiple flows in TC0.
       #IPv4/UDP packets go to RXQ4, this flow is top priority.
-      testpmd> flow create 0 group 0 priority 0 ingress pattern ipv4 / udp / end actions queue index 4 / end
+      testpmd> flow create 0 group 0 priority 0 ingress pattern ipv4 / udp / end actions port_id id 0 / end
       #IPv4 packets whose source IP address is 10.10.10.3 go to RXQ0, this flow is middle priority.
       testpmd> flow create 0 group 0 priority 1 ingress pattern ipv4 src is 10.10.10.3 / end actions queue index 1 / end
       #Ethernet packets whose source mac address is 11:22:33:44:55:66 go to RXQ2, this flow is lowest priority.
@@ -43,7 +43,7 @@ Note: Please first read nxp/README.
       testpmd> start
 
   #Inject the IPv4/UDP packets with 10.10.10.3 source IP and 11:22:33:44:55:66 source mac.
-  #Check the packet goes to the expected queue(RXQ4) by stop command.
+  #Check the packet is reflected without RXQ(software) involved by stop command.
      testpmd> stop
   #Remove the top priority flow and inject the same packet above.
      testpmd> flow destroy 0 rule 0
