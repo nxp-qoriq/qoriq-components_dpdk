@@ -15,8 +15,6 @@
 #define CRYPTODEV_NAME_DPAA2_SEC_PMD	crypto_dpaa2_sec
 /**< NXP DPAA2 - SEC PMD device name */
 
-extern uint8_t cryptodev_driver_id;
-
 /* FLE_POOL_NUM_BUFS is set as per the ipsec-secgw application */
 #define FLE_POOL_NUM_BUFS	32000
 #define FLE_POOL_BUF_SIZE	256
