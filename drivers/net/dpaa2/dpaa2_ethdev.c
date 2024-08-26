@@ -1384,6 +1384,7 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 	struct fsl_mc_io *dpni = dev->process_private;
 	int i, ret;
 	struct rte_eth_link link;
+	struct dpaa2_key_extract *extract;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -1421,11 +1422,16 @@ dpaa2_dev_close(struct rte_eth_dev *dev)
 	dev->process_private = NULL;
 	rte_free(dpni);
 
-	for (i = 0; i < MAX_TCS; i++)
-		rte_free(priv->extract.tc_extract_param[i]);
-
-	if (priv->extract.qos_extract_param)
-		rte_free(priv->extract.qos_extract_param);
+	for (i = 0; i < (MAX_TCS + 1); i++) {
+		if (i < MAX_TCS)
+			extract = &priv->extract.tc_key_extract[i];
+		else
+			extract = &priv->extract.qos_key_extract;
+		rte_free(extract->extract_param);
+		extract->extract_param = NULL;
+		rte_free(extract->entry_map);
+		extract->entry_map = NULL;
+	}
 
 	DPAA2_PMD_DEBUG("%s: netdev deleted", dev->data->name);
 	return 0;
@@ -2719,7 +2725,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	struct dpni_attr attr;
 	struct dpaa2_dev_priv *priv = eth_dev->data->dev_private;
 	struct dpni_buffer_layout layout;
-	int ret, hw_id, i;
+	int ret, hw_id, i, entry_num;
+	struct dpaa2_key_extract *extract;
 	char *penv;
 
 	dpni_dev = rte_malloc(NULL, sizeof(struct fsl_mc_io), 0);
@@ -2967,26 +2974,24 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		eth_dev->tx_pkt_burst = dpaa2_dev_tx;
 
 	/* Init fields w.r.t. classification */
-	memset(&priv->extract.qos_key_extract, 0,
-		sizeof(struct dpaa2_key_extract));
-	priv->extract.qos_extract_param = rte_zmalloc(NULL,
-		DPAA2_EXTRACT_PARAM_MAX_SIZE,
-		RTE_CACHE_LINE_SIZE);
-	if (!priv->extract.qos_extract_param) {
-		DPAA2_PMD_ERR("Memory alloc failed");
-		goto init_err;
-	}
-
-	for (i = 0; i < MAX_TCS; i++) {
-		memset(&priv->extract.tc_key_extract[i], 0,
-			sizeof(struct dpaa2_key_extract));
-		priv->extract.tc_extract_param[i] = rte_zmalloc(NULL,
+	for (i = 0; i < (MAX_TCS + 1); i++) {
+		if (i < MAX_TCS) {
+			extract = &priv->extract.tc_key_extract[i];
+			entry_num = priv->fs_entries;
+		} else {
+			extract = &priv->extract.qos_key_extract;
+			entry_num = priv->qos_entries;
+		}
+		memset(extract, 0, sizeof(struct dpaa2_key_extract));
+		extract->extract_param = rte_zmalloc(NULL,
 			DPAA2_EXTRACT_PARAM_MAX_SIZE,
 			RTE_CACHE_LINE_SIZE);
-		if (!priv->extract.tc_extract_param[i]) {
-			DPAA2_PMD_ERR("Memory alloc failed");
+		if (!extract->extract_param)
 			goto init_err;
-		}
+
+		extract->entry_map = rte_zmalloc(NULL, entry_num / 8 + 1, 0);
+		if (!extract->entry_map)
+			goto init_err;
 	}
 
 	ret = dpni_set_max_frame_length(dpni_dev, CMD_PRI_LOW, priv->token,

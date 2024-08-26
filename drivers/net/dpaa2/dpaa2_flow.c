@@ -227,30 +227,59 @@ static const struct rte_flow_item_rocev2 dpaa2_flow_item_rocev2_mask = {
 };
 #endif
 
-static inline void
-dpaa2_flow_qos_extracts_log(const struct dpaa2_dev_priv *priv,
-	const char *prefix)
+static inline uint8_t
+dpaa2_flow_entry_map_get(const uint8_t *entry_map,
+	uint16_t index)
 {
-	if (!dpaa2_flow_control_log)
-		return;
+	uint16_t byte_pos = index / 8;
+	uint16_t bit_pos = index % 8;
 
-	DPAA2_FLOW_DUMP("\n%s %s's QoS table: %d extracts\r\n",
-		prefix, priv->eth_dev->data->name,
-		priv->extract.qos_key_extract.dpkg.num_extracts);
-	dpaa2_dump_dpkg(&priv->extract.qos_key_extract.dpkg);
+	return entry_map[byte_pos] & (1 << bit_pos);
 }
 
 static inline void
-dpaa2_flow_fs_extracts_log(const struct dpaa2_dev_priv *priv,
-	const char *prefix, int tc_id)
+dpaa2_flow_entry_map_set(uint8_t *entry_map,
+	uint16_t index, int set)
 {
+	uint16_t byte_pos = index / 8;
+	uint16_t bit_pos = index % 8;
+
+	if (set)
+		entry_map[byte_pos] |= (1 << bit_pos);
+	else
+		entry_map[byte_pos] &= ~(((uint8_t)1) << bit_pos);
+}
+
+static inline void
+dpaa2_flow_extracts_log(const struct dpaa2_dev_priv *priv,
+	const char *prefix, uint8_t tc_id)
+{
+	char string[1024];
+	const struct dpaa2_key_extract *extract;
+	int offset = 0;
+
 	if (!dpaa2_flow_control_log)
 		return;
 
-	DPAA2_FLOW_DUMP("\n%s %s's FS[%d] table: %d extracts\r\n",
-		prefix, priv->eth_dev->data->name, tc_id,
-		priv->extract.tc_key_extract[tc_id].dpkg.num_extracts);
-	dpaa2_dump_dpkg(&priv->extract.tc_key_extract[tc_id].dpkg);
+	if (tc_id >= MAX_TCS && priv->num_rx_tc <= 1) {
+		/** No QoS table.*/
+		return;
+	}
+
+	offset += sprintf(&string[offset],
+		"%s's", priv->eth_dev->data->name);
+	if (tc_id >= MAX_TCS) {
+		extract = &priv->extract.qos_key_extract;
+		offset += sprintf(&string[offset], " QoS");
+	} else {
+		extract = &priv->extract.tc_key_extract[tc_id];
+		offset += sprintf(&string[offset], " FS[%d]", tc_id);
+	}
+	offset += sprintf(&string[offset],
+		" table: %d extracts/%d entries\n",
+		extract->dpkg.num_extracts, extract->entry_num);
+	DPAA2_FLOW_DUMP("\n%s %s", prefix, string);
+	dpaa2_dump_dpkg(&extract->dpkg);
 }
 
 static inline void
@@ -261,7 +290,7 @@ dpaa2_flow_qos_entry_log(const char *log_info,
 	uint8_t *key, *mask;
 	struct rte_eth_dev *dev = flow->priv->eth_dev;
 
-	if (!dpaa2_flow_control_log)
+	if (!dpaa2_flow_control_log || flow->priv->num_rx_tc <= 1)
 		return;
 
 	DPAA2_FLOW_DUMP("%s: %s QoS entry[%d](size %d/%d) to select FS[%d]\r\n",
@@ -320,6 +349,66 @@ dpaa2_flow_fs_entry_log(const char *log_info,
 		DPAA2_FLOW_DUMP("Un-supported action type(%d)\r\n\n",
 			flow->action_type);
 	}
+}
+
+static inline void
+dpaa2_dump_extract_map(const struct dpaa2_dev_priv *priv,
+	const char *prefix)
+{
+	int idx, offset, i, valid_fs = 0;
+	char string[2048];
+	const struct dpaa2_key_extract *extract;
+
+	if (!dpaa2_flow_control_log)
+		return;
+
+	DPAA2_FLOW_DUMP("%s: %s\n", priv->eth_dev->data->name, prefix);
+
+	if (priv->num_rx_tc <= 1)
+		goto skip_dump_qos;
+
+	extract = &priv->extract.qos_key_extract;
+	offset = 0;
+	offset += sprintf(&string[offset], "QoS entry map:");
+	if (!extract->entry_num) {
+		offset += sprintf(&string[offset], " empty\n");
+		goto start_dump_qos;
+	} else {
+		offset += sprintf(&string[offset], "\n");
+	}
+	for (idx = 0; idx < priv->qos_entries; idx++) {
+		offset += sprintf(&string[offset], "%d ",
+			dpaa2_flow_entry_map_get(extract->entry_map, idx) ?
+			1 : 0);
+		if (!((idx + 1) % 16) || (idx + 1) == priv->qos_entries)
+			offset += sprintf(&string[offset], "\n");
+	}
+
+start_dump_qos:
+	DPAA2_FLOW_DUMP("%s", string);
+
+skip_dump_qos:
+	for (i = 0; i < MAX_TCS; i++) {
+		extract = &priv->extract.tc_key_extract[i];
+		if (!extract->entry_num)
+			continue;
+		valid_fs++;
+		offset = 0;
+		offset += sprintf(&string[offset],
+			"FS[%d] %d entries:\n", i, extract->entry_num);
+		for (idx = 0; idx < priv->fs_entries; idx++) {
+			offset += sprintf(&string[offset], "%d ",
+				dpaa2_flow_entry_map_get(extract->entry_map,
+					idx) ? 1 : 0);
+			if (!((idx + 1) % 16) || (idx + 1) == priv->fs_entries)
+				offset += sprintf(&string[offset], "\n");
+		}
+		DPAA2_FLOW_DUMP("%s", string);
+	}
+	if (valid_fs)
+		DPAA2_FLOW_DUMP("\n");
+	else
+		DPAA2_FLOW_DUMP("No FS table extracts\n\n");
 }
 
 /** For LX2160A, LS2088A and LS1088A*/
@@ -467,6 +556,7 @@ dpaa2_flow_add_qos_rule(struct dpaa2_dev_priv *priv,
 	struct dpaa2_dev_flow *flow)
 {
 	uint16_t qos_index;
+	struct dpaa2_key_extract *extract;
 	int ret;
 	struct fsl_mc_io *dpni = priv->hw;
 
@@ -483,6 +573,12 @@ dpaa2_flow_add_qos_rule(struct dpaa2_dev_priv *priv,
 			qos_index, priv->qos_entries);
 		return -EINVAL;
 	}
+	extract = &priv->extract.qos_key_extract;
+	if (dpaa2_flow_entry_map_get(extract->entry_map, qos_index)) {
+		DPAA2_PMD_ERR("QoS entry[%d] has been occupied",
+			qos_index);
+		return -EINVAL;
+	}
 
 	dpaa2_flow_qos_entry_log("Add", flow, qos_index);
 
@@ -495,6 +591,8 @@ dpaa2_flow_add_qos_rule(struct dpaa2_dev_priv *priv,
 			qos_index, flow->tc_id);
 		return ret;
 	}
+	dpaa2_flow_entry_map_set(extract->entry_map, qos_index, 1);
+	extract->entry_num++;
 
 	return 0;
 }
@@ -503,12 +601,20 @@ static int
 dpaa2_flow_add_fs_rule(struct dpaa2_dev_priv *priv,
 	struct dpaa2_dev_flow *flow)
 {
+	struct dpaa2_key_extract *extract;
 	int ret;
 	struct fsl_mc_io *dpni = priv->hw;
 
 	if (flow->tc_index >= priv->fs_entries) {
 		DPAA2_PMD_ERR("FS table full(%d >= %d)",
 			flow->tc_index, priv->fs_entries);
+		return -EINVAL;
+	}
+
+	extract = &priv->extract.tc_key_extract[flow->tc_id];
+	if (dpaa2_flow_entry_map_get(extract->entry_map, flow->tc_index)) {
+		DPAA2_PMD_ERR("FS[%d].entry[%d] has been occupied",
+			flow->tc_id, flow->tc_index);
 		return -EINVAL;
 	}
 
@@ -523,6 +629,9 @@ dpaa2_flow_add_fs_rule(struct dpaa2_dev_priv *priv,
 			flow->tc_index, flow->tc_id);
 		return ret;
 	}
+
+	dpaa2_flow_entry_map_set(extract->entry_map, flow->tc_index, 1);
+	extract->entry_num++;
 
 	return 0;
 }
@@ -1089,6 +1198,12 @@ _dpaa2_flow_extract_add_raw(struct dpaa2_dev_priv *priv,
 	uint32_t field;
 	int ret;
 
+	if (dist_type == DPAA2_FLOW_QOS_TYPE &&
+		priv->num_rx_tc <= 1) {
+		/** No QoS table.*/
+		return 0;
+	}
+
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
 		key_extract = &priv->extract.qos_key_extract;
 	else
@@ -1149,6 +1264,12 @@ dpaa2_flow_extract_add_raw(struct dpaa2_dev_priv *priv,
 	int tc_id, int *recfg)
 {
 	int ret;
+
+	if (dist_type == DPAA2_FLOW_QOS_TYPE &&
+		priv->num_rx_tc <= 1) {
+		/** No QoS table.*/
+		return 0;
+	}
 
 	ret = _dpaa2_flow_extract_add_raw(priv, offset, size,
 			dist_type, tc_id);
@@ -1512,7 +1633,8 @@ dpaa2_flow_identify_by_faf(struct dpaa2_dev_priv *priv,
 	struct dpaa2_key_profile *key_profile;
 	uint8_t faf_byte = faf_bit_off / 8;
 
-	if (dist_type & DPAA2_FLOW_QOS_TYPE) {
+	if ((dist_type & DPAA2_FLOW_QOS_TYPE) &&
+		priv->num_rx_tc > 1) {
 		extract = &priv->extract.qos_key_extract;
 		key_profile = &extract->key_profile;
 
@@ -1584,6 +1706,12 @@ dpaa2_flow_add_pr_extract_rule(struct dpaa2_dev_flow *flow,
 	struct dpaa2_key_profile *key_profile;
 	uint32_t pr_field = pr_offset << 16 | pr_size;
 
+	if (dist_type == DPAA2_FLOW_QOS_TYPE &&
+		priv->num_rx_tc <= 1) {
+		/** No QoS table.*/
+		return 0;
+	}
+
 	if (dist_type == DPAA2_FLOW_QOS_TYPE)
 		key_extract = &priv->extract.qos_key_extract;
 	else
@@ -1631,6 +1759,12 @@ dpaa2_flow_add_hdr_extract_rule(struct dpaa2_dev_flow *flow,
 	int index, ret, local_cfg = 0;
 	struct dpaa2_key_extract *key_extract;
 	struct dpaa2_key_profile *key_profile;
+
+	if (dist_type == DPAA2_FLOW_QOS_TYPE &&
+		priv->num_rx_tc <= 1) {
+		/** No QoS table.*/
+		return 0;
+	}
 
 	if (dpaa2_flow_ip_address_extract(prot, field))
 		return -EINVAL;
@@ -1688,6 +1822,12 @@ dpaa2_flow_add_ipaddr_extract_rule(struct dpaa2_dev_flow *flow,
 	union ip_addr_extract_rule *ip_addr_mask;
 	enum net_prot orig_prot;
 	uint32_t orig_field;
+
+	if (dist_type == DPAA2_FLOW_QOS_TYPE &&
+		priv->num_rx_tc <= 1) {
+		/** No QoS table.*/
+		return 0;
+	}
 
 	if (prot != NET_PROT_IPV4 && prot != NET_PROT_IPV6)
 		return -EINVAL;
@@ -3959,27 +4099,29 @@ dpaa2_configure_flow_raw(struct dpaa2_dev_flow *flow,
 			spec->offset, spec->length,
 			DPAA2_FLOW_QOS_TYPE, 0, &local_cfg);
 	if (ret) {
-		DPAA2_PMD_ERR("QoS Extract RAW add failed.");
-		return -EINVAL;
+		DPAA2_PMD_ERR("QoS Extract RAW add failed(%d).", ret);
+		return ret;
 	}
 
 	ret = dpaa2_flow_extract_add_raw(priv,
 			spec->offset, spec->length,
 			DPAA2_FLOW_FS_TYPE, group, &local_cfg);
 	if (ret) {
-		DPAA2_PMD_ERR("FS[%d] Extract RAW add failed.",
-			group);
-		return -EINVAL;
+		DPAA2_PMD_ERR("FS[%d] Extract RAW add failed(%d).",
+			group, ret);
+		return ret;
 	}
 
-	ret = dpaa2_flow_raw_rule_data_set(flow,
-			&qos_key_extract->key_profile,
-			spec->offset, spec->length,
-			spec->pattern, mask->pattern,
-			DPAA2_FLOW_QOS_TYPE);
-	if (ret) {
-		DPAA2_PMD_ERR("QoS RAW rule data set failed");
-		return -EINVAL;
+	if (priv->num_rx_tc > 1) {
+		ret = dpaa2_flow_raw_rule_data_set(flow,
+				&qos_key_extract->key_profile,
+				spec->offset, spec->length,
+				spec->pattern, mask->pattern,
+				DPAA2_FLOW_QOS_TYPE);
+		if (ret) {
+			DPAA2_PMD_ERR("QoS RAW rule data set failed(%d)", ret);
+			return ret;
+		}
 	}
 
 	ret = dpaa2_flow_raw_rule_data_set(flow,
@@ -3988,8 +4130,8 @@ dpaa2_configure_flow_raw(struct dpaa2_dev_flow *flow,
 			spec->pattern, mask->pattern,
 			DPAA2_FLOW_FS_TYPE);
 	if (ret) {
-		DPAA2_PMD_ERR("FS RAW rule data set failed");
-		return -EINVAL;
+		DPAA2_PMD_ERR("FS RAW rule data set failed(%d)", ret);
+		return ret;
 	}
 
 	(*device_configured) |= local_cfg;
@@ -4251,6 +4393,9 @@ dpaa2_flow_clear_fs_table(struct dpaa2_dev_priv *priv,
 			DPAA2_PMD_ERR("TC[%d] clear failed", tc_id);
 			return ret;
 		}
+		priv->extract.tc_key_extract[tc_id].entry_num = 0;
+		memset(priv->extract.tc_key_extract[tc_id].entry_map,
+			0, priv->fs_entries);
 	}
 
 	return 0;
@@ -4279,7 +4424,7 @@ dpaa2_configure_fs_rss_table(struct dpaa2_dev_priv *priv,
 	if (!tc_extract->dpkg.num_extracts)
 		return 0;
 
-	key_cfg_buf = priv->extract.tc_extract_param[tc_id];
+	key_cfg_buf = priv->extract.tc_key_extract[tc_id].extract_param;
 	key_cfg_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(key_cfg_buf,
 		DPAA2_EXTRACT_PARAM_MAX_SIZE);
 	if (key_cfg_iova == RTE_BAD_IOVA) {
@@ -4292,7 +4437,7 @@ dpaa2_configure_fs_rss_table(struct dpaa2_dev_priv *priv,
 	key_max_size = tc_extract->key_profile.key_max_size;
 	entry_size = dpaa2_flow_entry_size(key_max_size);
 
-	dpaa2_flow_fs_extracts_log(priv, "Configure", tc_id);
+	dpaa2_flow_extracts_log(priv, "Configure", tc_id);
 	ret = dpkg_prepare_key_cfg(&tc_extract->dpkg,
 			key_cfg_buf);
 	if (ret < 0) {
@@ -4367,13 +4512,16 @@ dpaa2_configure_qos_table(struct dpaa2_dev_priv *priv,
 			DPAA2_PMD_ERR("QoS table clear failed(%d)", ret);
 			return ret;
 		}
+		priv->extract.qos_key_extract.entry_num = 0;
+		memset(priv->extract.qos_key_extract.entry_map,
+			0, priv->qos_entries);
 	}
 
 	qos_extract = &priv->extract.qos_key_extract;
 	if (!qos_extract->dpkg.num_extracts)
 		return 0;
 
-	key_cfg_buf = priv->extract.qos_extract_param;
+	key_cfg_buf = priv->extract.qos_key_extract.extract_param;
 	key_cfg_iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(key_cfg_buf,
 		DPAA2_EXTRACT_PARAM_MAX_SIZE);
 	if (key_cfg_iova == RTE_BAD_IOVA) {
@@ -4386,7 +4534,7 @@ dpaa2_configure_qos_table(struct dpaa2_dev_priv *priv,
 	key_max_size = qos_extract->key_profile.key_max_size;
 	entry_size = dpaa2_flow_entry_size(key_max_size);
 
-	dpaa2_flow_qos_extracts_log(priv, "Configure");
+	dpaa2_flow_extracts_log(priv, "Configure", MAX_TCS);
 
 	ret = dpkg_prepare_key_cfg(&qos_extract->dpkg,
 			key_cfg_buf);
@@ -4978,6 +5126,8 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 		}
 	}
 
+	dpaa2_dump_extract_map(priv, "Start creating flow");
+
 	flow = rte_zmalloc(NULL, sizeof(struct dpaa2_dev_flow),
 			   RTE_CACHE_LINE_SIZE);
 	if (!flow) {
@@ -5061,6 +5211,7 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 		DPAA2_PMD_ERR("Create flow failed (%d)", ret);
 		goto creation_error;
 	}
+	dpaa2_dump_extract_map(priv, "Complete creating flow");
 
 	priv->curr = NULL;
 	return (struct rte_flow *)flow;
@@ -5268,6 +5419,12 @@ dpaa2_flow_remove_invalid_extract(struct rte_eth_dev *dev,
 	enum net_prot prot;
 	uint32_t field, prev_addr_idx;
 
+	if (type == DPAA2_FLOW_QOS_TYPE &&
+		priv->num_rx_tc <= 1) {
+		/** No QoS table.*/
+		return 0;
+	}
+
 	if (type == DPAA2_FLOW_QOS_TYPE)
 		key_extract = &priv->extract.qos_key_extract;
 	else
@@ -5306,10 +5463,10 @@ skip_validation:
 
 	if (remove_conut > 0) {
 		if (type == DPAA2_FLOW_QOS_TYPE) {
-			dpaa2_flow_qos_extracts_log(priv,
-				"Before removing extract(s)");
+			dpaa2_flow_extracts_log(priv,
+				"Before removing extract(s)", MAX_TCS);
 		} else {
-			dpaa2_flow_fs_extracts_log(priv,
+			dpaa2_flow_extracts_log(priv,
 				"Before removing extract(s)", tc_id);
 		}
 	} else {
@@ -5482,10 +5639,10 @@ skip_validation:
 	}
 
 	if (type == DPAA2_FLOW_QOS_TYPE) {
-		dpaa2_flow_qos_extracts_log(priv,
-			"After removing extract(s)");
+		dpaa2_flow_extracts_log(priv,
+			"After removing extract(s)", MAX_TCS);
 	} else {
-		dpaa2_flow_fs_extracts_log(priv,
+		dpaa2_flow_extracts_log(priv,
 			"After removing extract(s)", tc_id);
 	}
 
@@ -5503,6 +5660,9 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 	struct dpaa2_dev_flow *flow;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct fsl_mc_io *dpni = priv->hw;
+	struct dpaa2_key_extract *extract;
+
+	dpaa2_dump_extract_map(priv, "Start destroying flow");
 
 	flow = (struct dpaa2_dev_flow *)_flow;
 	tc_id = flow->tc_id;
@@ -5527,6 +5687,9 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 				dpaa2_flow_qos_entry_log("Delete success", flow,
 					tc_idx);
 			}
+			extract = &priv->extract.qos_key_extract;
+			extract->entry_num--;
+			dpaa2_flow_entry_map_set(extract->entry_map, tc_idx, 0);
 		}
 
 		/* Then remove entry from FS table */
@@ -5540,6 +5703,10 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 		} else {
 			dpaa2_flow_fs_entry_log("Delete success", flow);
 		}
+		extract = &priv->extract.tc_key_extract[tc_id];
+		extract->entry_num--;
+		dpaa2_flow_entry_map_set(extract->entry_map,
+			flow->tc_index, 0);
 		break;
 	case RTE_FLOW_ACTION_TYPE_RSS:
 		if (priv->num_rx_tc > 1) {
@@ -5551,6 +5718,9 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 					ret1);
 				ret = ret1;
 			}
+			extract = &priv->extract.qos_key_extract;
+			extract->entry_num--;
+			dpaa2_flow_entry_map_set(extract->entry_map, tc_idx, 0);
 		}
 		break;
 	default:
@@ -5602,6 +5772,9 @@ error:
 			RTE_FLOW_ERROR_TYPE_UNSPECIFIED,
 			NULL, "unknown");
 	}
+
+	dpaa2_dump_extract_map(priv, "Complete destroying flow");
+
 	return ret;
 }
 
@@ -5621,12 +5794,16 @@ dpaa2_flow_flush(struct rte_eth_dev *dev,
 	struct dpaa2_dev_flow *flow = LIST_FIRST(&priv->flows);
 	int ret = 0;
 
+	dpaa2_dump_extract_map(priv, "Start flushing flow");
+
 	while (flow) {
 		struct dpaa2_dev_flow *next = LIST_NEXT(flow, next);
 
 		ret = dpaa2_flow_destroy(dev, (struct rte_flow *)flow, error);
 		flow = next;
 	}
+	dpaa2_dump_extract_map(priv, "Complete flushing flow");
+
 	return ret;
 }
 
@@ -5656,6 +5833,7 @@ dpaa2_flow_clean(struct rte_eth_dev *dev)
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	int ret, tc, idx;
 
+	dpaa2_dump_extract_map(priv, "Start cleaning flow");
 	flow = LIST_FIRST(&priv->flows);
 	while (flow) {
 		tc = flow->tc_id;
@@ -5667,6 +5845,7 @@ dpaa2_flow_clean(struct rte_eth_dev *dev)
 		}
 		flow = LIST_FIRST(&priv->flows);
 	}
+	dpaa2_dump_extract_map(priv, "Complete cleaning flow");
 }
 
 const struct rte_flow_ops dpaa2_flow_ops = {
