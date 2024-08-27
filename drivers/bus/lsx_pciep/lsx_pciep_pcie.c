@@ -240,8 +240,10 @@ int lsx_pciep_share_info_init(void)
 	} else {
 		mz = rte_memzone_lookup(lsx_pciep_shared_data_nm);
 	}
-	if (mz == NULL) {
-		LSX_PCIEP_BUS_ERR("Shared mz reserve/lookup failed");
+	if (!mz) {
+		LSX_PCIEP_BUS_ERR("Shared mz %s failed",
+			rte_eal_process_type() == RTE_PROC_PRIMARY ?
+			"reserve" : "lookup");
 		ret = -ENOMEM;
 		goto share_info_init_done;
 	}

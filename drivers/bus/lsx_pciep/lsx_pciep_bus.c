@@ -321,7 +321,11 @@ lsx_pciep_scan(void)
 	ret = lsx_pciep_primary_init();
 	if (ret) {
 		if (ret == -ENOTSUP) {
-			LSX_PCIEP_BUS_DBG("LSX PCIEP bus is not available");
+			LSX_PCIEP_BUS_DBG("PCIEP bus is not supported");
+			return 0;
+		}
+		if (ret == -ENODEV) {
+			LSX_PCIEP_BUS_DBG("PCIEP bus is not available");
 			return 0;
 		}
 		return ret;
@@ -334,6 +338,14 @@ lsx_pciep_scan(void)
 		if (!ret)
 			LSX_PCIEP_BUS_INFO("EP device on PEX%d", pcie_idx);
 		pcie_idx++;
+	}
+
+	ret = lsx_pciep_share_info_init();
+	if (ret) {
+		if (ret == (-ENODEV))
+			return 0;
+
+		return ret;
 	}
 
 	return 0;
@@ -387,15 +399,13 @@ lsx_pciep_probe(void)
 	if (s_lsx_pciep_disable)
 		return 0;
 
-	ret = lsx_pciep_share_info_init();
-	if (ret) {
-		if (ret == (-ENODEV))
-			return 0;
-
-		return ret;
-	}
-
 	if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
+		ret = lsx_pciep_share_info_init();
+		if (ret) {
+			LSX_PCIEP_BUS_DBG("PCIEP not available on the 2nd proc");
+
+			return 0;
+		}
 		for (i = 0; i < LSX_MAX_PCIE_NB; i++) {
 			added = lsx_pciep_create_dev(i);
 			if (added > 0)
