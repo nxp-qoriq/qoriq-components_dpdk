@@ -5621,12 +5621,28 @@ skip_ip_addr_extract:
 	return update;
 }
 
+static void
+dpaa2_flow_remove_flow_from_list(struct dpaa2_dev_flow *flow)
+{
+	LIST_REMOVE(flow, next);
+	if (flow->qos_key_addr)
+		rte_free(flow->qos_key_addr);
+	if (flow->qos_mask_addr)
+		rte_free(flow->qos_mask_addr);
+	if (flow->fs_key_addr)
+		rte_free(flow->fs_key_addr);
+	if (flow->fs_mask_addr)
+		rte_free(flow->fs_mask_addr);
+	/* Now free the flow */
+	rte_free(flow);
+}
+
 static int
 dpaa2_flow_destroy(struct rte_eth_dev *dev,
 	struct rte_flow *_flow,
 	struct rte_flow_error *error)
 {
-	int ret = 0, ret1, update;
+	int ret = 0, qos_removed = 0, fs_removed = 0, update, ret1;
 	uint8_t tc_id, dist_size;
 	uint16_t tc_idx;
 	struct dpaa2_dev_flow *flow;
@@ -5646,53 +5662,46 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 	case RTE_FLOW_ACTION_TYPE_PORT_ID:
 		if (priv->num_rx_tc > 1) {
 			/* Remove entry from QoS table first */
-			ret1 = dpni_remove_qos_entry(dpni, CMD_PRI_LOW,
+			ret = dpni_remove_qos_entry(dpni, CMD_PRI_LOW,
 					priv->token,
 					&flow->qos_rule);
-			if (ret1) {
+			if (ret) {
 				DPAA2_PMD_ERR("Remove FS QoS entry failed(%d)",
-					ret1);
+					ret);
 				dpaa2_flow_qos_entry_log("Delete failed", flow,
 					tc_idx);
-				ret = ret1;
+				/** Will not remove FS entry.*/
+				break;
 			} else {
 				dpaa2_flow_qos_entry_log("Delete success", flow,
 					tc_idx);
+				qos_removed = 1;
 			}
-			extract = &priv->extract.qos_key_extract;
-			extract->entry_num--;
-			dpaa2_flow_entry_map_set(extract->entry_map, tc_idx, 0);
 		}
 
 		/* Then remove entry from FS table */
-		ret1 = dpni_remove_fs_entry(dpni, CMD_PRI_LOW, priv->token,
+		ret = dpni_remove_fs_entry(dpni, CMD_PRI_LOW, priv->token,
 				flow->tc_id, &flow->fs_rule);
-		if (ret1) {
+		if (ret) {
 			DPAA2_PMD_ERR("Remove entry from FS[%d] failed(%d)",
-				flow->tc_id, ret1);
+				flow->tc_id, ret);
 			dpaa2_flow_fs_entry_log("Delete failed", flow);
-			ret = ret1;
 		} else {
 			dpaa2_flow_fs_entry_log("Delete success", flow);
+			fs_removed = 1;
 		}
-		extract = &priv->extract.tc_key_extract[tc_id];
-		extract->entry_num--;
-		dpaa2_flow_entry_map_set(extract->entry_map,
-			flow->tc_index, 0);
 		break;
 	case RTE_FLOW_ACTION_TYPE_RSS:
 		if (priv->num_rx_tc > 1) {
-			ret1 = dpni_remove_qos_entry(dpni, CMD_PRI_LOW,
+			ret = dpni_remove_qos_entry(dpni, CMD_PRI_LOW,
 					priv->token,
 					&flow->qos_rule);
-			if (ret1) {
+			if (ret) {
 				DPAA2_PMD_ERR("Remove RSS QoS entry failed(%d)",
-					ret1);
-				ret = ret1;
+					ret);
+			} else {
+				qos_removed = 1;
 			}
-			extract = &priv->extract.qos_key_extract;
-			extract->entry_num--;
-			dpaa2_flow_entry_map_set(extract->entry_map, tc_idx, 0);
 		}
 		break;
 	default:
@@ -5701,20 +5710,46 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 		break;
 	}
 
-	LIST_REMOVE(flow, next);
-	if (flow->qos_key_addr)
-		rte_free(flow->qos_key_addr);
-	if (flow->qos_mask_addr)
-		rte_free(flow->qos_mask_addr);
-	if (flow->fs_key_addr)
-		rte_free(flow->fs_key_addr);
-	if (flow->fs_mask_addr)
-		rte_free(flow->fs_mask_addr);
-	/* Now free the flow */
-	rte_free(flow);
+	if (ret) {
+		if (qos_removed) {
+			ret1 = dpni_add_qos_entry(dpni, CMD_PRI_LOW,
+				priv->token, &flow->qos_rule,
+				flow->tc_id, tc_idx, 0, 0);
+			if (ret1 < 0) {
+				DPAA2_PMD_ERR("Add QoS.entry%d->FS%d err(%d)",
+					tc_idx, flow->tc_id, ret1);
+				goto error;
+			}
+		}
+		if (fs_removed) {
+			ret1 = dpni_add_fs_entry(dpni, CMD_PRI_LOW,
+				priv->token, flow->tc_id,
+				flow->tc_index, &flow->fs_rule,
+				&flow->fs_action_cfg);
+			if (ret1 < 0) {
+				DPAA2_PMD_ERR("Add FS%d.entry%d err(%d)",
+					flow->tc_id, flow->tc_index, ret1);
+				goto error;
+			}
+		}
+		ret = -EAGAIN;
 
-	if (ret)
 		goto error;
+	}
+
+	if (qos_removed) {
+		extract = &priv->extract.qos_key_extract;
+		extract->entry_num--;
+		dpaa2_flow_entry_map_set(extract->entry_map, tc_idx, 0);
+	}
+	if (fs_removed) {
+		extract = &priv->extract.tc_key_extract[tc_id];
+		extract->entry_num--;
+		dpaa2_flow_entry_map_set(extract->entry_map,
+			flow->tc_index, 0);
+	}
+
+	dpaa2_flow_remove_flow_from_list(flow);
 
 	update = dpaa2_flow_remove_invalid_extract(dev,
 		DPAA2_FLOW_FS_TYPE, tc_id);
@@ -5739,13 +5774,13 @@ dpaa2_flow_destroy(struct rte_eth_dev *dev,
 	}
 
 error:
-	if (ret) {
-		rte_flow_error_set(error, EPERM,
-			RTE_FLOW_ERROR_TYPE_UNSPECIFIED,
-			NULL, "unknown");
-	}
-
 	dpaa2_dump_extract_map(priv, "Complete destroying flow");
+	if (ret) {
+		ret = -ret;
+		return rte_flow_error_set(error, ret,
+				RTE_FLOW_ERROR_TYPE_UNSPECIFIED,
+				NULL, "unknown");
+	}
 
 	return ret;
 }
@@ -5764,14 +5799,28 @@ dpaa2_flow_flush(struct rte_eth_dev *dev,
 {
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
 	struct dpaa2_dev_flow *flow = LIST_FIRST(&priv->flows);
-	int ret = 0;
+	int ret = 0, times;
 
 	dpaa2_dump_extract_map(priv, "Start flushing flow");
 
 	while (flow) {
 		struct dpaa2_dev_flow *next = LIST_NEXT(flow, next);
 
+		times = 10;
+again:
 		ret = dpaa2_flow_destroy(dev, (struct rte_flow *)flow, error);
+		if (ret) {
+			DPAA2_PMD_ERR("%s: Remove flow failed(%d), times=%d",
+				__func__, ret, times);
+		}
+		if (ret == -EAGAIN) {
+			if (times > 0) {
+				times--;
+				goto again;
+			}
+			dpaa2_flow_remove_flow_from_list(flow);
+		}
+
 		flow = next;
 	}
 	dpaa2_dump_extract_map(priv, "Complete flushing flow");
@@ -5803,17 +5852,24 @@ dpaa2_flow_clean(struct rte_eth_dev *dev)
 {
 	struct dpaa2_dev_flow *flow;
 	struct dpaa2_dev_priv *priv = dev->data->dev_private;
-	int ret, tc, idx;
+	int ret, times;
 
 	dpaa2_dump_extract_map(priv, "Start cleaning flow");
 	flow = LIST_FIRST(&priv->flows);
 	while (flow) {
-		tc = flow->tc_id;
-		idx = flow->tc_index;
+		times = 10;
+again:
 		ret = dpaa2_flow_destroy(dev, (struct rte_flow *)flow, NULL);
 		if (ret) {
-			DPAA2_PMD_ERR("Remove FS[%d].entry[%d] failed(%d)",
-				tc, idx, ret);
+			DPAA2_PMD_ERR("%s: Remove flow failed(%d), times=%d",
+				__func__, ret, times);
+		}
+		if (ret == -EAGAIN) {
+			if (times > 0) {
+				times--;
+				goto again;
+			}
+			dpaa2_flow_remove_flow_from_list(flow);
 		}
 		flow = LIST_FIRST(&priv->flows);
 	}
