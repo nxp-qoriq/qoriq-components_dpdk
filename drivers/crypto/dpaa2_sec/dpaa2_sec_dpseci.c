@@ -63,8 +63,8 @@ enum dpaa2_sec_dump_levels {
 	DPAA2_SEC_DP_FULL_DUMP
 };
 
-uint8_t cryptodev_driver_id;
-uint8_t dpaa2_sec_dp_dump = DPAA2_SEC_DP_ERR_DUMP;
+static uint8_t cryptodev_driver_id;
+static uint8_t dpaa2_sec_dp_dump = DPAA2_SEC_DP_ERR_DUMP;
 
 static int s_dpaa2_sec_cntx_pos = -1;
 
@@ -1730,88 +1730,192 @@ dpaa2_sec_fd_to_mbuf(const struct qbman_fd *fd,
 	return op;
 }
 
-static void
-dpaa2_sec_dump(struct rte_crypto_op *op, FILE *f)
+#define DPAA2_SEC_DUMP_BUF_SIZE 4096
+static inline size_t
+dpaa2_sec_print_buf(char *dump_buf,
+	size_t bufsz, size_t pos, const char *format, ...)
 {
-	int i;
-	dpaa2_sec_session *sess = NULL;
-	struct ctxt_priv *priv;
-	uint8_t bufsize;
-	struct rte_crypto_sym_op *sym_op;
+	va_list ap;
 
+	va_start(ap, format);
+	if (bufsz > (pos + 128))
+		pos += vsprintf(&dump_buf[pos], format, ap);
+	else
+		pos = bufsz;
+	va_end(ap);
+
+	return pos;
+}
+
+static size_t
+dpaa2_sec_dump_alog_info(char *dump_buf,
+	const dpaa2_sec_session *sess,
+	const struct rte_crypto_sym_op *sym_op,
+	size_t bufsz, size_t pos)
+{
+	size_t i;
+
+	if (sess->auth_alg) {
+		pos = dpaa2_sec_print_buf(dump_buf, bufsz, pos,
+			"\tAuth alg:\t%d\n\tAuth key len:\t%zd\n",
+			sess->auth_alg, sess->auth_key.length);
+		for (i = 0; i < sess->auth_key.length; i++) {
+			pos = dpaa2_sec_print_buf(dump_buf, bufsz, pos,
+				"%02x ", sess->auth_key.data[i]);
+		}
+		pos = dpaa2_sec_print_buf(dump_buf, bufsz, pos,
+			"\n\tauth offset: %d, length: %d\n",
+			sym_op->auth.data.offset,
+			sym_op->auth.data.length);
+	}
+
+	if (sess->cipher_alg) {
+		pos = dpaa2_sec_print_buf(dump_buf, bufsz, pos,
+			"\tCipher alg:\t%d\n\tCipher key len:\t%zd\n",
+			sess->cipher_alg, sess->cipher_key.length);
+		for (i = 0; i < sess->cipher_key.length; i++) {
+			pos = dpaa2_sec_print_buf(dump_buf, bufsz, pos,
+				"%02x ", sess->cipher_key.data[i]);
+		}
+		pos = dpaa2_sec_print_buf(dump_buf, bufsz, pos,
+			"\n\tcipher offset: %d, length: %d\n",
+			sym_op->cipher.data.offset,
+			sym_op->cipher.data.length);
+	}
+
+	if (sess->aead_alg) {
+		pos = dpaa2_sec_print_buf(dump_buf, bufsz, pos,
+			"\tAEAD alg:\t%d\n\tAEAD key len:\t%zd\n",
+			sess->aead_alg, sess->aead_key.length);
+		for (i = 0; i < sess->aead_key.length; i++) {
+			pos = dpaa2_sec_print_buf(dump_buf, bufsz, pos,
+				"%02x", sess->aead_key.data[i]);
+		}
+		pos = dpaa2_sec_print_buf(dump_buf, bufsz, pos,
+			"\naead offset: %d, length: %d\n",
+			sym_op->aead.data.offset,
+			sym_op->aead.data.length);
+	}
+
+	return pos;
+}
+
+static void
+dpaa2_sec_dump(const struct rte_crypto_op *op, FILE *f)
+{
+	size_t i, pos = 0, bufsize, dump_size;
+	const dpaa2_sec_session *sess = NULL;
+	const struct ctxt_priv *priv;
+	const uint8_t *d;
+	const struct rte_crypto_sym_op *sym_op = op->sym;
+	char *dump_buf;
+
+	dump_buf = rte_zmalloc(NULL, DPAA2_SEC_DUMP_BUF_SIZE, 0);
+	if (!dump_buf) {
+		DPAA2_SEC_ERR("%s: malloc dump buffer failed!", __func__);
+		return;
+	}
+	dump_size = DPAA2_SEC_DUMP_BUF_SIZE;
 	if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION)
 		sess = CRYPTODEV_GET_SYM_SESS_PRIV(op->sym->session);
 	else if (op->sess_type == RTE_CRYPTO_OP_SECURITY_SESSION)
 		sess = SECURITY_GET_SESS_PRIV(op->sym->session);
 
-	if (sess == NULL)
+	if (!sess)
 		goto mbuf_dump;
 
-	priv = (struct ctxt_priv *)sess->ctxt;
-	fprintf(f, "\n****************************************\n"
-		"session params:\n\tContext type:\t%d\n\tDirection:\t%s\n"
-		"\tCipher alg:\t%d\n\tAuth alg:\t%d\n\tAead alg:\t%d\n"
-		"\tCipher key len:\t%zd\n", sess->ctxt_type,
-		(sess->dir == DIR_ENC) ? "DIR_ENC" : "DIR_DEC",
-		sess->cipher_alg, sess->auth_alg, sess->aead_alg,
-		sess->cipher_key.length);
-		rte_hexdump(f, "cipher key", sess->cipher_key.data,
-				sess->cipher_key.length);
-		rte_hexdump(f, "auth key", sess->auth_key.data,
-				sess->auth_key.length);
-	fprintf(f, "\tAuth key len:\t%zd\n\tIV len:\t\t%d\n\tIV offset:\t%d\n"
-		"\tdigest length:\t%d\n\tstatus:\t\t%d\n\taead auth only"
-		" len:\t%d\n\taead cipher text:\t%d\n",
-		sess->auth_key.length, sess->iv.length, sess->iv.offset,
-		sess->digest_length, sess->status,
-		sess->ext_params.aead_ctxt.auth_only_len,
-		sess->ext_params.aead_ctxt.auth_cipher_text);
+	priv = sess->ctxt;
+	pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+		"\n****************************************\n");
+	pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+		"session params:\n\tContext type:\t%d\n\tDirection:\t%s\n",
+		sess->ctxt_type, (sess->dir == DIR_ENC) ?
+		"DIR_ENC" : (sess->dir == DIR_DEC) ?
+		"DIR_DEC" : "Invalid DIR");
+	if (sess->ctxt_type >= DPAA2_SEC_MAX ||
+		sess->ctxt_type <= DPAA2_SEC_NONE || !priv ||
+		(sess->dir != DIR_ENC && sess->dir != DIR_DEC)) {
+		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+			"Invalid session(type=%d,dir=%d,priv=%p)\n",
+			sess->ctxt_type, sess->dir, priv);
+		goto mbuf_dump;
+	}
+	pos = dpaa2_sec_dump_alog_info(dump_buf, sess, sym_op,
+		dump_size, pos);
+	if (sess->ctxt_type == DPAA2_SEC_PDCP) {
+		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+			"PDCP session params:\n\tDomain:\t\t%d\n",
+			sess->pdcp.domain);
+		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+			"\tBearer:\t\t%d\n\tpkt_dir:\t%d\n\thfn_ovd:\t%d\n",
+			sess->pdcp.bearer, sess->pdcp.pkt_dir,
+			sess->pdcp.hfn_ovd);
+		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+			"\tsn_size:\t%d\n\thfn_ovd_offset:\t%d\n",
+			sess->pdcp.sn_size, sess->pdcp.hfn_ovd_offset);
+		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+			"\thfn:\t\t%d\n\thfn_threshold:\t0x%x\n",
+			sess->pdcp.hfn, sess->pdcp.hfn_threshold);
+	} else {
+		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+			"\tIV len:\t\t%d\n\tIV offset:\t%d\n",
+			sess->iv.length, sess->iv.offset);
+		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+			"\tdigest length:\t%d\n\tstatus:\t\t%d\n",
+			sess->digest_length, sess->status);
+		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+			"\tAEAD auth only len:\t%d\n\tcipher text:\t%d\n",
+			sess->ext_params.aead_ctxt.auth_only_len,
+			sess->ext_params.aead_ctxt.auth_cipher_text);
+	}
 
-	printf("PDCP session params:\n"
-		"\tDomain:\t\t%d\n\tBearer:\t\t%d\n\tpkt_dir:\t%d\n\thfn_ovd:"
-		"\t%d\n\tsn_size:\t%d\n\thfn_ovd_offset:\t%d\n\thfn:\t\t%d\n"
-		"\thfn_threshold:\t0x%x\n", sess->pdcp.domain,
-		sess->pdcp.bearer, sess->pdcp.pkt_dir, sess->pdcp.hfn_ovd,
-		sess->pdcp.sn_size, sess->pdcp.hfn_ovd_offset, sess->pdcp.hfn,
-		sess->pdcp.hfn_threshold);
+	bufsize = priv->flc_desc[0].flc.word1_sdl;
+	pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+		"Descriptor(word len=%ld):\n", bufsize);
+	for (i = 0; i < bufsize; i++) {
+		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+			"\tDESC[%ld]:0x%x\n",
+			i, priv->flc_desc[0].desc[i]);
+	}
+	pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos, "\n");
 
-	bufsize = (uint8_t)priv->flc_desc[0].flc.word1_sdl;
-	fprintf(f, "Descriptor Dump:\n");
-	for (i = 0; i < bufsize; i++)
-		fprintf(f, "\tDESC[%d]:0x%x\n", i, priv->flc_desc[0].desc[i]);
-	fprintf(f,"input for dump_caam_desc:\n");
-	for (i = 0; i < bufsize; i++)
-		fprintf(f, "0x%x\n", priv->flc_desc[0].desc[i]);
-
-
-	fprintf(f, "\n");
 mbuf_dump:
-	sym_op = op->sym;
 	if (sym_op->m_src) {
-		uint16_t len = sym_op->m_src->data_len;
-		if (len > 1500) {
-			fprintf(f, "Source mbuf: data_len = %d limiting to 1500 bytes\n", len);
-			len = 1500;
+		d = rte_pktmbuf_mtod(sym_op->m_src, void *);
+		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+			"Src mbuf(%p)(len=%d):\n", sym_op->m_src,
+			sym_op->m_src->pkt_len);
+		bufsize = sym_op->m_src->pkt_len > 60 ?
+			sym_op->m_src->pkt_len : 60;
+		for (i = 0; i < bufsize; i++) {
+			pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+				"%02x ", d[i]);
+			if ((i + 1) % 16 == 0 || (i + 1) == bufsize) {
+				pos = dpaa2_sec_print_buf(dump_buf,
+					dump_size, pos, "\n");
+			}
 		}
-		rte_pktmbuf_dump(f, sym_op->m_src, len);
 	}
 	if (sym_op->m_dst) {
-		uint16_t len = sym_op->m_dst->data_len;
-		if (len > 1500) {
-			fprintf(f, "Dest mbuf: data_len = %d limiting to 1500 bytes\n", len);
-			len = 1500;
+		d = rte_pktmbuf_mtod(sym_op->m_dst, void *);
+		pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+			"Dst mbuf(%p)(len=%d):\n", sym_op->m_dst,
+			sym_op->m_dst->pkt_len);
+		bufsize = sym_op->m_dst->pkt_len > 60 ?
+			sym_op->m_dst->pkt_len : 60;
+		for (i = 0; i < bufsize; i++) {
+			pos = dpaa2_sec_print_buf(dump_buf, dump_size, pos,
+				"%02x ", d[i]);
+			if ((i + 1) % 16 == 0 || (i + 1) == bufsize) {
+				pos = dpaa2_sec_print_buf(dump_buf,
+					dump_size, pos, "\n");
+			}
 		}
-		rte_pktmbuf_dump(f, sym_op->m_dst, len);
 	}
 
-	fprintf(f, "Session address = %p\ncipher offset: %d, length: %d\n"
-		"auth offset: %d, length:  %d\n aead offset: %d, length: %d\n"
-		, sym_op->session,
-		sym_op->cipher.data.offset, sym_op->cipher.data.length,
-		sym_op->auth.data.offset, sym_op->auth.data.length,
-		sym_op->aead.data.offset, sym_op->aead.data.length);
-	fprintf(f, "\n");
+	fprintf(f, "\n%s\r\n", dump_buf);
 
+	rte_free(dump_buf);
 }
 
 static void
@@ -4380,9 +4484,9 @@ check_devargs_handler(const char *key, const char *value,
 	struct rte_cryptodev *dev = (struct rte_cryptodev *)opaque;
 	struct dpaa2_sec_dev_private *priv = dev->data->dev_private;
 
-	if (!strcmp(key, "drv_strict_order")) {
+	if (!strcmp(key, DRIVER_STRICT_ORDER)) {
 		priv->en_loose_ordered = false;
-	} else if (!strcmp(key, "drv_dump_mode")) {
+	} else if (!strcmp(key, DRIVER_DUMP_MODE)) {
 		dpaa2_sec_dp_dump = atoi(value);
 		if (dpaa2_sec_dp_dump > DPAA2_SEC_DP_FULL_DUMP) {
 			DPAA2_SEC_WARN("WARN: DPAA2_SEC_DP_DUMP_LEVEL is not "
@@ -4399,25 +4503,44 @@ check_devargs_handler(const char *key, const char *value,
 static void
 dpaa2_sec_get_devargs(struct rte_cryptodev *cryptodev, const char *key)
 {
+	struct dpaa2_sec_dev_private *internals;
 	struct rte_kvargs *kvlist;
 	struct rte_devargs *devargs;
+	int ret;
+	char *env;
+
+	internals = cryptodev->data->dev_private;
 
 	devargs = cryptodev->device->devargs;
 	if (!devargs)
-		return;
+		goto env_set;
 
 	kvlist = rte_kvargs_parse(devargs->args, NULL);
 	if (!kvlist)
-		return;
+		goto env_set;
 
 	if (!rte_kvargs_count(kvlist, key)) {
 		rte_kvargs_free(kvlist);
-		return;
+		goto env_set;
 	}
 
-	rte_kvargs_process(kvlist, key,
+	ret = rte_kvargs_process(kvlist, key,
 			check_devargs_handler, (void *)cryptodev);
 	rte_kvargs_free(kvlist);
+	if (!ret)
+		return;
+
+env_set:
+	env = getenv(DRIVER_STRICT_ORDER);
+	if (env)
+		internals->en_loose_ordered = !atoi(env);
+
+	env = getenv(DRIVER_DUMP_MODE);
+	if (env) {
+		dpaa2_sec_dp_dump = atoi(env);
+		if (dpaa2_sec_dp_dump > DPAA2_SEC_DP_FULL_DUMP)
+			dpaa2_sec_dp_dump = DPAA2_SEC_DP_FULL_DUMP;
+	}
 }
 
 static int
