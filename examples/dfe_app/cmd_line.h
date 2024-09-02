@@ -259,7 +259,7 @@ static cmdline_parse_token_string_t cmd_config_scs_config_tok =
 static cmdline_parse_token_string_t cmd_config_scs_scs_tok =
 	TOKEN_STRING_INITIALIZER(struct cmd_config_scs_result, scs, "scs");
 static cmdline_parse_token_string_t cmd_config_scs_scs_value_tok =
-	TOKEN_STRING_INITIALIZER(struct cmd_config_scs_result, scs_value, "15#30");
+	TOKEN_STRING_INITIALIZER(struct cmd_config_scs_result, scs_value, "15#30#60");
 
 static cmdline_parse_inst_t cmd_config_scs = {
 	.f = cmd_config_scs_parsed,
