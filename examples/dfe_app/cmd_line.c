@@ -117,7 +117,7 @@ cmd_config_scs_parsed(void *parsed_result,
 {
 	struct cmd_config_scs_result *res = parsed_result;
 
-	/* res->scs_value = {15,30} */
+	/* res->scs_value = {15,30,60} */
 	cmd_do_config_scs(atoi(res->scs_value));
 }
 
