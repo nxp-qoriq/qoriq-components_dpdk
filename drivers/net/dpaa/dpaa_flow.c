@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017-2019,2021-2023 NXP
+ * Copyright 2017-2019,2021-2024 NXP
  */
 
 /* System headers */
