@@ -2,6 +2,7 @@
  *
  * Copyright 2010-2012 Freescale Semiconductor, Inc.
  * All rights reserved.
+ * Copyright 2024 NXP
  *
  */
 
