@@ -275,6 +275,7 @@ enetqos_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts, uint16_t nb_pkts)
 		enetqos_prepare_tx_desc(first, buflen, buflen);
 		tx_q->tx_mbuf[entry] = mbuf;
 		stats->opackets++;
+		stats->q_opackets[tx_q->queue_index]++;
 		tx_packets++;
 		tx_q->tx_count_frames += tx_packets;
 
