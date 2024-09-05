@@ -838,6 +838,7 @@ Currently the following features have been supportd for VF using kernel PF using
     * MAC Exact Match filtering
     * VLAN Exact Match filtering
     * Enable/Disable VLAN promiscous mode
+    * Link status interrupts
 
 1. Follow the above steps to run dpdk-testpmd.
 2. Users can control the timeout and delay time counters with env. variables [optional]
@@ -879,6 +880,30 @@ Run below commands on dpdk-testpmd cmdline:
 Note:
 Currently, maximum MAC and VLAN address exact match filter table entries that
 can be added are 4 per ENETC.
+
+Link status interrupts:
+-----------------------
+DPDK is dependant on igb_uio module instead of uio_pci_genric for interrupts.
+
+Run below commands to bind the device to igb_uio:
+	1. insmod igb_uio.ko or modprobe igb_uio
+	2. echo igb_uio > /sys/bus/pci/devices/0002\:00\:12.0/driver_override
+	3. echo 0002:00:12.0 > /sys/bus/pci/drivers/fsl_enetc_vf/unbind
+	4. echo 0002:00:12.0 > /sys/bus/pci/drivers/igb_uio/bind
+
+Run dpdk-testpmd for checking status interrupts:
+	$ ./dpdk-testpmd -c 0xc --log-level=*:debug -n 1 -- -i --portmask 0x1
+
+Open a new terminal and try to change the link status using either below commands
+or attach and de-attach cable:
+
+	$ ifconfig eth1 down
+	$ ifconfig eth1 up
+
+Note: Here eth1 is the PF interface.
+
+User will observe link change notification on console.
+It may take few seconds to get the notification of link up.
 
 VF1 validation:
 ---------------
