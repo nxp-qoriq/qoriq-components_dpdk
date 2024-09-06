@@ -69,7 +69,7 @@ Following information can be used to obtain these components:
     Cross compiled toolchain For ARM64
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Get the `gcc-13.2` for latest LF6.6 releases:
+    Get the `gcc-13.3` for latest LF6.6 releases:
     # https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
 
     Thereafter, set the environment variable:
@@ -434,10 +434,8 @@ Below are the details of mmcargs/bootargs:
 <imx-95-params>: i.MX95 specific parameters: `iommu.passthrough=1`
 
 <imx-mem-param>: is used to reserve the initial DDR memory from uboot via 'mem' environment variable.
-	It needed to be set to `mem=4096M` on platforms with FEC/eQoS ethernet interfaces
+	It needed to be set to `mem=2096M` on platforms with FEC/eQoS ethernet interfaces
 	as BD ring of FEC/eQoS interfaces can only accept 32 bit addresses.
-	For IMX8QXP board, this parameter should be set to: `mem=2048M` since
-	only this much System RAM is 32 bit addressable.
 
 <core_list>: can be used to add CPUs planned to be used for DPDK applications
 	For i.MX 8MM, 8MP: <core_list> : 1-3
@@ -452,7 +450,8 @@ For optimized performance on i.MX platforms:
 --------------------------------------------
 1. Add the below params in mmcargs to set the CPU to not go into idle mode:
 	`cpuidle.off=1 cpufreq.off=1`
-2. Also set the system in performance mode:
+2. Also set the system in performance mode (applicable only if system does not support
+   option cpufreq.off=1 in bootargs):
 	echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 	grep . /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 
@@ -480,10 +479,24 @@ https://github.com/nxp-qoriq/dpdk-extras
 
 Refer README for kpage_ncache module in linux/kpage_ncache directory.
 
+Important Note (For ENET-FEC and ENET-QOS on all i.MX platforms):
+-----------------------------------------------------------------
+Please check for the following properties ie. "reset-gpios", "reset-assert-us" and "reset-deassert-us"
+for the ethernet node on uboot using the below command:
+=> fdt print
+	-> Refer below platform specific section for command to get fdt.
+
+If these properties are present in the ethernet node, remove it as it might cause
+issues in the forwarding using below command on uboot:
+
+=> fdt rm /<soc>/<bus>/<ethernet>/mdio/<ethernet-phy>/ "property";
+	eg. fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-gpios";
+
 Steps for ENET-FEC:
 ~~~~~~~~~~~~~~~~~~
 Booting steps:
 --------------
+
   1.1 For i.MX8MM Platform:
     Bring up the imx-8mm-evk-rev board with latest kernel and dtb.
     Enable User space mode of the kernel driver by using 'imx8mm-evk-dpdk.dtb'.
@@ -516,8 +529,8 @@ Booting steps:
 	"setenv fdtfile imx8mp-evk.dtb; setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
 	setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}';
 	run loadkernel; run loadfdt; fdt addr ${fdt_addr};
-     	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-gpios";
-     	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-assert-us";
+	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-gpios";
+	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-assert-us";
 	fdt rm /soc@0/bus@30800000/ethernet@30be0000/mdio/ethernet-phy@1 "reset-deassert-us";
 	fdt set /soc@0/bus@30800000/ethernet@30be0000 compatible "fsl,imx8mm-fec-uio";
      	setenv bootcmd 'mmc dev ${mmcdev};run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
@@ -538,9 +551,6 @@ Booting steps:
 	"setenv loadkernel 'fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image';
 	 setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}';
 	 run loadkernel; run loadfdt; fdt addr ${fdt_addr};
-	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-gpios";
-	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-assert-us";
-	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-deassert-us";
 	 fdt set /soc@0/bus@42800000/ethernet@42890000 compatible "fsl,imx8mm-fec-uio";
 	 setenv bootcmd 'mmc dev ${mmcdev}; run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
     => saveenv
@@ -556,6 +566,9 @@ Booting steps:
 	 setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdtfile}';
 	 run loadkernel; run loadfdt; fdt addr ${fdt_addr};
 	 fdt set /soc@0/bus@42800000/ethernet@42890000 compatible "fsl,imx8mm-fec-uio";
+	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-gpios";
+	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-assert-us";
+	 fdt rm /soc@0/bus@42800000/ethernet@42890000/mdio/ethernet-phy@2 "reset-deassert-us";
 	 setenv bootcmd 'mmc dev ${mmcdev}; run mmcargs; booti ${loadaddr} - ${fdt_addr};'"
     => saveenv
     => run dpdk_enable
@@ -668,12 +681,15 @@ Booting steps:
 
     => setenv dpdk_enable
        "setenv loadkernel fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} Image;
-        setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr_r} ${fdtfile}';
-        run loadkernel; run loadfdt; fdt addr ${fdt_addr_r};
-        fdt set /soc@0/bus@42800000/ethernet@428a0000 compatible "fsl,imx-enet-qos" "snps,dwmac-5.10a";
-        fdt resize 4096;
-        fdt set /aliases "ethernet1" "/soc@0/bus@42800000/ethernet@428a0000";
-        run mmcargs; sleep 1; booti ${loadaddr} - ${fdt_addr};"
+	setenv loadfdt 'fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr_r} ${fdtfile}';
+	run loadkernel; run loadfdt; fdt addr ${fdt_addr_r};
+	fdt set /soc@0/bus@42800000/ethernet@428a0000 compatible "fsl,imx-enet-qos" "snps,dwmac-5.10a";
+	fdt resize 4096;
+	fdt set /aliases "ethernet1" "/soc@0/bus@42800000/ethernet@428a0000";
+	fdt rm /soc@0/bus@42800000/ethernet@428a0000/mdio/ethernet-phy@1 "reset-gpios";
+	fdt rm /soc@0/bus@42800000/ethernet@428a0000/mdio/ethernet-phy@1 "reset-assert-us";
+	fdt rm /soc@0/bus@42800000/ethernet@428a0000/mdio/ethernet-phy@1 "reset-deassert-us";
+	run mmcargs; sleep 1; booti ${loadaddr} - ${fdt_addr};"
     => saveenv
     => run dpdk_enable
 
@@ -704,6 +720,7 @@ Forwarding between both FEC and QOS:
 	Run-
 	    ./dpdk-l2fwd -c 0xf -n 1 --vdev 'net_enetqos'  --vdev 'net_enetfec' -- -p 0x3 -T 0 -P
 	    ./dpdk-testpmd -c 0xf -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec'  -- -i --portmask=0x3 --nb-ports=2 --forward-mode=io
+	    ./dpdk-l3fwd -c 0x1 -n 1 --vdev 'net_enetqos' --vdev 'net_enetfec' -- -p 0x3 --config="(0,0,0), (1,0,0)" -P --parse-ptype
 
 	Note: i.MX91 is single core platform, so it has limitaion to use core 0. Also-
 	      dpdk-testpmd is not supported.
@@ -720,7 +737,7 @@ ENETC-4 with i.mx95
 Linux kernel on ARM core owned ENETC PF interface
 =================================================
 
-Note: For i.MX95 use 13.2 gcc (See details in cross-compilation section)
+Note: Refer 'Cross compiled toolchain For ARM64' section in nxp/README
 	$ meson arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc -Dexamples=all
 	$ ninja -C arm64-build
 
@@ -748,14 +765,19 @@ The number of rings allocated to each SI is at least 1.
 Run below commands to configure multiple queues:
 ------------------------------------------------
 1. Example to set the number of rings of PF to 1, VF0 to 6 and VF1 to 1:
-	$ ./devlink dev param set pci/0002:00:10.0 name si_num_rings cmode driverinit value 353
+	$ ./devlink dev param set pci/0002:00:10.0 name si_num_rings cmode driverinit value 0106
 	Note: Here,
 	      -> 0002:00:10.0 is PF PCI address.
-	      -> The 'value' is uint32 type value. Each SI occupies 4 bits, of
-		 which PSI (PF) occupies the lowest 4 bits, then VSI0 (VF0) occupies
-		 bits 4 to 7, VSI1 (VF1) occupies bits 8 to 11, and so on.
-		 So, 353 is 0001 0110 0001 in binary, configuring number of rings
-	         of PF to 1, VF0 to 6 and VF1 to 1.
+	      -> The 'value' is a string type value.
+		 Numerically higher VFs have lower bytes of the string, as an example,
+		 if one ENETC supports 2 VFs, and the string is set to "304" or
+		 "0304", then the ring allocation for each VF is shown below.
+		 VF0 = 0x04
+		 VF1 = 0x03
+
+		Note that the number of rings of PF is not explicitly presented in the
+		string, because the remaining number of rings is reserved for PF.
+
 2. Run devlink reload command to apply the new configuration.
 	$ ./devlink dev reload pci/0002:00:10.0
 3. Verify the value of si_num_rings
@@ -764,7 +786,7 @@ Example output:
 pci/0002:00:10.0:
   name si_num_rings type driver-specific
    values:
-    cmode driverinit value 353
+    cmode driverinit value 0106
 
 
 Running VFs in DPDK:
@@ -787,7 +809,18 @@ them.
 		[ 2002.543684] uio_pci_generic 0002:00:12.0: No IRQ assigned to device: no support for interrupts?		
 	c. Use dpdk-devbind.py to bind VF to dpdk:
 		dpdk-devbind.py -b uio_pci_generic <vf-pci-addr>
+
+		or
+
+		modprobe igb_uio
+		dpdk-devbind.py -b igb_uio <vf-pci-addr>
+
 		As per the above logs, 0002:00:12.0 will be the <vf-pci-addr>
+		Note: only uio_pci_generic and igb_uio frameworks are supported to access device in DPDK.
+		      Use "igb_uio" to bind VF to DPDK to get link status change notifications. igb_uio is a separate
+		      kernel module, so make sure to load it first using modprobe or insmod command
+		      before device binding.
+
 2. Enable trust for the specified VF user by specifying the PF eth interface.
 	ip link set <eth-interface> vf 0 trust on
 	Note: Check eth interface using:
@@ -797,10 +830,15 @@ them.
 	$ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1
 	$ ./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 -P --config="(0,0,1)"
 	$ ./dpdk-testpmd -c 0x3 -n 1 -- -i --portmask=0x1
+	$ ./dpdk-ip_fragmentation -c 0x2 -n 1 -- -p 0x1
+	$ ./dpdk-ip_reassembly -c 0x2 -n 1 -- -p 0x1
 
 	Examples to run multiqueue:
 	$ ./dpdk-l3fwd -c 0x3f -n 1 -- -p 0x1 -P --config="(0,0,1) (0,1,2) (0,2,3) (0,3,4) (0,4,5) (0,5,0)"
 	$ ./dpdk-testpmd -c 0x3f -n 1 -- -i --portmask=0x1 --rxq=5 --txq=5
+
+	Note: Use option "--no-lsc-interrupt" in dpdk-testpmd when using uio_pci_generic framework to avoid
+	      link interrupts registration related errors.
 
 PSI-VSI messaging:
 ------------------
@@ -899,6 +937,10 @@ Notes:
 -> Checksum validation offload is enabled by default.
 -> Only 1G Intel Gigabit PCI-E Network Adapter EXPI9301CTBLK is supported.
 -> Only ENETC 10G interface is supported with M7 image
+-> ip_fragmentation can receive only up to 2000 bytes fragments.
+-> ip_reassembly can send only up to 2000 bytes reassembled packet.
+-> Link status change notifications are supported with igb_uio framework only.
+-> It may takes few seconds to get link status UP notification.
 
 ===============================================================================
   'dpdk-testpmd' Application

@@ -186,6 +186,7 @@ The setup is as given below:
         printing results/stats, other cores for running test.
 
 	$export DPDMAI_COUNT=48
+	$export DPDMAI_QUEUES=8
 	$./dynamic_dpl.sh dpmac.3
 	$export DPRC=dprc.2
     Case #1: mem to mem
