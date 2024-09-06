@@ -1050,11 +1050,11 @@ dpaa2_create_dpdmux_device(int vdev_fd __rte_unused,
 				__func__);
 			goto init_err;
 		}
-		skip_reset_flags = DPDMUX_SKIP_DEFAULT_INTERFACE |
+		skip_reset_flags = DPDMUX_SKIP_MODIFY_DEFAULT_INTERFACE |
 			DPDMUX_SKIP_UNICAST_RULES | DPDMUX_SKIP_MULTICAST_RULES |
 			DPDMUX_SKIP_RESET_DEFAULT_INTERFACE;
 	} else {
-		skip_reset_flags = DPDMUX_SKIP_DEFAULT_INTERFACE | 
+		skip_reset_flags = DPDMUX_SKIP_MODIFY_DEFAULT_INTERFACE |
 					DPDMUX_SKIP_RESET_DEFAULT_INTERFACE;
 	}
 
