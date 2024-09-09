@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright 2016 6WIND S.A.
  * Copyright 2016 Mellanox Technologies, Ltd
- * Copyright 2023 NXP
+ * Copyright 2023-2024 NXP
  */
 
 #include <errno.h>
@@ -413,6 +413,29 @@ rte_flow_destroy(uint16_t port_id,
 	if (likely(!!ops->destroy)) {
 		fts_enter(dev);
 		ret = ops->destroy(dev, flow, error);
+		fts_exit(dev);
+		return flow_err(port_id, ret, error);
+	}
+	return rte_flow_error_set(error, ENOSYS,
+				  RTE_FLOW_ERROR_TYPE_UNSPECIFIED,
+				  NULL, rte_strerror(ENOSYS));
+}
+
+int
+rte_flow_actions_update(uint16_t port_id,
+			struct rte_flow *flow,
+			const struct rte_flow_action actions[],
+			struct rte_flow_error *error)
+{
+	struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+	const struct rte_flow_ops *ops = rte_flow_ops_get(port_id, error);
+	int ret;
+
+	if (unlikely(!ops))
+		return -rte_errno;
+	if (likely(!!ops->actions_update)) {
+		fts_enter(dev);
+		ret = ops->actions_update(dev, flow, actions, error);
 		fts_exit(dev);
 		return flow_err(port_id, ret, error);
 	}
