@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright 2016 6WIND S.A.
  * Copyright 2016 Mellanox Technologies, Ltd
- * Copyright 2023, 2024 NXP
+ * Copyright 2023-2024 NXP
  */
 
 #ifndef RTE_FLOW_H_
