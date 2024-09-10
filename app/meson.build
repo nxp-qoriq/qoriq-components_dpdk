@@ -38,7 +38,6 @@ endif
 
 default_cflags = machine_args + ['-DALLOW_EXPERIMENTAL_API']
 default_ldflags = []
-shared_default_ldflags = []
 if get_option('default_library') == 'static' and not is_windows
     default_ldflags += ['-Wl,--export-dynamic']
 endif
@@ -85,22 +84,6 @@ foreach app:apps
             endif
             dep_objs += [get_variable(var_name)]
         endforeach
-	# Default mode is static so enabling shared build also for tespmd
-	# to verify application shared build compilation.
-	if name == 'testpmd' and get_option('default_library') == 'static'
-	  message('Shared build enabled for test application: "' + name + '"')
-	  shared_dep_objs = []
-	  foreach d:deps
-	      var_name = 'shared' + '_rte_' + d
-	      if not is_variable(var_name)
-		  build = false
-		  reason = 'missing internal dependency, "@0@"'.format(d)
-		  message('Missing dependency "@0@" for app "@1@"'.format(d, name))
-	          break
-	      endif
-	      shared_dep_objs += [get_variable(var_name)]
-	  endforeach
-	endif
     endif
 
     if not build
@@ -113,7 +96,6 @@ foreach app:apps
 
     enabled_apps += app
     link_libs = []
-    shared_link_libs = []
     if get_option('default_library') == 'static'
         link_libs = dpdk_static_libraries + dpdk_drivers
     endif
@@ -127,17 +109,6 @@ foreach app:apps
             include_directories: includes,
             install_rpath: join_paths(get_option('prefix'), driver_install_path),
             install: true)
-    if name == 'testpmd' and get_option('default_library') == 'static'
-      executable('dpdk-shared-' + name,
-            sources,
-            c_args: cflags,
-            link_args: shared_default_ldflags,
-            link_whole: shared_link_libs,
-            dependencies: ext_deps + shared_dep_objs,
-            include_directories: includes,
-            install_rpath: join_paths(get_option('prefix'), driver_install_path),
-            install: true)
-    endif
 endforeach
 
 # special case the autotests
