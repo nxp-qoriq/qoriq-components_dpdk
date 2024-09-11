@@ -561,8 +561,11 @@ enetqos_tx_queue_setup(struct rte_eth_dev *dev,
 		return -ENOMEM;
 	}
 
-	if (nb_desc > DMA_DEFAULT_TX_SIZE)
+	if (nb_desc != DMA_DEFAULT_TX_SIZE) {
 		nb_desc = DMA_DEFAULT_TX_SIZE;
+		ENETQOS_PMD_INFO("modified the nb_desc to MAX_TX_BD_RING_SIZE:%d",
+				 DMA_DEFAULT_TX_SIZE);
+	}
 
 	priv->tx_queue[queue_idx] = txq;
 	txq->queue_index = queue_idx;
@@ -672,9 +675,10 @@ enetqos_rx_queue_setup(struct rte_eth_dev *dev,
 		return -ENOMEM;
 	}
 
-	if (nb_rx_desc > DMA_DEFAULT_RX_SIZE) {
+	if (nb_rx_desc != DMA_DEFAULT_RX_SIZE) {
 		nb_rx_desc = DMA_DEFAULT_RX_SIZE;
-		ENETQOS_PMD_INFO("modified the nb_desc to MAX_RX_BD_RING_SIZE: %d", DMA_DEFAULT_RX_SIZE);
+		ENETQOS_PMD_INFO("modified the nb_desc to MAX_RX_BD_RING_SIZE: %d",
+				 DMA_DEFAULT_RX_SIZE);
 	}
 
 	priv->rx_queue[queue_idx] = rxq;
@@ -932,6 +936,36 @@ enetqos_promiscuous_enable(struct rte_eth_dev *dev)
 	return 0;
 }
 
+static int
+enetqos_allmulticast_enable(struct rte_eth_dev *dev)
+{
+	struct enetqos_priv *priv = dev->data->dev_private;
+	unsigned int value;
+
+	value = rte_read32((void *)((size_t)priv->ioaddr + ENETQ_MAC_PKT_FILTER));
+	value |= ENETQ_MAC_PKT_FILTER_PM;
+
+	rte_write32(value,
+		    (void *)((size_t)priv->ioaddr + ENETQ_MAC_PKT_FILTER));
+
+	return 0;
+}
+
+static int
+enetqos_allmulticast_disable(struct rte_eth_dev *dev)
+{
+	struct enetqos_priv *priv = dev->data->dev_private;
+	unsigned int value;
+
+	value = rte_read32((void *)((size_t)priv->ioaddr + ENETQ_MAC_PKT_FILTER));
+	value &= (~ENETQ_MAC_PKT_FILTER_PM);
+
+	rte_write32(value,
+		    (void *)((size_t)priv->ioaddr + ENETQ_MAC_PKT_FILTER));
+
+	return 0;
+}
+
 static void
 enetqos_disable(struct enetqos_priv *priv)
 {
@@ -977,7 +1011,9 @@ static const struct eth_dev_ops enetqos_ops = {
 	.link_update		= enetqos_eth_link_update,
 	.promiscuous_enable	= enetqos_promiscuous_enable,
 	.rx_queue_setup		= enetqos_rx_queue_setup,
-	.tx_queue_setup		= enetqos_tx_queue_setup
+	.tx_queue_setup		= enetqos_tx_queue_setup,
+	.allmulticast_enable    = enetqos_allmulticast_enable,
+	.allmulticast_disable   = enetqos_allmulticast_disable
 };
 
 static int

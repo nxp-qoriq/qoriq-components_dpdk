@@ -72,17 +72,17 @@ enetqos_recv_pkts(void *rxq1, struct rte_mbuf **rx_pkts,
 	uint16_t nb_pkts)
 {
 	struct enetqos_rx_queue *rxq = (struct enetqos_rx_queue *)rxq1;
-	struct enetqos_priv *priv;
-	struct dma_desc *desc, *first;
-	struct rte_mempool *pool;
+	struct rte_eth_stats *stats = &rxq->priv_data->stats;
 	struct rte_mbuf *mbuf, *new_mbuf = NULL;
-	unsigned short status;
-	unsigned short pkt_len;
+	unsigned int next_entry = rxq->cur_rx;
+	unsigned short status, pkt_len;
+	struct dma_desc *desc, *first;
+	struct enetqos_priv *priv;
+	struct rte_ether_hdr *eth;
+	struct rte_mempool *pool;
 	int pkt_received = 0;
 	int entry;
-	struct rte_eth_stats *stats = &rxq->priv_data->stats;
 	rte_iova_t addr;
-	unsigned int next_entry = rxq->cur_rx;
 
 	pool = rxq->pool;
 	priv = rxq->priv_data;
@@ -117,6 +117,17 @@ enetqos_recv_pkts(void *rxq1, struct rte_mbuf **rx_pkts,
 				| RTE_MBUF_F_RX_L4_CKSUM_GOOD;
 
 		rx_pkts[pkt_received] = mbuf;
+
+		/* Assuming Ethernet packets, doing software packet type parsing.
+		 * To be replaced by HW packet parsing
+		 */
+		eth = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr *);
+		mbuf->packet_type = RTE_PTYPE_L2_ETHER;
+		if (rte_be_to_cpu_16(eth->ether_type) == RTE_ETHER_TYPE_IPV4)
+			mbuf->packet_type |= RTE_PTYPE_L3_IPV4;
+		if (rte_be_to_cpu_16(eth->ether_type) == RTE_ETHER_TYPE_IPV6)
+			mbuf->packet_type |= RTE_PTYPE_L3_IPV6;
+
 		pkt_received++;
 
 rx_processing_done:
