@@ -8,6 +8,13 @@
 
 #define ENETQOS_NAME_PMD	net_enetqos
 
+#define EXTRACT_CCSR_ADDR(s)    ((s) + strlen(s) - 8)
+
+/* eth name size */
+#define ENETQOS_ETH_NAMESIZE    20
+/* mac addr reset */
+#define ENETQOS_MAC_RESET       0xFFFFFFFF
+#define ENETQOS_SHIFT           16
 /*
  * The DMA Tx engine transfers data from the system memory to the MTL interface,
  * whereas the DMA Rx engine transfers data from the MTL interface to the
