@@ -56,6 +56,7 @@
 
 #define ENETQ_MAC_PKT_FILTER		0x8 /* MAC Packet Filter Register */
 #define ENETQ_MAC_PKT_FILTER_PR	BIT(0) /* MAC Packet Filter Promiscuous Mode */
+#define ENETQ_MAC_PKT_FILTER_PM	BIT(4) /* MAC Packet Filter Multicast */
 
 /* Receive Queue Control register (ENETQ_MAC_RXQ_CTRL(x)) */
 #define ENETQ_MAC_RXQ_CTRL(id)		(0xa0 + id * 4) /* Receive Queue Control */
