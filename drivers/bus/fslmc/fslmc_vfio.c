@@ -1594,7 +1594,8 @@ fslmc_vfio_process_group(void)
 	int found_mportal = 0;
 	struct rte_dpaa2_device *dev, *dev_temp;
 	bool is_dpmcp_in_blocklist = false, is_dpio_in_blocklist = false;
-	int dpmcp_count = 0, dpio_count = 0, current_device;
+	bool is_dpbp_in_blocklist = false;
+	int dpmcp_count = 0, dpio_count = 0, dpbp_count = 0, current_device;
 
 	RTE_TAILQ_FOREACH_SAFE(dev, &rte_fslmc_bus.device_list, next,
 		dev_temp) {
@@ -1609,6 +1610,12 @@ fslmc_vfio_process_group(void)
 			if (dev->device.devargs &&
 			    dev->device.devargs->policy == RTE_DEV_BLOCKED)
 				is_dpio_in_blocklist = true;
+		}
+		if (dev->dev_type == DPAA2_BPOOL) {
+			dpbp_count++;
+			if (dev->device.devargs &&
+			    dev->device.devargs->policy == RTE_DEV_BLOCKED)
+				is_dpbp_in_blocklist = true;
 		}
 	}
 
@@ -1694,6 +1701,14 @@ fslmc_vfio_process_group(void)
 		    dev->dev_type != DPAA2_QDMA &&
 		    dev->dev_type != DPAA2_BPOOL &&
 		    dev->dev_type != DPAA2_IO) {
+			TAILQ_REMOVE(&rte_fslmc_bus.device_list, dev, next);
+			continue;
+		}
+		/* if no DPBP is in allow/blocklist, do not initialize it*/
+		if (rte_eal_process_type() == RTE_PROC_SECONDARY &&
+			(dev->dev_type == DPAA2_BPOOL && !is_dpbp_in_blocklist)) {
+				DPAA2_BUS_DEBUG("***********Dev (%s), is_dpbp_in_blocklist=%d",
+						dev->device.name, is_dpbp_in_blocklist);
 			TAILQ_REMOVE(&rte_fslmc_bus.device_list, dev, next);
 			continue;
 		}
