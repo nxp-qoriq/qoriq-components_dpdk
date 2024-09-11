@@ -17,8 +17,6 @@
 #include <ethdev_driver.h>
 #include <kpage_ncache_api.h>
 
-#define EXTRACT_CCSR_ADDR(s)	(s + strlen(s) - 8)
-
 /* Supported Rx offloads */
 static uint64_t dev_rx_offloads_sup = RTE_ETH_RX_OFFLOAD_CHECKSUM;
 
@@ -884,18 +882,14 @@ enetqos_set_mac_address(struct rte_eth_dev *dev,
 {
 	struct enetqos_priv *priv = dev->data->dev_private;
 	unsigned long data;
-	unsigned int high, low;
 
 	PMD_INIT_FUNC_TRACE();
-	high = ENETQ_MAC_ADDR_HIGH(0);
-	low = ENETQ_MAC_ADDR_LOW(0);
 	data = (addr->addr_bytes[5] << 8) | addr->addr_bytes[4];
 
-	data |= (ENETQOS_CH0 << ENETQ_MAC_HI_DCS_SHIFT);
 	rte_write32(data | ENETQ_MAC_HI_REG_AE,
-		(void *)((size_t)priv->ioaddr + high));
+		(void *)((size_t)priv->ioaddr + ENETQ_MAC_ADDR_HIGH(0)));
 	data = (addr->addr_bytes[3] << 24) | (addr->addr_bytes[2] << 16) | (addr->addr_bytes[1] << 8) | addr->addr_bytes[0];
-	rte_write32(data, (void *)((size_t) priv->ioaddr + low));
+	rte_write32(data, (void *)((size_t)priv->ioaddr + ENETQ_MAC_ADDR_LOW(0)));
 
 	rte_ether_addr_copy(addr, &dev->data->mac_addrs[0]);
 
@@ -1007,9 +1001,9 @@ static const struct eth_dev_ops enetqos_ops = {
 	.dev_close		= enetqos_eth_close,
 	.dev_infos_get		= enetqos_eth_info,
 	.stats_get		= enetqos_stats_get,
-	.mac_addr_set		= enetqos_set_mac_address,
 	.link_update		= enetqos_eth_link_update,
 	.promiscuous_enable	= enetqos_promiscuous_enable,
+	.mac_addr_set           = enetqos_set_mac_address,
 	.rx_queue_setup		= enetqos_rx_queue_setup,
 	.tx_queue_setup		= enetqos_tx_queue_setup,
 	.allmulticast_enable    = enetqos_allmulticast_enable,
@@ -1088,19 +1082,19 @@ mark_memory_ncache(struct enetqos_priv *priv, const char *mz_name, int size) {
 static int
 pmd_enetqos_probe(struct rte_vdev_device *vdev)
 {
-	struct rte_ether_addr macaddr = {
-		.addr_bytes = { 0x1, 0x1, 0x1, 0x1, 0x1, 0x1 }
-	};
-	char *dtb_entry;
+	char eth_name[ENETQOS_ETH_NAMESIZE];
+	size_t ccsr_addr = 0, ccsr_size = 0;
 	const char *mz_name = "bd_addr_v";
 	struct rte_eth_dev *dev = NULL;
-	size_t ccsr_addr = 0, ccsr_size = 0;
+	uint16_t *mac, high_mac = 0;
+	struct rte_ether_addr addr;
 	struct enetqos_priv *priv;
+	int bd_total = 0, fd = -1;
+	uint32_t low_mac = 0;
 	const char *name;
-	int bd_total = 0;
-	int fd = -1;
-	FILE *file;
 	int ret, rt, cnt;
+	char *dtb_entry;
+	FILE *file;
 
 	PMD_INIT_FUNC_TRACE();
 	name = rte_vdev_device_name(vdev);
@@ -1172,8 +1166,12 @@ pmd_enetqos_probe(struct rte_vdev_device *vdev)
 	}
 
 	priv->ioaddr = priv->hw_baseaddr_v;
-	/* Copy the station address into the dev structure, */
-	dev->data->mac_addrs = rte_zmalloc("mac_addr", RTE_ETHER_ADDR_LEN, 0);
+	/* Allocate memory for storing MAC addresses */
+	snprintf(eth_name, sizeof(eth_name), "enetqos_eth_mac_%d",
+		 dev->data->port_id);
+
+	/* Copy the station address into the dev structure */
+	dev->data->mac_addrs = rte_zmalloc(eth_name, RTE_ETHER_ADDR_LEN, 0);
 	if (dev->data->mac_addrs == NULL) {
 		ENETQOS_PMD_ERR("Failed to allocate mem %d to store MAC addresses",
 			RTE_ETHER_ADDR_LEN);
@@ -1181,7 +1179,33 @@ pmd_enetqos_probe(struct rte_vdev_device *vdev)
 		goto err;
 	}
 
-	enetqos_set_mac_address(dev, &macaddr);
+	/* Set mac address */
+	mac = (uint16_t *)addr.addr_bytes;
+	low_mac = (uint32_t)rte_read32((void *)((size_t)priv->ioaddr + ENETQ_MAC_ADDR_LOW(0)));
+	*mac = (uint16_t)low_mac;
+	mac++;
+	*mac = (uint16_t)(low_mac >> ENETQOS_SHIFT);
+	mac++;
+	*mac = (uint16_t)rte_read32((void *)((size_t)priv->ioaddr + ENETQ_MAC_ADDR_HIGH(0)));
+	high_mac = (uint16_t)*mac;
+
+	if ((high_mac | low_mac) == 0 || (high_mac | low_mac) == ENETQOS_MAC_RESET) {
+		uint8_t first_byte;
+		uint32_t tmac;
+		mac = (uint16_t *)addr.addr_bytes;
+		tmac = (uint32_t)rte_rand();
+		first_byte = (uint8_t)tmac;
+		first_byte &= (uint8_t)~RTE_ETHER_GROUP_ADDR; /* clear multicast bit */
+		first_byte |= RTE_ETHER_LOCAL_ADMIN_ADDR; /* set local assignment bit (IEEE802)*/
+		tmac = tmac | first_byte;
+		*mac = (uint16_t)tmac;
+		mac++;
+		*mac = (uint16_t)(tmac >> ENETQOS_SHIFT);
+		mac++;
+		*mac = (uint16_t)rte_rand();
+	}
+
+	enetqos_set_mac_address(dev, &addr);
 
 	rt = enetqos_eth_init(dev);
 	if (rt)
