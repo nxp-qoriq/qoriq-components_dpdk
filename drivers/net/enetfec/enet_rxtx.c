@@ -16,20 +16,20 @@ uint16_t
 enetfec_recv_pkts(void *rxq1, struct rte_mbuf **rx_pkts,
 		uint16_t nb_pkts)
 {
-	struct rte_mempool *pool;
-	struct bufdesc *bdp;
-	struct rte_mbuf *mbuf, *new_mbuf = NULL;
-	unsigned short status;
-	unsigned short pkt_len;
-	int pkt_received = 0, index = 0;
-	void *data, *mbuf_data;
-	uint16_t vlan_tag;
-	struct  bufdesc_ex *ebdp = NULL;
-	bool    vlan_packet_rcvd = false;
 	struct enetfec_priv_rx_q *rxq  = (struct enetfec_priv_rx_q *)rxq1;
-	struct rte_eth_stats *stats = &rxq->fep->stats;
 	struct rte_eth_conf *eth_conf = &rxq->fep->dev->data->dev_conf;
 	uint64_t rx_offloads = eth_conf->rxmode.offloads;
+	struct rte_eth_stats *stats = &rxq->fep->stats;
+	struct rte_mbuf *mbuf, *new_mbuf = NULL;
+	struct  bufdesc_ex *ebdp = NULL;
+	int pkt_received = 0, index = 0;
+	unsigned short status, pkt_len;
+	bool vlan_packet_rcvd = false;
+	struct rte_ether_hdr *eth;
+	struct rte_mempool *pool;
+	void *data, *mbuf_data;
+	struct bufdesc *bdp;
+	uint16_t vlan_tag;
 	pool = rxq->pool;
 	bdp = rxq->bd.cur;
 
@@ -92,6 +92,16 @@ enetfec_recv_pkts(void *rxq1, struct rte_mbuf **rx_pkts,
 			data = rte_pktmbuf_adj(mbuf, 2);
 
 		rx_pkts[pkt_received] = mbuf;
+
+		/* Assuming Ethernet packets, doing software packet type parsing.
+		 * To be replaced by HW packet parsing
+		 */
+		eth = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr *);
+		mbuf->packet_type = RTE_PTYPE_L2_ETHER;
+		if (rte_be_to_cpu_16(eth->ether_type) == RTE_ETHER_TYPE_IPV4)
+			mbuf->packet_type |= RTE_PTYPE_L3_IPV4;
+		if (rte_be_to_cpu_16(eth->ether_type) == RTE_ETHER_TYPE_IPV6)
+			mbuf->packet_type |= RTE_PTYPE_L3_IPV6;
 		pkt_received++;
 
 		/* Extract the enhanced buffer descriptor */
