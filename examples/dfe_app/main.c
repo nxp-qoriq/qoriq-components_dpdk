@@ -28,7 +28,7 @@
 #include "ipc.h"
 #include "tti.h"
 
-#define APP_VERSION       "0.4.1"
+#define APP_VERSION       "0.5"
 
 int cpu_id = 0;
 int cpu_mask = 0x3;
@@ -213,6 +213,26 @@ void cmd_do_simple(int msg_type, const char *desc)
 
 	wait_response = 1;
 	msg->type = msg_type;
+	ret = send_dfe_command(msg);
+	if (ret < 0)
+		app_print_err("Failed to send IPC message\n");
+}
+
+/* debug */
+void cmd_do_debug(uint32_t debug_cmd, const char *desc)
+{
+	struct dfe_msg *msg;
+	int ret;
+
+	app_print_info("Send %s command\n", desc);
+
+	msg = (struct dfe_msg *)get_tx_buf(BBDEV_IPC_H2M_QUEUE);
+	if (!msg)
+		return;
+
+	wait_response = 1;
+	msg->type = DFE_DEBUG_CMD;
+	msg->payload[0] = debug_cmd;
 	ret = send_dfe_command(msg);
 	if (ret < 0)
 		app_print_err("Failed to send IPC message\n");

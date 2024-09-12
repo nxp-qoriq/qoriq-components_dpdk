@@ -68,6 +68,7 @@ extern void cmd_config_tx_addr_parsed(void *parsed_result, struct cmdline *cl, v
 extern void cmd_config_tx_sym_num_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_axiq_lb_enable_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_axiq_lb_disable_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_debug_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_vspa_debug_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_vspa_benchmark_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_vspa_fr1fr2_tool_parsed(void *parsed_result, struct cmdline *cl, void *data);
@@ -481,6 +482,27 @@ static cmdline_parse_inst_t cmd_axiq_lb_disable = {
 	.tokens = {
 		(void *)&cmd_axiq_lb_disable_axiq_lb_tok,
 		(void *)&cmd_axiq_lb_disable_disable_tok,
+		NULL,
+	}
+};
+
+struct cmd_debug_result {
+	cmdline_fixed_string_t debug;
+	uint32_t cmd;
+};
+
+static cmdline_parse_token_string_t cmd_debug_debug_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_debug_result, debug, "debug");
+static cmdline_parse_token_num_t cmd_debug_cmd_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_debug_result, cmd, RTE_UINT32);
+
+static cmdline_parse_inst_t cmd_debug = {
+	.f = cmd_debug_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_debug_debug_tok,
+		(void *)&cmd_debug_cmd_tok,
 		NULL,
 	}
 };
@@ -1081,6 +1103,7 @@ static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_rf_switch,
 	&cmd_tdd_tti,
 	&cmd_tti_stats,
+	&cmd_debug,
 	NULL
 };
 

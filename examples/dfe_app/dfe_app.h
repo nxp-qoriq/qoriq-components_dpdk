@@ -55,6 +55,7 @@ void cmd_do_config_tick_keepalive(uint32_t keepalive);
 void cmd_do_config_ul_ta(uint32_t ta);
 void cmd_do_config_time_offset(uint32_t time_offset);
 void cmd_do_config_sfn_slot(/*enum cmd_tdd_sfn_slot_action*/ uint32_t cmd_action, int32_t sfn, int32_t slot);
+void cmd_do_debug(uint32_t cmd, const char *desc);
 void reset_tti_stats(void);
 void dump_tti_stats(void);
 int rte_sys_get_tid(void);

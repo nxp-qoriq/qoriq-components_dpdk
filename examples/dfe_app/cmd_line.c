@@ -491,11 +491,20 @@ cmd_axiq_lb_disable_parsed(__attribute__((unused)) void *parsed_result,
 }
 
 void
+cmd_debug_parsed(__attribute__((unused)) void *parsed_result,
+		      __attribute__((unused)) struct cmdline *cl,
+		      __attribute__((unused)) void *data)
+{
+	struct cmd_debug_result *res = parsed_result;
+	cmd_do_debug(res->cmd,"DFE debug command");
+}
+
+void
 cmd_vspa_debug_parsed(__attribute__((unused)) void *parsed_result,
 		      __attribute__((unused)) struct cmdline *cl,
 		      __attribute__((unused)) void *data)
 {
-	cmd_do_simple(DFE_VSPA_DEBUG_BP,"VSPA debug break-point");
+	cmd_do_simple(DFE_DEBUG_CMD,"VSPA debug break-point");
 }
 
 void
