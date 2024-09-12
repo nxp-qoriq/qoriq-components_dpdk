@@ -2,18 +2,19 @@
  * Copyright 2023-2024 NXP
  */
 
-#include <rte_memzone.h>
-#include <sys/mman.h>
-#include <rte_io.h>
-#include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <ethdev_vdev.h>
-#include <ethdev_driver.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+
+#include <rte_memzone.h>
+#include <rte_io.h>
 
 #include "enetqos_hw.h"
 #include "enetqos_ethdev.h"
 #include "enetqos_pmd_logs.h"
+#include <ethdev_vdev.h>
+#include <ethdev_driver.h>
 #include <kpage_ncache_api.h>
 
 #define EXTRACT_CCSR_ADDR(s)	(s + strlen(s) - 8)
@@ -49,6 +50,18 @@ enetqos_free_buffers(struct rte_eth_dev *dev)
 	}
 }
 
+static void
+enetqos_free_queue(struct rte_eth_dev *dev)
+{
+	struct enetqos_priv *priv = dev->data->dev_private;
+	unsigned int i;
+
+	for (i = 0; i < dev->data->nb_rx_queues; i++)
+		rte_free(priv->rx_queue[i]);
+	for (i = 0; i < dev->data->nb_tx_queues; i++)
+		rte_free(priv->tx_queue[i]);
+}
+
 static int
 reset_poll_timeout(void *ioaddr, uint32_t value, int delay_us, int timeout_us)
 {
@@ -68,9 +81,12 @@ reset_poll_timeout(void *ioaddr, uint32_t value, int delay_us, int timeout_us)
 	return ret;
 }
 
-static int enetqos_dma_reset(void *ioaddr)
+static int
+enetqos_dma_reset(void *ioaddr)
 {
-	uint32_t value = rte_read32((void *)((size_t)ioaddr + ENETQ_DMA_MODE));
+	uint32_t value;
+
+	value = rte_read32((void *)((size_t)ioaddr + ENETQ_DMA_MODE));
 
 	/* DMA SW reset */
 	value |= ENETQ_DMA_BUS_MODE_SFT_RESET;
@@ -80,7 +96,8 @@ static int enetqos_dma_reset(void *ioaddr)
 			value, 10000, 1000000);
 }
 
-static void enetqos_dma_init_channel(void *ioaddr,
+static void
+enetqos_dma_init_channel(void *ioaddr,
 	struct enetqos_dma_cfg *dma_cfg, uint32_t chan)
 {
 	uint32_t value;
@@ -94,11 +111,13 @@ static void enetqos_dma_init_channel(void *ioaddr,
 	rte_write32(value, (void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->ctrl);
 }
 
-static void enetqos_dma_init(void *ioaddr,
+static void
+enetqos_dma_init(void *ioaddr,
 	struct enetqos_dma_cfg *dma_cfg)
 {
-	uint32_t value =
-		rte_read32((void *)((size_t) ioaddr + ENETQ_DMA_SYS_BUS_MODE));
+	uint32_t value;
+
+	value = rte_read32((void *)((size_t) ioaddr + ENETQ_DMA_SYS_BUS_MODE));
 
 	/* Set the Fixed burst mode*/
 	if (dma_cfg->fixed_burst)
@@ -124,12 +143,13 @@ static void enetqos_dma_init(void *ioaddr,
 	rte_write32(value, (void *)((size_t)ioaddr + ENETQ_DMA_MODE));
 }
 
-static void enetqos_dma_init_tx_chan(void *ioaddr,
+static void
+enetqos_dma_init_tx_chan(void *ioaddr,
 	struct enetqos_dma_cfg *dma_cfg,
 	dma_addr_t dma_tx_phy, uint32_t chan)
 {
-	uint32_t value;
 	uint32_t txpbl = dma_cfg->txpbl ? : dma_cfg->pbl;
+	uint32_t value;
 
 	value = rte_read32((void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->tx_ctrl);
 	value = value | (txpbl << ENETQ_DMA_BUS_MODE_PBL_SHIFT);
@@ -147,17 +167,20 @@ static void enetqos_dma_init_tx_chan(void *ioaddr,
 		(void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->tx_addr);
 }
 
-static void enetqos_set_tx_ring_len(void *ioaddr, uint32_t len, uint32_t chan)
+static void
+enetqos_set_tx_ring_len(void *ioaddr, uint32_t len, uint32_t chan)
 {
 	rte_write32(len, (void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->tx_ring_len);
 }
 
-static void enetqos_set_rx_ring_len(void *ioaddr, uint32_t len, uint32_t chan)
+static void
+enetqos_set_rx_ring_len(void *ioaddr, uint32_t len, uint32_t chan)
 {
 	rte_write32(len, (void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->rx_ring_len);
 }
 
-static void enetqos_set_rings_length(struct enetqos_priv *priv)
+static void
+enetqos_set_rings_length(struct enetqos_priv *priv)
 {
 	uint32_t tx_channels_count = priv->tx_queues_to_use;
 	uint32_t rx_channels_count = priv->rx_queues_to_use;
@@ -173,9 +196,12 @@ static void enetqos_set_rings_length(struct enetqos_priv *priv)
 			(priv->dma_rx_size - 1), chan);
 }
 
-static void enetqos_core_init(void *ioaddr)
+static void
+enetqos_core_init(void *ioaddr)
 {
-	uint32_t value = rte_read32((void *)((size_t) ioaddr + ENETQ_MAC_CONFIG));
+	uint32_t value;
+
+	value = rte_read32((void *)((size_t) ioaddr + ENETQ_MAC_CONFIG));
 
 	value |= ENETQ_MAC_CORE_INIT;
 	value |= ENETQ_MAC_CONFIG_TE;
@@ -186,7 +212,50 @@ static void enetqos_core_init(void *ioaddr)
 	rte_write32(value, (void *)((size_t) ioaddr + ENETQ_MAC_CONFIG));
 }
 
-static void enetqos_dma_tx_mode(void *ioaddr, int mode,
+static void
+enetqos_set_mtl_txq_weight(void *ioaddr, uint32_t weight, uint32_t queue)
+{
+	uint32_t value;
+
+	value = rte_read32((void *)((size_t)ioaddr + ENETQ_MTL_TXQXW_BASE_ADDR(queue)));
+
+	value &= ~ENETQ_MTL_TXQW_ISCQW_MASK;
+	value |= weight & ENETQ_MTL_TXQW_ISCQW_MASK;
+
+	rte_write32(value, (void *)((size_t)ioaddr + ENETQ_MTL_TXQXW_BASE_ADDR(queue)));
+}
+
+static void
+enetqos_prog_mtl_tx_algorithms(void *ioaddr, int algo)
+{
+	uint32_t value;
+
+	value = rte_read32((void *)((size_t)ioaddr + ENETQ_MTL_OPERATION_MODE));
+
+	value &= ~ENETQ_MTL_OP_SCHALG_MASK;
+
+	switch (algo) {
+	case ENETQ_MTL_TX_ALGO_WRR:
+		value |= ENETQ_MTL_OP_SCHALG_WRR;
+		break;
+	case ENETQ_MTL_TX_ALGO_WFQ:
+		value |= ENETQ_MTL_OP_SCHALG_WFQ;
+		break;
+	case ENETQ_MTL_TX_ALGO_DWRR:
+		value |= ENETQ_MTL_OP_SCHALG_DWRR;
+		break;
+	case ENETQ_MTL_TX_ALGO_SP:
+		value |= ENETQ_MTL_OP_SCHALG_SP;
+		break;
+	default:
+		break;
+	}
+
+	rte_write32(value, (void *)((size_t)ioaddr + ENETQ_MTL_OPERATION_MODE));
+}
+
+static void
+enetqos_dma_tx_mode(void *ioaddr, int mode,
 	uint32_t channel, int fifosz, uint8_t qmode)
 {
 	uint32_t mtl_tx_op_mode = rte_read32((void *)((size_t)ioaddr + ENETQ_MTL_CH_TX_OP_MODE(channel)));
@@ -209,7 +278,8 @@ static void enetqos_dma_tx_mode(void *ioaddr, int mode,
 		(void *)((size_t) ioaddr + ENETQ_MTL_CH_TX_OP_MODE(channel)));
 }
 
-static void enetqos_dma_rx_mode(void *ioaddr, int mode,
+static void
+enetqos_dma_rx_mode(void *ioaddr, int mode,
 	uint32_t channel, int fifosz, uint8_t qmode)
 {
 	unsigned int rqs = fifosz / MTL_QUEUE_BLK - 1;
@@ -264,7 +334,8 @@ static void enetqos_dma_rx_mode(void *ioaddr, int mode,
 	rte_write32(mtl_rx_op_mode, (void *)((size_t)ioaddr + ENETQ_MTL_CH_RX_OP_MODE(channel)));
 }
 
-static void enetqos_dma_operation_mode(struct enetqos_priv *priv)
+static void
+enetqos_dma_operation_mode(struct enetqos_priv *priv)
 {
 	uint32_t rx_channels_count = priv->rx_queues_to_use;
 	uint32_t tx_channels_count = priv->tx_queues_to_use;
@@ -295,7 +366,8 @@ static void enetqos_dma_operation_mode(struct enetqos_priv *priv)
 	}
 }
 
-static void enetqos_map_mtl_dma(void *ioaddr, uint32_t queue, uint32_t chan)
+static void
+enetqos_map_mtl_dma(void *ioaddr, uint32_t queue, uint32_t chan)
 {
 	uint32_t value;
 
@@ -323,7 +395,8 @@ static void enetqos_map_mtl_dma(void *ioaddr, uint32_t queue, uint32_t chan)
  *  @priv: driver private structure
  *  Description: It is used for mapping RX queues to RX dma channels
  */
-static void enetqos_rx_queue_dma_chan_map(struct enetqos_priv *priv)
+static void
+enetqos_rx_queue_dma_chan_map(struct enetqos_priv *priv)
 {
 	uint32_t rx_queues_count = priv->rx_queues_to_use;
 	uint32_t queue;
@@ -335,9 +408,12 @@ static void enetqos_rx_queue_dma_chan_map(struct enetqos_priv *priv)
 	}
 }
 
-static void enetqos_rx_queue_enable(void *ioaddr, uint8_t mode, uint32_t queue)
+static void
+enetqos_rx_queue_enable(void *ioaddr, uint8_t mode, uint32_t queue)
 {
-	uint32_t value = rte_read32((void *)((size_t)ioaddr + ENETQ_MAC_RXQ_CTRL(0)));
+	uint32_t value;
+
+	value = rte_read32((void *)((size_t)ioaddr + ENETQ_MAC_RXQ_CTRL(0)));
 
 	value &= ENETQ_MAC_RX_QUEUE_CLEAR(queue);
 
@@ -354,7 +430,8 @@ static void enetqos_rx_queue_enable(void *ioaddr, uint8_t mode, uint32_t queue)
  *  @priv: driver private structure
  *  Description: It is used for enabling the rx queues in the MAC
  */
-static void enetqos_mac_enable_rx_queues(struct enetqos_priv *priv)
+static void
+enetqos_mac_enable_rx_queues(struct enetqos_priv *priv)
 {
 	uint32_t rx_queues_count = priv->rx_queues_to_use;
 	uint32_t queue;
@@ -366,26 +443,24 @@ static void enetqos_mac_enable_rx_queues(struct enetqos_priv *priv)
 	}
 }
 
-static void enetqos_dma_start_tx(void *ioaddr, uint32_t chan)
+static void
+enetqos_dma_start_tx(void *ioaddr, uint32_t chan)
 {
-	uint32_t value =
-		rte_read32((void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->tx_ctrl);
+	uint32_t value;
+
+	value =	rte_read32((void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->tx_ctrl);
 
 	/* Start Transmission */
 	value |= ENETQ_DMA_CONTROL_ST;
 	rte_write32(value, (void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->tx_ctrl);
-
-	value = rte_read32((void *)((size_t) ioaddr + ENETQ_MAC_CONFIG));
-
-	/* Transmitter Enable */
-	value |= ENETQ_MAC_CONFIG_TE;
-	rte_write32(value, (void *)((size_t) ioaddr + ENETQ_MAC_CONFIG));
 }
 
-static void enetqos_dma_start_rx(void *ioaddr, uint32_t chan)
+static void
+enetqos_dma_start_rx(void *ioaddr, uint32_t chan)
 {
-	uint32_t value =
-		rte_read32((void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->rx_ctrl);
+	uint32_t value;
+
+	value =	rte_read32((void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->rx_ctrl);
 
 	/* Start Receive */
 	value |= ENETQ_DMA_CONTROL_SR;
@@ -398,22 +473,31 @@ static void enetqos_dma_start_rx(void *ioaddr, uint32_t chan)
 	rte_write32(value, (void *)((size_t) ioaddr + ENETQ_MAC_CONFIG));
 }
 
-static void enetqos_start_all_dma(struct enetqos_priv *priv)
+static void
+enetqos_start_all_dma(struct enetqos_priv *priv)
 {
 	uint32_t tx_channels_count = priv->tx_queues_to_use;
 	uint32_t rx_channels_count = priv->rx_queues_to_use;
-	uint32_t chan = 0;
+	uint32_t chan = 0, value;
 
 	for (chan = 0; chan < rx_channels_count; chan++)
 		enetqos_dma_start_rx(priv->ioaddr, chan);
 	for (chan = 0; chan < tx_channels_count; chan++)
 		enetqos_dma_start_tx(priv->ioaddr, chan);
+
+	/* Transmitter Enable */
+	value = rte_read32((void *)((size_t)priv->ioaddr + ENETQ_MAC_CONFIG));
+	value |= ENETQ_MAC_CONFIG_TE;
+	rte_write32(value, (void *)((size_t)priv->ioaddr + ENETQ_MAC_CONFIG));
+
 }
 
-static void enetqos_dma_stop_tx(void *ioaddr, uint32_t chan)
+static void
+enetqos_dma_stop_tx(void *ioaddr, uint32_t chan)
 {
-	uint32_t value =
-		rte_read32((void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->tx_ctrl);
+	uint32_t value;
+
+	value =	rte_read32((void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->tx_ctrl);
 
 	/* Stop Transmission */
 	value &= ~ENETQ_DMA_CONTROL_ST;
@@ -421,10 +505,12 @@ static void enetqos_dma_stop_tx(void *ioaddr, uint32_t chan)
 		(void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->tx_ctrl);
 }
 
-static void enetqos_dma_stop_rx(void *ioaddr, uint32_t chan)
+static void
+enetqos_dma_stop_rx(void *ioaddr, uint32_t chan)
 {
-	uint32_t value =
-		rte_read32((void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->rx_ctrl);
+	uint32_t value;
+
+	value = rte_read32((void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->rx_ctrl);
 
 	/* Stop Receive */
 	value &= ~ENETQ_DMA_CONTROL_SR;
@@ -432,7 +518,8 @@ static void enetqos_dma_stop_rx(void *ioaddr, uint32_t chan)
 		(void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->rx_ctrl);
 }
 
-static void enetqos_stop_all_dma(struct enetqos_priv *priv)
+static void
+enetqos_stop_all_dma(struct enetqos_priv *priv)
 {
 	uint32_t tx_channels_count = priv->tx_queues_to_use;
 	uint32_t rx_channels_count = priv->rx_queues_to_use;
@@ -444,7 +531,8 @@ static void enetqos_stop_all_dma(struct enetqos_priv *priv)
 		enetqos_dma_stop_tx(priv->ioaddr, chan);
 }
 
-static void desc_clear(struct dma_desc *p)
+static void
+desc_clear(struct dma_desc *p)
 {
 	p->des0 = 0;
 	p->des1 = 0;
@@ -462,8 +550,10 @@ enetqos_tx_queue_setup(struct rte_eth_dev *dev,
 	struct enetqos_priv *priv = dev->data->dev_private;
 	struct enetqos_tx_queue *txq;
 	struct dma_desc *p;
-	int i;
+	uint32_t weight;
+	int algo, i;
 
+	PMD_INIT_FUNC_TRACE();
 	/* Allocate transmit queue */
 	txq = rte_zmalloc(NULL, sizeof(*txq), RTE_CACHE_LINE_SIZE);
 	if (txq == NULL) {
@@ -494,6 +584,14 @@ enetqos_tx_queue_setup(struct rte_eth_dev *dev,
 		}
 	}
 
+	if (priv->tx_queues_to_use > 1) {
+		algo = ENETQ_MTL_TX_ALGO_WFQ;
+		weight = MTL_TXQ_DEFAULT_WEIGHT;
+
+		enetqos_set_mtl_txq_weight(priv->ioaddr, weight, queue_idx);
+		enetqos_prog_mtl_tx_algorithms(priv->ioaddr, algo);
+	}
+
 	enetqos_dma_init_tx_chan(priv->ioaddr, priv->dma_cfg, txq->dma_tx_phy, queue_idx);
 	txq->tx_tail_addr = txq->dma_tx_phy;
 	enetqos_set_tx_tail_ptr(priv->ioaddr, txq->tx_tail_addr, queue_idx);
@@ -502,12 +600,13 @@ enetqos_tx_queue_setup(struct rte_eth_dev *dev,
 	return 0;
 }
 
-static void enetqos_dma_init_rx_chan(void *ioaddr,
+static void
+enetqos_dma_init_rx_chan(void *ioaddr,
 			struct enetqos_dma_cfg *dma_cfg,
 			dma_addr_t dma_rx_phy, uint32_t chan)
 {
-	uint32_t value;
 	uint32_t rxpbl = dma_cfg->rxpbl ? : dma_cfg->pbl;
+	uint32_t value;
 
 	value = rte_read32((void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->rx_ctrl);
 	value = value | (rxpbl << ENETQ_DMA_BUS_MODE_RPBL_SHIFT);
@@ -519,7 +618,8 @@ static void enetqos_dma_init_rx_chan(void *ioaddr,
 		(void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->rx_addr);
 }
 
-static int enetqos_set_bfsize(int mtu)
+static int
+enetqos_set_bfsize(int mtu)
 {
 	int ret;
 
@@ -537,10 +637,12 @@ static int enetqos_set_bfsize(int mtu)
 	return ret;
 }
 
-static void enetqos_set_dma_bfsize(void *ioaddr, int bfsize, uint32_t chan)
+static void
+enetqos_set_dma_bfsize(void *ioaddr, int bfsize, uint32_t chan)
 {
-	uint32_t value =
-		rte_read32((void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->rx_ctrl);
+	uint32_t value;
+
+	value =	rte_read32((void *)&(ENETQ_DMA_CHX_REGS(ioaddr, chan))->rx_ctrl);
 
 	value &= ~ENETQ_DMA_RBSZ_MASK;
 	value |= (bfsize << ENETQ_DMA_RBSZ_SHIFT) & ENETQ_DMA_RBSZ_MASK;
@@ -562,6 +664,7 @@ enetqos_rx_queue_setup(struct rte_eth_dev *dev,
 	rte_iova_t addr;
 	int i, bfsize;
 
+	PMD_INIT_FUNC_TRACE();
 	/* allocate receive queue */
 	rxq = rte_zmalloc(NULL, sizeof(*rxq), RTE_CACHE_LINE_SIZE);
 	if (rxq == NULL) {
@@ -629,15 +732,15 @@ err_alloc:
 	return errno;
 }
 
-static int enetqos_hw_setup(struct enetqos_priv *priv)
+static int
+enetqos_hw_setup(struct enetqos_priv *priv)
 {
-	struct enetqos_dma_cfg *dma_cfg;
-	uint32_t chan;
-	int ret;
-
 	uint32_t rx_channels_count = priv->rx_queues_to_use;
 	uint32_t tx_channels_count = priv->tx_queues_to_use;
 	uint32_t dma_csr_ch = RTE_MAX(rx_channels_count, tx_channels_count);
+	struct enetqos_dma_cfg *dma_cfg;
+	uint32_t chan;
+	int ret;
 
 	/* Software reset */
 	ret = enetqos_dma_reset(priv->ioaddr);
@@ -679,8 +782,40 @@ static int enetqos_hw_setup(struct enetqos_priv *priv)
 }
 
 static int
-enetqos_eth_configure(struct rte_eth_dev *dev __rte_unused)
+enetqos_eth_configure(struct rte_eth_dev *dev)
 {
+	struct enetqos_priv *priv = dev->data->dev_private;
+	struct rte_eth_dev_data *data = dev->data;
+	unsigned int bdsize, i;
+	int size;
+
+	PMD_INIT_FUNC_TRACE();
+	priv->rx_queues_to_use = data->nb_rx_queues;
+	priv->tx_queues_to_use = data->nb_tx_queues;
+
+	size = sizeof(struct dma_desc);
+	bdsize = size * DMA_DEFAULT_SIZE;
+
+	if (!priv->dma_tx_size)
+		priv->dma_tx_size = DMA_DEFAULT_TX_SIZE;
+	if (!priv->dma_rx_size)
+		priv->dma_rx_size = DMA_DEFAULT_RX_SIZE;
+
+	for (i = 0; i < priv->tx_queues_to_use; i++) {
+		priv->dma_baseaddr_t[i] = priv->bd_addr_v;
+		priv->bd_addr_p_t[i] = priv->bd_addr_p;
+		priv->bd_addr_v = (uint8_t *)priv->bd_addr_v + bdsize;
+		priv->bd_addr_p = priv->bd_addr_p + bdsize;
+	}
+	for (i = 0; i < priv->rx_queues_to_use; i++) {
+		priv->dma_baseaddr_r[i] = priv->bd_addr_v;
+		priv->bd_addr_p_r[i] = priv->bd_addr_p;
+		priv->bd_addr_v = (uint8_t *)priv->bd_addr_v + bdsize;
+		priv->bd_addr_p = priv->bd_addr_p + bdsize;
+	}
+
+	enetqos_hw_setup(priv);
+
 	return 0;
 }
 
@@ -689,8 +824,9 @@ enetqos_eth_start(struct rte_eth_dev *dev)
 {
 	struct enetqos_priv *priv = dev->data->dev_private;
 
-	enetqos_start_all_dma(priv);
+	PMD_INIT_FUNC_TRACE();
 
+	enetqos_start_all_dma(priv);
 	enetqos_set_rings_length(priv);
 
 	dev->rx_pkt_burst = &enetqos_recv_pkts;
@@ -704,7 +840,9 @@ enetqos_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
 {
 	struct enetqos_priv *priv = dev->data->dev_private;
 	struct rte_eth_stats *eth_stats = &priv->stats;
+	uint32_t i;
 
+	PMD_INIT_FUNC_TRACE();
 	stats->ipackets = eth_stats->ipackets;
 	stats->ibytes = eth_stats->ibytes;
 	stats->ierrors = eth_stats->ierrors;
@@ -713,6 +851,9 @@ enetqos_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
 	stats->obytes = eth_stats->obytes;
 	stats->oerrors = eth_stats->oerrors;
 
+	for (i = 0; i < priv->tx_queues_to_use; i++)
+		stats->q_opackets[i] = eth_stats->q_opackets[i];
+
 	return 0;
 }
 
@@ -720,10 +861,12 @@ static int
 enetqos_eth_info(struct rte_eth_dev *dev __rte_unused,
 	struct rte_eth_dev_info *dev_info)
 {
+	PMD_INIT_FUNC_TRACE();
+
 	dev_info->max_rx_pktlen = ENETQOS_MAX_RX_PKT_LEN;
 	dev_info->nb_tx_queues = ENETQOS_MAX_Q;
-	dev_info->nb_rx_queues = ENETQOS_MAX_Q;
-	dev_info->max_rx_queues = ENETQOS_MAX_Q;
+	dev_info->nb_rx_queues = ENETQOS_MAX_RXQ;
+	dev_info->max_rx_queues = ENETQOS_MAX_RXQ;
 	dev_info->max_tx_queues = ENETQOS_MAX_Q;
 	dev_info->rx_offload_capa = dev_rx_offloads_sup;
 
@@ -739,6 +882,7 @@ enetqos_set_mac_address(struct rte_eth_dev *dev,
 	unsigned long data;
 	unsigned int high, low;
 
+	PMD_INIT_FUNC_TRACE();
 	high = ENETQ_MAC_ADDR_HIGH(0);
 	low = ENETQ_MAC_ADDR_LOW(0);
 	data = (addr->addr_bytes[5] << 8) | addr->addr_bytes[4];
@@ -761,6 +905,7 @@ enetqos_eth_link_update(struct rte_eth_dev *dev,
 	struct rte_eth_link link;
 	unsigned int lstatus = 1;
 
+	PMD_INIT_FUNC_TRACE();
 	memset(&link, 0, sizeof(struct rte_eth_link));
 
 	link.link_status = lstatus;
@@ -777,6 +922,7 @@ enetqos_promiscuous_enable(struct rte_eth_dev *dev)
 	struct enetqos_priv *priv = dev->data->dev_private;
 	unsigned int value;
 
+	PMD_INIT_FUNC_TRACE();
 	value = rte_read32((void *)((size_t) priv->ioaddr + ENETQ_MAC_PKT_FILTER));
 	value |= ENETQ_MAC_PKT_FILTER_PR;
 
@@ -789,7 +935,9 @@ enetqos_promiscuous_enable(struct rte_eth_dev *dev)
 static void
 enetqos_disable(struct enetqos_priv *priv)
 {
-	uint32_t value = rte_read32((void *)((size_t) priv->ioaddr + ENETQ_MAC_CONFIG));
+	uint32_t value;
+
+	value = rte_read32((void *)((size_t) priv->ioaddr + ENETQ_MAC_CONFIG));
 	value &= ~(ENETQ_MAC_CORE_INIT | ENETQ_MAC_CONFIG_TE | ENETQ_MAC_CONFIG_RE);
 	rte_write32(value, (void *)((size_t) priv->ioaddr + ENETQ_MAC_CONFIG));
 }
@@ -799,8 +947,10 @@ enetqos_eth_stop(struct rte_eth_dev *dev)
 {
 	struct enetqos_priv *priv = dev->data->dev_private;
 
-	dev->data->dev_started = 0;
+	PMD_INIT_FUNC_TRACE();
+
 	enetqos_disable(priv);
+	enetqos_stop_all_dma(priv);
 
 	return 0;
 }
@@ -808,6 +958,9 @@ enetqos_eth_stop(struct rte_eth_dev *dev)
 static int
 enetqos_eth_close(struct rte_eth_dev *dev)
 {
+	PMD_INIT_FUNC_TRACE();
+
+	enetqos_free_queue(dev);
 	enetqos_free_buffers(dev);
 
 	return 0;
@@ -830,26 +983,12 @@ static const struct eth_dev_ops enetqos_ops = {
 static int
 enetqos_eth_init(struct rte_eth_dev *dev)
 {
-	struct enetqos_priv *priv = dev->data->dev_private;
-
+	PMD_INIT_FUNC_TRACE();
 	dev->dev_ops = &enetqos_ops;
-	enetqos_hw_setup(priv);
 
 	rte_eth_dev_probing_finish(dev);
 
 	return 0;
-}
-
-static void
-enetqos_free_queue(struct rte_eth_dev *dev)
-{
-	struct enetqos_priv *priv = dev->data->dev_private;
-	unsigned int i;
-
-	for (i = 0; i < dev->data->nb_rx_queues; i++)
-		rte_free(priv->rx_queue[i]);
-	for (i = 0; i < dev->data->nb_tx_queues; i++)
-		rte_free(priv->tx_queue[i]);
 }
 
 static int
@@ -910,7 +1049,8 @@ mark_memory_ncache(struct enetqos_priv *priv, const char *mz_name, int size) {
 	return 0;
 }
 
-static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
+static int
+pmd_enetqos_probe(struct rte_vdev_device *vdev)
 {
 	struct rte_ether_addr macaddr = {
 		.addr_bytes = { 0x1, 0x1, 0x1, 0x1, 0x1, 0x1 }
@@ -920,15 +1060,13 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 	struct rte_eth_dev *dev = NULL;
 	size_t ccsr_addr = 0, ccsr_size = 0;
 	struct enetqos_priv *priv;
-	unsigned int bdsize, i;
 	const char *name;
 	int bd_total = 0;
 	int fd = -1;
 	FILE *file;
-	int size;
-	int ret, rt;
-	int cnt;
+	int ret, rt, cnt;
 
+	PMD_INIT_FUNC_TRACE();
 	name = rte_vdev_device_name(vdev);
 	ENETQOS_PMD_LOG(INFO, "Initializing pmd_fec for %s", name);
 
@@ -938,38 +1076,14 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 
 	priv = dev->data->dev_private;
 
-	if (!priv->dma_tx_size)
-		priv->dma_tx_size = DMA_DEFAULT_TX_SIZE;
-	if (!priv->dma_rx_size)
-		priv->dma_rx_size = DMA_DEFAULT_RX_SIZE;
-
-	size = sizeof(struct dma_desc);
 	/* BD memory is 160kb so reserving a max of 2MB memory */
 	bd_total = SIZE_2MB;
-
-	priv->rx_queues_to_use = 1;
-	priv->tx_queues_to_use = 1;
-	bdsize = size * DMA_DEFAULT_SIZE;
 
 	if (mark_memory_ncache(priv, mz_name, bd_total)) {
 		ENETQOS_PMD_ERR("Failed to mark BD memory non-cacheable!");
 		rt = -1;
 		goto err;
 	}
-
-	for (i = 0; i < priv->tx_queues_to_use; i++) {
-		priv->dma_baseaddr_t[i] = priv->bd_addr_v;
-		priv->bd_addr_p_t[i] = priv->bd_addr_p;
-		priv->bd_addr_v = (uint8_t *)priv->bd_addr_v + bdsize;
-		priv->bd_addr_p = priv->bd_addr_p + bdsize;
-	}
-	for (i = 0; i < priv->rx_queues_to_use; i++) {
-		priv->dma_baseaddr_r[i] = priv->bd_addr_v;
-		priv->bd_addr_p_r[i] = priv->bd_addr_p;
-		priv->bd_addr_v = (uint8_t *)priv->bd_addr_v + bdsize;
-		priv->bd_addr_p = priv->bd_addr_p + bdsize;
-	}
-
 
 	file = fopen("/proc/device-tree/aliases/ethernet1", "r");
 	if (file) {
@@ -1022,7 +1136,6 @@ static int pmd_enetqos_probe(struct rte_vdev_device *vdev)
 	}
 
 	priv->ioaddr = priv->hw_baseaddr_v;
-
 	/* Copy the station address into the dev structure, */
 	dev->data->mac_addrs = rte_zmalloc("mac_addr", RTE_ETHER_ADDR_LEN, 0);
 	if (dev->data->mac_addrs == NULL) {
@@ -1047,28 +1160,14 @@ err:
 static int
 pmd_enetqos_remove(struct rte_vdev_device *vdev)
 {
-	struct rte_eth_dev *eth_dev = NULL;
-	struct enetqos_priv *priv;
-	int ret;
+	struct rte_eth_dev *eth_dev;
 
-	/* find the ethdev entry */
-	eth_dev = rte_eth_dev_allocated(rte_vdev_device_name(vdev));
-	if (eth_dev == NULL)
-		return -ENODEV;
+	PMD_INIT_FUNC_TRACE();
+        eth_dev = rte_eth_dev_allocated(rte_vdev_device_name(vdev));
+        if (eth_dev == NULL)
+                return 0;
 
-	priv = eth_dev->data->dev_private;
-
-	enetqos_stop_all_dma(priv);
-	enetqos_free_queue(eth_dev);
-	enetqos_eth_stop(eth_dev);
-
-	ret = rte_eth_dev_release_port(eth_dev);
-	if (ret != 0)
-		return -EINVAL;
-
-	ENETQOS_PMD_INFO("Release enetqos sw device");
-
-	return 0;
+	return enetqos_eth_close(eth_dev);
 }
 
 static struct rte_vdev_driver pmd_enetqos_drv = {
