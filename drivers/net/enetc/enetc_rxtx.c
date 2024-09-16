@@ -517,10 +517,13 @@ enetc_clean_rx_ring_nc(struct enetc_bdr *rx_ring,
 	rx_swbd = &rx_ring->q_swbd[i];
 
 	while (likely(rx_frm_cnt < work_limit)) {
+#ifdef RTE_ARCH_32
+		rte_memcpy(&rxbd_temp, rxbd, 16);
+#else
 		__uint128_t *dst128 = (__uint128_t *)&rxbd_temp;
 		const __uint128_t *src128 = (const __uint128_t *)rxbd;
 		*dst128 = *src128;
-
+#endif
 		bd_status = rte_le_to_cpu_32(rxbd_temp.r.lstatus);
 		if (!bd_status)
 			break;
@@ -588,10 +591,13 @@ retry:
 	}
 
 	while (likely(rx_frm_cnt < ENETC_LB_BURST)) {
+#ifdef RTE_ARCH_32
+		rte_memcpy(&rxbd_temp, rxbd, 16);
+#else
 		__uint128_t *dst128 = (__uint128_t *)&rxbd_temp;
 		const __uint128_t *src128 = (const __uint128_t *)rxbd;
 		*dst128 = *src128;
-
+#endif
 		bd_status = rte_le_to_cpu_32(rxbd_temp.r.lstatus);
 		if (!bd_status)
 			break;

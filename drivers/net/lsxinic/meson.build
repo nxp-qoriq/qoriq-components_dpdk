@@ -9,7 +9,11 @@ if cc.get_id() == 'clang'
     build = false
     reason = 'only supported on gcc'
 endif
-
+if not dpdk_conf.get('RTE_ARCH_64')
+    build = false
+    reason = 'only supported on 64-bit'
+    subdir_done()
+endif
 
 deps += ['bus_lsx_pciep', 'dmadev', 'dma_dpaa2', 'net_dpaa2']
 sources = files(
