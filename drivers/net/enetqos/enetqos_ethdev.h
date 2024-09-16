@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2023 NXP
+ * Copyright 2023-2024 NXP
  */
 #ifndef __ENETQOS_ETHDEV_
 #define  __ENETQOS_ETHDEV_
@@ -15,6 +15,7 @@
 /* mac addr reset */
 #define ENETQOS_MAC_RESET       0xFFFFFFFF
 #define ENETQOS_SHIFT           16
+
 /*
  * The DMA Tx engine transfers data from the system memory to the MTL interface,
  * whereas the DMA Rx engine transfers data from the MTL interface to the

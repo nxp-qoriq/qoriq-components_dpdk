@@ -931,6 +931,22 @@ enetqos_promiscuous_enable(struct rte_eth_dev *dev)
 }
 
 static int
+enetqos_promiscuous_disable(struct rte_eth_dev *dev)
+{
+	struct enetqos_priv *priv = dev->data->dev_private;
+	unsigned int value;
+
+	PMD_INIT_FUNC_TRACE();
+	value = rte_read32((void *)((size_t)priv->ioaddr + ENETQ_MAC_PKT_FILTER));
+	value &= (~ENETQ_MAC_PKT_FILTER_PR);
+
+	rte_write32(value,
+		(void *)((size_t)priv->ioaddr + ENETQ_MAC_PKT_FILTER));
+
+	return 0;
+}
+
+static int
 enetqos_allmulticast_enable(struct rte_eth_dev *dev)
 {
 	struct enetqos_priv *priv = dev->data->dev_private;
@@ -1003,6 +1019,7 @@ static const struct eth_dev_ops enetqos_ops = {
 	.stats_get		= enetqos_stats_get,
 	.link_update		= enetqos_eth_link_update,
 	.promiscuous_enable	= enetqos_promiscuous_enable,
+	.promiscuous_disable    = enetqos_promiscuous_disable,
 	.mac_addr_set           = enetqos_set_mac_address,
 	.rx_queue_setup		= enetqos_rx_queue_setup,
 	.tx_queue_setup		= enetqos_tx_queue_setup,
@@ -1190,14 +1207,14 @@ pmd_enetqos_probe(struct rte_vdev_device *vdev)
 	high_mac = (uint16_t)*mac;
 
 	if ((high_mac | low_mac) == 0 || (high_mac | low_mac) == ENETQOS_MAC_RESET) {
-		uint8_t first_byte;
+		uint8_t *first_byte;
 		uint32_t tmac;
+
 		mac = (uint16_t *)addr.addr_bytes;
 		tmac = (uint32_t)rte_rand();
-		first_byte = (uint8_t)tmac;
-		first_byte &= (uint8_t)~RTE_ETHER_GROUP_ADDR; /* clear multicast bit */
-		first_byte |= RTE_ETHER_LOCAL_ADMIN_ADDR; /* set local assignment bit (IEEE802)*/
-		tmac = tmac | first_byte;
+		first_byte = (uint8_t *)&tmac;
+		*first_byte &= (uint8_t)~RTE_ETHER_GROUP_ADDR; /* clear multicast bit */
+		*first_byte |= RTE_ETHER_LOCAL_ADMIN_ADDR; /* set local assignment bit (IEEE802)*/
 		*mac = (uint16_t)tmac;
 		mac++;
 		*mac = (uint16_t)(tmac >> ENETQOS_SHIFT);
