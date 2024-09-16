@@ -1601,8 +1601,6 @@ dpaa2_dpdmai_dev_init(struct rte_dma_dev *dev, uint32_t dpdmai_id)
 	struct dpdmai_attr attr;
 	int ret, err;
 
-	DPAA2_QDMA_FUNC_TRACE();
-
 	if (!dpaa2_coherent_no_alloc_cache) {
 		if (dpaa2_svr_family == SVR_LX2160A) {
 			dpaa2_coherent_no_alloc_cache =

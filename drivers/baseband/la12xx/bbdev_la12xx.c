@@ -345,9 +345,10 @@ rte_pmd_get_la12xx_mapaddr(uint16_t dev_id, void *addr)
 	((uint64_t) ((unsigned long) (A) \
 		+ (unsigned long)(ipc_priv->peb_start.host_vaddr)))
 
+#ifdef RTE_TOOLCHAIN_GCC
 #pragma GCC push_options
 #pragma GCC optimize ("O1")
-
+#endif
 static int
 la12xx_e200_queue_setup(struct rte_bbdev *dev,
 		struct bbdev_la12xx_q_priv *q_priv,
@@ -1284,7 +1285,9 @@ fill_feca_desc_polar_op(struct bbdev_ipc_dequeue_op *bbdev_ipc_op,
 #endif
 	}
 }
+#ifdef RTE_TOOLCHAIN_GCC
 #pragma GCC pop_options
+#endif
 
 /* To handle glibc memcpy unaligned access issue, we need
  * our own wrapper layer to handle corner cases. We use memcpy
@@ -2936,25 +2939,6 @@ rte_pmd_la12xx_reset_restore_cfg(uint16_t dev_id)
 		return ret;
 	}
 
-	return 0;
-}
-
-static inline int
-parse_u16_arg(const char *key, const char *value, void *extra_args)
-{
-	uint16_t *u16 = extra_args;
-
-	unsigned int long result;
-	if ((value == NULL) || (extra_args == NULL))
-		return -EINVAL;
-	errno = 0;
-	result = strtoul(value, NULL, 0);
-	if ((result >= (1 << 16)) || (errno != 0)) {
-		rte_bbdev_log(ERR, "Invalid value %" PRIu64 " for %s",
-			      result, key);
-		return -ERANGE;
-	}
-	*u16 = (uint16_t)result;
 	return 0;
 }
 

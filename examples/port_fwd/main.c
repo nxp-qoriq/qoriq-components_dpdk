@@ -830,7 +830,7 @@ check_lcore_params(void)
 			continue;
 		if (!rte_lcore_is_enabled(lcore)) {
 			RTE_LOG(ERR, port_fwd,
-				"lcore %hhu is not enabled\n", lcore);
+				"lcore %d is not enabled\n", lcore);
 			return -EINVAL;
 		}
 	}

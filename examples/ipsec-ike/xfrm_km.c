@@ -755,7 +755,7 @@ xfm_sa_entry_dir_config(struct ipsec_ike_sa_entry *sa_entry,
 }
 
 static int
-process_notif_sa(const struct nlmsghdr *nh, int len, int update)
+process_notif_sa(struct nlmsghdr *nh, int len, int update)
 {
 	struct xfrm_usersa_info *sa_info;
 	struct xfm_ipsec_sa_params sa_params;
@@ -805,7 +805,7 @@ xfm_del_sa_from_sp_list(struct ipsec_ike_sa_entry *del,
 	}
 }
 
-static int process_del_sa(const struct nlmsghdr *nh)
+static int process_del_sa(struct nlmsghdr *nh)
 {
 	struct xfrm_usersa_id *usersa_id;
 	struct ipsec_ike_cntx *cntx = ipsec_ike_get_cntx();
@@ -1074,7 +1074,7 @@ process_static_new_policy(int idx)
 }
 
 static int
-process_new_policy(const struct nlmsghdr *nh)
+process_new_policy(struct nlmsghdr *nh)
 {
 	struct xfrm_userpolicy_info *pol_info;
 	int ret = 0, af;
@@ -1158,7 +1158,7 @@ process_new_policy(const struct nlmsghdr *nh)
 	return ret;
 }
 
-static int process_del_policy(const struct nlmsghdr *nh)
+static int process_del_policy(struct nlmsghdr *nh)
 {
 	struct xfrm_userpolicy_id *pol_id;
 	struct ipsec_ike_cntx *cntx = ipsec_ike_get_cntx();
@@ -1267,7 +1267,7 @@ static int process_flush_policy(void)
 }
 
 static int
-resolve_xfrm_notif(const struct nlmsghdr *nh, int len)
+resolve_xfrm_notif(struct nlmsghdr *nh, int len)
 {
 	int ret = 0;
 
@@ -1465,7 +1465,7 @@ static void *xfrm_msg_loop(void *data)
 			break;
 		}
 
-		for (nh = (struct nlmsghdr *)buf; NLMSG_OK(nh, len);
+		for (nh = (struct nlmsghdr *)buf; NLMSG_OK(nh, (unsigned int)len);
 		     nh = NLMSG_NEXT(nh, len)) {
 			if (nh->nlmsg_type == NLMSG_ERROR) {
 				RTE_LOG(ERR, IPSEC_IKE,

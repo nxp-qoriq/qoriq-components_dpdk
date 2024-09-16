@@ -1730,6 +1730,10 @@ dpaa2_sec_fd_to_mbuf(const struct qbman_fd *fd,
 	return op;
 }
 
+#ifdef RTE_TOOLCHAIN_CLANG
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
+#endif
 #define DPAA2_SEC_DUMP_BUF_SIZE 4096
 static inline size_t
 dpaa2_sec_print_buf(char *dump_buf,
@@ -1739,13 +1743,16 @@ dpaa2_sec_print_buf(char *dump_buf,
 
 	va_start(ap, format);
 	if (bufsz > (pos + 128))
-		pos += vsprintf(&dump_buf[pos], format, ap);
+		pos += vsnprintf(&dump_buf[pos], (size_t)bufsz, format, ap);
 	else
 		pos = bufsz;
 	va_end(ap);
 
 	return pos;
 }
+#ifdef RTE_TOOLCHAIN_CLANG
+#pragma clang diagnostic pop
+#endif
 
 static size_t
 dpaa2_sec_dump_alog_info(char *dump_buf,

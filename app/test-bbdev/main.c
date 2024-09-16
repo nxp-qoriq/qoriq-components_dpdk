@@ -277,7 +277,7 @@ parse_config(const char *q_arg)
 				return -1;
 		}
 		if (g_core_params.nb_params >= MAX_CORE_PARAMS) {
-			printf("exceeded max number of core params: %hu\n",
+			printf("exceeded max number of core params: %u\n",
 				g_core_params.nb_params);
 			return -1;
 		}
