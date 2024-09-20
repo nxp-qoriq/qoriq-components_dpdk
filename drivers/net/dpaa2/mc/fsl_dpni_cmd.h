@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (BSD-3-Clause OR GPL-2.0)
  *
  * Copyright 2013-2016 Freescale Semiconductor Inc.
- * Copyright 2016-2023 NXP
+ * Copyright 2016-2024 NXP
  *
  */
 #ifndef _FSL_DPNI_CMD_H
@@ -9,7 +9,7 @@
 
 /* DPNI Version */
 #define DPNI_VER_MAJOR				8
-#define DPNI_VER_MINOR				4
+#define DPNI_VER_MINOR				5
 
 #define DPNI_CMD_BASE_VERSION			1
 #define DPNI_CMD_VERSION_2			2
@@ -131,6 +131,31 @@
 #define DPNI_CMDID_SP_ENABLE		    DPNI_CMD(0x280)
 #define DPNI_CMDID_SET_QUEUE_TX_CONFIRMATION_MODE	DPNI_CMD(0x281)
 #define DPNI_CMDID_GET_QUEUE_TX_CONFIRMATION_MODE	DPNI_CMD(0x282)
+#define DPNI_CMDID_GET_MAC_STATISTICS			DPNI_CMD(0x283)
+
+#define DPNI_CMDID_IS_MACSEC_CAPABLE			DPNI_CMD(0x2a0)
+#define DPNI_CMDID_ADD_SECY				DPNI_CMD(0x2a1)
+#define DPNI_CMDID_REMOVE_SECY				DPNI_CMD(0x2a2)
+#define DPNI_CMDID_SECY_SET_STATE			DPNI_CMD(0x2a3)
+#define DPNI_CMDID_SECY_SET_PROTECT			DPNI_CMD(0x2a4)
+#define DPNI_CMDID_SECY_SET_REPLAY_PROTECT		DPNI_CMD(0x2a5)
+#define DPNI_CMDID_SECY_ADD_TX_SA			DPNI_CMD(0x2a6)
+#define DPNI_CMDID_SECY_REMOVE_TX_SA			DPNI_CMD(0x2a7)
+#define DPNI_CMDID_SECY_SET_ACTIVE_TX_SA		DPNI_CMD(0x2a8)
+#define DPNI_CMDID_SECY_ADD_RX_SC			DPNI_CMD(0x2a9)
+#define DPNI_CMDID_SECY_REMOVE_RX_SC			DPNI_CMD(0x2aa)
+#define DPNI_CMDID_SECY_SET_RX_SC_STATE			DPNI_CMD(0x2ab)
+#define DPNI_CMDID_SECY_ADD_RX_SA			DPNI_CMD(0x2ac)
+#define DPNI_CMDID_SECY_REMOVE_RX_SA			DPNI_CMD(0x2ad)
+#define DPNI_CMDID_SECY_SET_RX_SA_NEXT_PN		DPNI_CMD(0x2ae)
+#define DPNI_CMDID_SECY_SET_RX_SA_STATE			DPNI_CMD(0x2af)
+
+#define DPNI_CMDID_SECY_GET_STATS			DPNI_CMD(0x2b0)
+#define DPNI_CMDID_SECY_GET_TX_SC_STATS			DPNI_CMD(0x2b1)
+#define DPNI_CMDID_SECY_GET_TX_SA_STATS			DPNI_CMD(0x2b2)
+#define DPNI_CMDID_SECY_GET_RX_SC_STATS			DPNI_CMD(0x2b3)
+#define DPNI_CMDID_SECY_GET_RX_SA_STATS			DPNI_CMD(0x2b4)
+#define DPNI_CMDID_GET_MACSEC_STATS			DPNI_CMD(0x2b5)
 
 /* Macros for accessing command fields smaller than 1byte */
 #define DPNI_MASK(field)	\
@@ -1022,6 +1047,166 @@ struct dpni_cmd_set_sp_profile {
 struct dpni_cmd_sp_enable {
 	uint8_t type;
 	uint8_t en;
+};
+
+#define DPNI_MACSEC_SHIFT	0
+#define DPNI_MACSEC_SIZE	1
+
+struct dpni_rsp_is_macsec_capable {
+	uint8_t en;
+};
+
+#define DPNI_SECY_CIPHER_SUITE_SIZE		1
+#define DPNI_SECY_CIPHER_SUITE_SHIFT		0
+
+#define DPNI_SECY_CONFIDENTIALITY_SIZE		1
+#define DPNI_SECY_CONFIDENTIALITY_SHIFT		1
+
+#define DPNI_SECY_IS_PTP_SIZE			1
+#define DPNI_SECY_IS_PTP_SHIFT			2
+
+#define DPNI_SECY_VALIDATION_MODE_SIZE		2
+#define DPNI_SECY_VALIDATION_MODE_SHIFT		3
+
+struct dpni_cmd_add_secy {
+	uint64_t tx_sci;
+	uint8_t flags;
+	uint8_t co_offset;
+	uint8_t max_rx_sc;
+};
+
+struct dpni_rsp_add_secy {
+	uint8_t secy_id;
+};
+
+struct dpni_cmd_remove_secy {
+	uint8_t secy_id;
+};
+
+#define DPNI_SECY_ACTIVE_SIZE		1
+#define DPNI_SECY_ACTIVE_SHIFT		0
+
+struct dpni_cmd_secy_set_state {
+	uint8_t secy_id;
+	uint8_t flags;
+};
+
+#define DPNI_SECY_TX_PROTECT_SIZE	1
+#define DPNI_SECY_TX_PROTECT_SHIFT	0
+
+struct dpni_cmd_secy_set_protect {
+	uint8_t secy_id;
+	uint8_t flags;
+};
+
+#define DPNI_SECY_REPLAY_PROTECT_EN_SIZE	1
+#define DPNI_SECY_REPLAY_PROTECT_EN_SHIFT	0
+
+struct dpni_cmd_secy_set_replay_protect {
+	uint8_t secy_id;
+	uint8_t flags;
+	uint16_t res;
+	uint32_t replay_window;
+};
+
+struct dpni_cmd_secy_add_tx_sa {
+	uint8_t key[32];
+	uint32_t next_pn;
+	uint8_t secy_id;
+	uint8_t an;
+};
+
+struct dpni_cmd_secy_remove_tx_sa {
+	uint8_t secy_id;
+	uint8_t an;
+};
+
+struct dpni_cmd_secy_set_tx_sa {
+	uint8_t secy_id;
+	uint8_t an;
+};
+
+struct dpni_cmd_secy_rx_sc {
+	uint8_t secy_id;
+	uint8_t res[7];
+	uint64_t sci;
+};
+
+struct dpni_cmd_secy_set_rx_sc_state {
+	uint8_t secy_id;
+	uint8_t en;
+	uint8_t res[6];
+	uint64_t sci;
+};
+
+struct dpni_cmd_secy_add_rx_sa {
+	uint8_t key[32];
+	uint32_t lowest_pn;
+	uint8_t secy_id;
+	uint8_t an;
+	uint16_t res;
+	uint64_t sci;
+};
+
+struct dpni_cmd_secy_remove_rx_sa {
+	uint8_t secy_id;
+	uint8_t an;
+	uint8_t res[6];
+	uint64_t sci;
+};
+
+struct dpni_cmd_secy_set_rx_sa_next_pn {
+	uint8_t secy_id;
+	uint8_t an;
+	uint16_t res;
+	uint32_t next_pn;
+	uint64_t sci;
+};
+
+struct dpni_cmd_secy_set_rx_sa_state {
+	uint8_t secy_id;
+	uint8_t an;
+	uint8_t en;
+	uint8_t res[5];
+	uint64_t sci;
+};
+
+struct dpni_cmd_secy_get_stats {
+	uint8_t secy_id;
+	uint8_t page;
+};
+
+struct dpni_cmd_secy_get_tx_sc_stats {
+	uint8_t secy_id;
+};
+
+struct dpni_cmd_secy_get_tx_sa_stats {
+	uint8_t secy_id;
+	uint8_t an;
+};
+
+struct dpni_rsp_stats32 {
+	uint32_t counter[DPNI_STATISTICS_32_CNT];
+};
+
+struct dpni_cmd_secy_get_rx_sc_stats {
+	uint8_t secy_id;
+	uint8_t page;
+	uint8_t res[6];
+	uint64_t sci;
+};
+
+struct dpni_cmd_secy_get_rx_sa_stats {
+	uint8_t secy_id;
+	uint8_t an;
+	uint8_t res[6];
+	uint64_t sci;
+};
+
+struct dpni_cmd_get_mac_statistics {
+	uint64_t iova_cnt;
+	uint64_t iova_values;
+	uint32_t num_cnt;
 };
 
 #pragma pack(pop)
