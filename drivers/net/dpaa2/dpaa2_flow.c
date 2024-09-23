@@ -5915,7 +5915,7 @@ dpaa2_generic_flow_action_update(struct dpaa2_dev_flow *flow,
 		case RTE_FLOW_ACTION_TYPE_PORT_ID:
 			dest_queue = actions[j].conf;
 			flow->tc_id = dest_queue->index / num_rxqueue_per_tc;
-			tc_key_extract = &priv->extract.qos_key_extract;
+			tc_key_extract = &priv->extract.tc_key_extract[flow->tc_id];
 			for (i = 0; i < priv->fs_entries; i++) {
 				if (!dpaa2_flow_entry_map_get(tc_key_extract->entry_map, i)) {
 					flow->tc_index = i;
