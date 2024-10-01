@@ -951,6 +951,41 @@ PF and VF0 must be owned by kernel while testing.
 	$ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1
 	$ ./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 -P --config="(0,0,1)"
 
+
+Running DPDK as Non-Root User with sudo permission:
+--------------------------------------------------
+
+Step 1: Create and Configure Non-Root User
+
+	1. Create a new user and give sudo permissions:
+
+	$ adduser dpdk_user
+	$ visudo
+
+		Add the following line to give sudo permission:
+
+		dpdk_user ALL=(ALL) ALL
+
+		Save and exit.
+
+	Note: This is a one-time configuration step.
+
+Step 2: Setup Board for Non-Root User (as Root)
+
+	1. Please refer to the following sections in this README and follow the steps as the "root" user to set up the board for non-root user:
+
+		-> Generic steps on i.MX95 before running DPDK: Load kpage_ncache.ko and configure hugepages.
+		-> Multi-queue: Configure multiple queues.
+		-> Running VFs in DPDK: Bind VFs to uio_pci_generic for DPDK.
+
+	2. Switch to the non root user:
+
+		$ su dpdk_user
+
+Step 3: Run DPDK Application using Sudo
+
+	$ sudo dpdk-l2fwd -c 0x3 -- -p 0x3 -T 0
+
 Notes:
 ======
 -> i.MX95 supports jumbo frame, device supports maximum frame size to 2000 Bytes.
