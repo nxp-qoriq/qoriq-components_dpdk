@@ -526,7 +526,7 @@ fm_port_delete_pcd:
 	/* FM PORT DeletePCD */
 	ret = fm_port_delete_pcd(dpaa_intf->port_handle);
 	if (ret != E_OK) {
-		DPAA_PMD_ERR("fm_port_delete_pcd: Failed\n");
+		DPAA_PMD_ERR("fm_port_delete_pcd: Failed");
 		return ret;
 	}
 	return -1;
@@ -704,7 +704,7 @@ static inline int set_fm_port_handle(struct dpaa_if *dpaa_intf,
 	/* FM PORT Open */
 	dpaa_intf->port_handle = fm_port_open(&fm_port_params);
 	if (!dpaa_intf->port_handle) {
-		DPAA_PMD_ERR("fm_port_open: Failed\n");
+		DPAA_PMD_ERR("fm_port_open: Failed");
 		return -1;
 	}
 
@@ -1110,11 +1110,10 @@ int rte_pmd_dpaa_port_set_rate_limit(uint16_t port_id, uint16_t burst,
 	port_rate_limit.max_burst_size = burst;
 	port_rate_limit.rate_limit = rate;
 
-	DPAA_PMD_DEBUG("Setting Rate Limiter for port:%s  Max Burst =%u Max Rate =%u \n",
+	DPAA_PMD_DEBUG("Setting Rate Limiter for port:%s  Max Burst =%u Max Rate =%u\n",
 		       dpaa_intf->name, burst, rate);
 
 	if (!dpaa_intf->port_handle) {
-
 		t_fm_port_params fm_port_params;
 
 		/* Memset FM port params */
@@ -1129,14 +1128,15 @@ int rte_pmd_dpaa_port_set_rate_limit(uint16_t port_id, uint16_t burst,
 		handle = fm_port_open(&fm_port_params);
 		fm_close(fm_port_params.h_fm);
 		if (!handle) {
-			DPAA_PMD_ERR("%s: Can't open handle %p \n",
-				     __FUNCTION__, fm_info.fman_handle);
+			DPAA_PMD_ERR("Can't open handle %p\n",
+				     fm_info.fman_handle);
 			return -ENODEV;
 		}
 
 		port_handle_exists = false;
-	} else
+	} else {
 		handle = dpaa_intf->port_handle;
+	}
 
 	if (burst == 0 || rate == 0)
 		ret = fm_port_delete_rate_limit(handle);
@@ -1144,15 +1144,13 @@ int rte_pmd_dpaa_port_set_rate_limit(uint16_t port_id, uint16_t burst,
 		ret = fm_port_set_rate_limit(handle, &port_rate_limit);
 
 	if (ret) {
-		DPAA_PMD_ERR("%s: Failed to set rate limit ret = %#x\n",
-			     __FUNCTION__, -ret);
+		DPAA_PMD_ERR("Failed to set rate limit ret = %#x\n", -ret);
 		if (!port_handle_exists)
 			fm_port_close(handle);
 		return -ret;
 	}
 
-	DPAA_PMD_DEBUG("%s: FM_PORT_SetRateLimit ret = %#x\n",
-		       __FUNCTION__, -ret);
+	DPAA_PMD_DEBUG("FM_PORT_SetRateLimit ret = %#x\n", -ret);
 
 	if (!port_handle_exists)
 		fm_port_close(handle);

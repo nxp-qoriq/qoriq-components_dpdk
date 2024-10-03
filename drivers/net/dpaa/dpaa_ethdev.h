@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2014-2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017-2023 NXP
+ *   Copyright 2017-2024 NXP
  *
  */
 #ifndef __DPAA_ETHDEV_H__
@@ -119,6 +119,7 @@ enum {
 #define FMC_FILE "/tmp/fmc.bin"
 
 extern struct rte_mempool *dpaa_tx_sg_pool;
+extern int dpaa_ieee_1588;
 
 /* PMD related logs */
 extern int dpaa_logtype_pmd;
@@ -245,6 +246,10 @@ struct dpaa_if_rx_bmi_stats {
 };
 
 int
+dpaa_timesync_read_tx_timestamp(struct rte_eth_dev *dev,
+		struct timespec *timestamp);
+
+int
 dpaa_timesync_enable(struct rte_eth_dev *dev);
 
 int
@@ -259,10 +264,6 @@ dpaa_timesync_write_time(struct rte_eth_dev *dev,
 		const struct timespec *timestamp);
 int
 dpaa_timesync_adjust_time(struct rte_eth_dev *dev, int64_t delta);
-
-int
-dpaa_timesync_read_tx_timestamp(struct rte_eth_dev *dev,
-		struct timespec *timestamp);
 
 int
 dpaa_timesync_read_rx_timestamp(struct rte_eth_dev *dev,

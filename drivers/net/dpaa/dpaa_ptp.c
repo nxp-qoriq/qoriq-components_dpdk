@@ -116,4 +116,3 @@ dpaa_timesync_read_rx_timestamp(struct rte_eth_dev *dev,
 	*timestamp = rte_ns_to_timespec(dpaa_intf->rx_timestamp);
 	return 0;
 }
-
