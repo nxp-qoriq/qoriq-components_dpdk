@@ -749,6 +749,13 @@ enetc4_dev_configure(struct rte_eth_dev *dev)
 		}
 	}
 
+	/* Disable and reset RX and TX rings */
+	for (i = 0; i < dev->data->nb_rx_queues; i++)
+		enetc4_rxbdr_wr(enetc_hw, i, ENETC_RBMR, ENETC_BMR_RESET);
+
+	for (i = 0; i < dev->data->nb_tx_queues; i++)
+		enetc4_rxbdr_wr(enetc_hw, i, ENETC_TBMR, ENETC_BMR_RESET);
+
 	if (dev->data->nb_rx_queues <= 1)
 		return 0;
 
