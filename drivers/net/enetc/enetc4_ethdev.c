@@ -7,6 +7,7 @@
 #include <rte_random.h>
 #include <dpaax_iova_table.h>
 #include <kpage_ncache_api.h>
+#include <rte_kvargs.h>
 #include "enetc_logs.h"
 #include "enetc.h"
 
@@ -21,6 +22,57 @@ static uint64_t dev_tx_offloads_sup =
 	RTE_ETH_TX_OFFLOAD_IPV4_CKSUM |
 	RTE_ETH_TX_OFFLOAD_UDP_CKSUM |
 	RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
+
+#define ENETC4_TXQ_PRIORITIES "enetc4_txq_prior"
+
+static int parse_txq_prior(const char *key __rte_unused, const char *value,
+				void *opaque)
+{
+	struct rte_eth_dev *dev = (struct rte_eth_dev*)opaque;
+	struct enetc_eth_hw *hw =
+				ENETC_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+	char *input_str = strdup(value);
+	char *str;
+	uint32_t i = 0;
+
+	hw->txq_prior = rte_zmalloc(NULL, hw->max_tx_queues * sizeof(uint32_t), 0);
+	str = strtok(input_str, "|");
+	while (str != NULL && i < hw->max_tx_queues) {
+		hw->txq_prior[i++] = atoi(str);
+		str = strtok(NULL, "|");
+	}
+
+	return 0;
+}
+
+static int
+enetc4_get_devargs(struct rte_eth_dev *dev, const char *key)
+{
+	struct rte_devargs *devargs;
+	struct rte_kvargs *kvlist;
+
+	devargs = dev->device->devargs;
+	if (!devargs)
+		return 0;
+
+	kvlist = rte_kvargs_parse(devargs->args, NULL);
+	if (!kvlist)
+		return 0;
+
+	if (!rte_kvargs_count(kvlist, key)) {
+		rte_kvargs_free(kvlist);
+		return 0;
+	}
+
+	if (rte_kvargs_process(kvlist, key,
+					parse_txq_prior, (void *)dev) < 0) {
+		rte_kvargs_free(kvlist);
+		return -1;
+	}
+	rte_kvargs_free(kvlist);
+
+	return 1;
+}
 
 static int
 enetc4_dev_start(struct rte_eth_dev *dev)
@@ -325,6 +377,7 @@ enetc4_tx_queue_setup(struct rte_eth_dev *dev,
 	struct rte_eth_dev_data *data = dev->data;
 	struct enetc_eth_adapter *priv =
 			ENETC_DEV_PRIVATE(data->dev_private);
+	uint32_t tx_data;
 
 	PMD_INIT_FUNC_TRACE();
 	if (nb_desc > MAX_BD_COUNT)
@@ -345,10 +398,14 @@ enetc4_tx_queue_setup(struct rte_eth_dev *dev,
 	tx_ring->ndev = dev;
 	enetc4_setup_txbdr(&priv->hw.hw, tx_ring);
 	data->tx_queues[queue_idx] = tx_ring;
+
 	if (!tx_conf->tx_deferred_start) {
+		tx_data = ENETC_TBMR_EN;
+		if (priv->hw.txq_prior)
+			tx_data |= priv->hw.txq_prior[tx_ring->index];
 		/* enable ring */
 		enetc4_txbdr_wr(&priv->hw.hw, tx_ring->index,
-			       ENETC_TBMR, ENETC_TBMR_EN);
+			       ENETC_TBMR, tx_data);
 		dev->data->tx_queue_state[tx_ring->index] =
 			       RTE_ETH_QUEUE_STATE_STARTED;
 	} else {
@@ -756,6 +813,8 @@ enetc4_dev_configure(struct rte_eth_dev *dev)
 	for (i = 0; i < dev->data->nb_tx_queues; i++)
 		enetc4_rxbdr_wr(enetc_hw, i, ENETC_TBMR, ENETC_BMR_RESET);
 
+	enetc4_get_devargs(dev, ENETC4_TXQ_PRIORITIES);
+
 	if (dev->data->nb_rx_queues <= 1)
 		return 0;
 
@@ -873,6 +932,8 @@ enetc4_tx_queue_start(struct rte_eth_dev *dev, uint16_t qidx)
 		tx_data = enetc4_txbdr_rd(&priv->hw.hw, tx_ring->index,
 					 ENETC_TBMR);
 		tx_data = tx_data | ENETC_TBMR_EN;
+		if (priv->hw.txq_prior)
+			tx_data |=  priv->hw.txq_prior[tx_ring->index];
 		enetc4_txbdr_wr(&priv->hw.hw, tx_ring->index, ENETC_TBMR,
 			       tx_data);
 		dev->data->tx_queue_state[qidx] = RTE_ETH_QUEUE_STATE_STARTED;
@@ -1064,5 +1125,7 @@ static struct rte_pci_driver rte_enetc4_pmd = {
 
 RTE_PMD_REGISTER_PCI(net_enetc4, rte_enetc4_pmd);
 RTE_PMD_REGISTER_PCI_TABLE(net_enetc4, pci_id_enetc4_map);
+RTE_PMD_REGISTER_PARAM_STRING(net_enetc4,
+				ENETC4_TXQ_PRIORITIES "=<string>");
 RTE_PMD_REGISTER_KMOD_DEP(net_enetc4, "* vfio-pci");
 RTE_LOG_REGISTER_DEFAULT(enetc4_logtype_pmd, NOTICE);
