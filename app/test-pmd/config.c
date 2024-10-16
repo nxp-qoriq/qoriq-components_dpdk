@@ -68,6 +68,8 @@
 
 #define NS_PER_SEC 1E9
 
+uint8_t txonly_vlan_multiq_enable = 0; /**< disabled by default. */
+
 static const struct {
 	enum tx_pkt_split split;
 	const char *name;
@@ -4385,11 +4387,15 @@ static void
 simple_fwd_config_setup(void)
 {
 	portid_t i;
+	struct fwd_stream *fs;
+	struct rte_port *port;
+	int j, k;
 
 	cur_fwd_config.nb_fwd_ports = (portid_t) nb_fwd_ports;
 	cur_fwd_config.nb_fwd_streams =
 		(streamid_t) cur_fwd_config.nb_fwd_ports;
-
+	if (txonly_vlan_multiq_enable)
+		cur_fwd_config.nb_fwd_streams = (streamid_t) (nb_txq * cur_fwd_config.nb_fwd_ports);
 	/* reinitialize forwarding streams */
 	init_fwd_streams();
 
@@ -4398,9 +4404,10 @@ simple_fwd_config_setup(void)
 	 * must be lower or equal to the number of forwarding ports.
 	 */
 	cur_fwd_config.nb_fwd_lcores = (lcoreid_t) nb_fwd_lcores;
-	if (cur_fwd_config.nb_fwd_lcores > cur_fwd_config.nb_fwd_ports)
+	if (cur_fwd_config.nb_fwd_lcores > cur_fwd_config.nb_fwd_ports && !txonly_vlan_multiq_enable){
 		cur_fwd_config.nb_fwd_lcores =
 			(lcoreid_t) cur_fwd_config.nb_fwd_ports;
+	}
 	setup_fwd_config_of_each_lcore(&cur_fwd_config);
 
 	for (i = 0; i < cur_fwd_config.nb_fwd_ports; i++) {
@@ -4411,6 +4418,27 @@ simple_fwd_config_setup(void)
 		fwd_streams[i]->tx_queue  = 0;
 		fwd_streams[i]->peer_addr = fwd_streams[i]->tx_port;
 		fwd_streams[i]->retry_enabled = retry_enabled;
+	}
+	if (txonly_vlan_multiq_enable) {
+		for (i = 0; i < cur_fwd_config.nb_fwd_lcores; i++){
+			k = 0;
+			for(j = 0; j< fwd_lcores[i]->stream_nb; j++) {
+				if (k > cur_fwd_config.nb_fwd_ports) {
+					TESTPMD_LOG(ERR, "Configuration issue");
+					break;
+				}
+				fs = fwd_streams[fwd_lcores[i]->stream_idx + j];
+				fs->rx_port   = fwd_ports_ids[k];
+				fs->rx_queue  = 0;
+				fs->tx_port   =
+						fwd_ports_ids[fwd_topology_tx_port_get(k)];
+				port = &ports[fs->tx_port];
+				fs->tx_queue  = port->core_to_queue_map[i];
+				fs->peer_addr = fwd_streams[k]->tx_port;
+				fs->retry_enabled = retry_enabled;
+				k++;
+			}
+		}
 	}
 }
 

@@ -64,6 +64,30 @@ static int32_t timestamp_off; /**< Timestamp dynamic field offset */
 static bool timestamp_enable; /**< Timestamp enable */
 static uint64_t timestamp_initial[RTE_MAX_ETHPORTS];
 
+#define VLAN_PCP_OFFSET		13
+#define VLAN_DEI_OFFSET		12
+#define VLAN_VID_MASK		0x0FFF
+#define VLAN_DEI_VAL		0
+#define VLAN_VLAN_ID_VAL	100
+
+static uint32_t vlan_header_size;
+
+static uint16_t
+set_vlan_tci_val(portid_t tx_port)
+{
+	uint16_t vlan_pcp, vlan_dei, vlan_vid, vlan_tci;
+	int core = rte_lcore_id();
+	struct rte_port *txp;
+
+	txp = &ports[tx_port];
+	vlan_pcp = ((txp->core_to_queue_map[core] & 0x7) << VLAN_PCP_OFFSET);
+	vlan_dei = VLAN_DEI_VAL << VLAN_DEI_OFFSET;
+	vlan_vid = VLAN_VLAN_ID_VAL & VLAN_VID_MASK;
+	vlan_tci = vlan_pcp | vlan_dei | vlan_vid;
+
+	return vlan_tci;
+}
+
 static void
 copy_buf_to_pkt_segs(void* buf, unsigned len, struct rte_mbuf *pkt,
 		     unsigned offset)
@@ -167,18 +191,22 @@ update_pkt_header(struct rte_mbuf *pkt, uint32_t total_pkt_len)
 
 	pkt_data_len = (uint16_t) (total_pkt_len - (
 					sizeof(struct rte_ether_hdr) +
+					vlan_header_size +
 					sizeof(struct rte_ipv4_hdr) +
 					sizeof(struct rte_udp_hdr)));
+
 	/* update UDP packet length */
 	udp_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_udp_hdr *,
-				sizeof(struct rte_ether_hdr) +
-				sizeof(struct rte_ipv4_hdr));
+					sizeof(struct rte_ether_hdr) +
+					vlan_header_size +
+					sizeof(struct rte_ipv4_hdr));
+
 	pkt_len = (uint16_t) (pkt_data_len + sizeof(struct rte_udp_hdr));
 	udp_hdr->dgram_len = RTE_CPU_TO_BE_16(pkt_len);
 
 	/* update IP packet length and checksum */
 	ip_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ipv4_hdr *,
-				sizeof(struct rte_ether_hdr));
+				sizeof(struct rte_ether_hdr) + vlan_header_size);
 	ip_hdr->hdr_checksum = 0;
 	pkt_len = (uint16_t) (pkt_len + sizeof(struct rte_ipv4_hdr));
 	ip_hdr->total_length = RTE_CPU_TO_BE_16(pkt_len);
@@ -195,6 +223,7 @@ pkt_burst_prepare(struct rte_mbuf *pkt, struct rte_mempool *mbp,
 	struct rte_mbuf *pkt_seg;
 	uint32_t nb_segs, pkt_len;
 	uint8_t i;
+	struct rte_vlan_hdr *vlan_hdr;
 
 	if (unlikely(tx_pkt_split == TX_PKT_SPLIT_RND))
 		nb_segs = rte_rand() % tx_pkt_nb_segs + 1;
@@ -212,8 +241,8 @@ pkt_burst_prepare(struct rte_mbuf *pkt, struct rte_mempool *mbp,
 	pkt->ol_flags |= ol_flags;
 	pkt->vlan_tci = vlan_tci;
 	pkt->vlan_tci_outer = vlan_tci_outer;
-	pkt->l2_len = sizeof(struct rte_ether_hdr);
 	pkt->l3_len = sizeof(struct rte_ipv4_hdr);
+	pkt->l2_len = sizeof(struct rte_ether_hdr) + vlan_header_size;
 
 	pkt_len = pkt->data_len;
 	pkt_seg = pkt;
@@ -224,12 +253,25 @@ pkt_burst_prepare(struct rte_mbuf *pkt, struct rte_mempool *mbp,
 		pkt_len += pkt_seg->data_len;
 	}
 	pkt_seg->next = NULL; /* Last segment of packet. */
+
+	if (txonly_vlan_multiq_enable) {
+		eth_hdr->ether_type =  rte_cpu_to_be_16(RTE_ETHER_TYPE_VLAN);
+	}
 	/*
 	 * Copy headers in first packet segment(s).
 	 */
 	copy_buf_to_pkt(eth_hdr, sizeof(*eth_hdr), pkt, 0);
 	copy_buf_to_pkt(&pkt_ip_hdr, sizeof(pkt_ip_hdr), pkt,
-			sizeof(struct rte_ether_hdr));
+				sizeof(struct rte_ether_hdr));
+
+	if (txonly_vlan_multiq_enable) {
+		vlan_hdr = (struct rte_vlan_hdr *)rte_pktmbuf_mtod_offset(pkt, char *, sizeof(struct rte_ether_hdr));
+		vlan_hdr->vlan_tci = rte_cpu_to_be_16(set_vlan_tci_val(fs->tx_port));
+		vlan_hdr->eth_proto = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
+		copy_buf_to_pkt(&pkt_ip_hdr, sizeof(pkt_ip_hdr), pkt,
+				sizeof(struct rte_ether_hdr) + sizeof(struct rte_vlan_hdr));
+	}
+
 	if (txonly_multi_flow) {
 		uint8_t  ip_var = RTE_PER_LCORE(_ip_var);
 		struct rte_ipv4_hdr *ip_hdr;
@@ -237,7 +279,7 @@ pkt_burst_prepare(struct rte_mbuf *pkt, struct rte_mempool *mbp,
 
 		ip_hdr = rte_pktmbuf_mtod_offset(pkt,
 				struct rte_ipv4_hdr *,
-				sizeof(struct rte_ether_hdr));
+				sizeof(struct rte_ether_hdr) + vlan_header_size);
 		/*
 		 * Generate multiple flows by varying IP src addr. This
 		 * enables packets are well distributed by RSS in
@@ -251,6 +293,7 @@ pkt_burst_prepare(struct rte_mbuf *pkt, struct rte_mempool *mbp,
 	}
 	copy_buf_to_pkt(&pkt_udp_hdr, sizeof(pkt_udp_hdr), pkt,
 			sizeof(struct rte_ether_hdr) +
+			vlan_header_size +
 			sizeof(struct rte_ipv4_hdr));
 
 	if (unlikely(tx_pkt_split == TX_PKT_SPLIT_RND) || txonly_multi_flow)
@@ -305,8 +348,10 @@ pkt_burst_prepare(struct rte_mbuf *pkt, struct rte_mempool *mbp,
 		} else {
 			timestamp_mark.ts = RTE_BE64(0);
 		}
+
 		copy_buf_to_pkt(&timestamp_mark, sizeof(timestamp_mark), pkt,
 			sizeof(struct rte_ether_hdr) +
+			vlan_header_size +
 			sizeof(struct rte_ipv4_hdr) +
 			sizeof(pkt_udp_hdr));
 	}
@@ -436,8 +481,9 @@ tx_only_begin(portid_t pi)
 	int dynf;
 
 	pkt_hdr_len = (uint16_t)(sizeof(struct rte_ether_hdr) +
-				 sizeof(struct rte_ipv4_hdr) +
-				 sizeof(struct rte_udp_hdr));
+				vlan_header_size +
+				sizeof(struct rte_ipv4_hdr) +
+				sizeof(struct rte_udp_hdr));
 	pkt_data_len = tx_pkt_length - pkt_hdr_len;
 
 	if ((tx_pkt_split == TX_PKT_SPLIT_RND || txonly_multi_flow) &&
@@ -506,6 +552,8 @@ tx_only_begin(portid_t pi)
 static void
 tx_only_stream_init(struct fwd_stream *fs)
 {
+	if (txonly_vlan_multiq_enable)
+		vlan_header_size = sizeof(struct rte_vlan_hdr);
 	fs->disabled = ports[fs->tx_port].txq[fs->tx_queue].state ==
 						RTE_ETH_QUEUE_STATE_STOPPED;
 }

@@ -340,6 +340,7 @@ struct rte_port {
 	uint64_t		mbuf_dynf;
 	const struct rte_eth_rxtx_callback *tx_set_dynf_cb[RTE_MAX_QUEUES_PER_PORT+1];
 	struct xstat_display_info xstats_info;
+	unsigned int core_to_queue_map[RTE_MAX_LCORE];
 };
 
 /**
@@ -470,6 +471,7 @@ extern uint8_t record_burst_stats; /**< Enables display of RX and TX bursts */
 extern uint16_t verbose_level; /**< Drives messages being displayed, if any. */
 extern int testpmd_logtype; /**< Log type for testpmd logs */
 extern uint8_t  interactive;
+extern uint8_t  txonly_vlan_multiq_enable;
 extern uint8_t  auto_start;
 extern uint8_t  tx_first;
 extern char cmdline_filename[PATH_MAX]; /**< offline commands file */
