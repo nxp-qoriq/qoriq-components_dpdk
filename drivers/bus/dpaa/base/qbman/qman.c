@@ -2347,6 +2347,75 @@ int qman_enqueue_multi(struct qman_fq *fq,
 }
 
 int
+qman_enqueue_multi_orp(struct qman_fq *fq,
+	const struct qm_fd *fd, struct qman_fq *orp,
+	uint32_t *flags, uint16_t *orp_seqnum,
+	int frames_to_send)
+{
+	struct qman_portal *p = get_affine_portal();
+	struct qm_portal *portal = &p->p;
+
+	register struct qm_eqcr *eqcr = &portal->eqcr;
+	struct qm_eqcr_entry *eq = eqcr->cursor;
+
+	uint8_t i = 0, diff, old_ci, sent = 0;
+	uint8_t eq_verbs;
+
+	if (unlikely(!orp || !orp_seqnum || fq->force_ooo))
+		return qman_enqueue_multi(fq, fd, flags, frames_to_send);
+
+	if (!eqcr->available) {
+		old_ci = eqcr->ci;
+		eqcr->ci = qm_cl_in(EQCR_CI) & (QM_EQCR_SIZE - 1);
+		diff = qm_cyc_diff(QM_EQCR_SIZE, old_ci, eqcr->ci);
+		eqcr->available += diff;
+		if (!diff)
+			return 0;
+	}
+
+	/* try to send as many frames as possible */
+	while (eqcr->available && frames_to_send--) {
+		eq->fqid = fq->fqid_le;
+		eq->fd.opaque_addr = fd->opaque_addr;
+		eq->fd.addr = cpu_to_be40(fd->addr);
+		eq->fd.status = cpu_to_be32(fd->status);
+		eq->fd.opaque = cpu_to_be32(fd->opaque);
+
+		eq->orp = orp->fqid_le;
+		if (flags && flags[i] & QMAN_ENQUEUE_FLAG_NLIS) {
+			orp_seqnum[i] |= QM_EQCR_SEQNUM_NLIS;
+		} else if (flags) {
+			orp_seqnum[i] &= ~QM_EQCR_SEQNUM_NLIS;
+			if (flags[i] & QMAN_ENQUEUE_FLAG_NESN)
+				orp_seqnum[i] |= QM_EQCR_SEQNUM_NESN;
+			else
+				orp_seqnum[i] &= ~QM_EQCR_SEQNUM_NESN;
+		}
+		eq->seqnum = cpu_to_be16(orp_seqnum[i]);
+		eq_verbs = QM_EQCR_VERB_ORP | eqcr->vbit;
+		if (likely(!flags || (~(flags[i] & (QMAN_ENQUEUE_FLAG_HOLE |
+			QMAN_ENQUEUE_FLAG_NESN)))))
+			eq_verbs |= QM_EQCR_VERB_CMD_ENQUEUE;
+
+		eq->__dont_write_directly__verb = eq_verbs;
+		dcbf(eq);
+		lwsync();
+		i++;
+		eq++;
+		if (unlikely(eq >= (eqcr->ring + QM_EQCR_SIZE))) {
+			eqcr->vbit ^= QM_EQCR_VERB_VBIT;
+			eq = eqcr->ring;
+		}
+		eqcr->available--;
+		sent++;
+		fd++;
+	}
+
+	eqcr->cursor = eq;
+	return sent;
+}
+
+int
 qman_enqueue_multi_fq(struct qman_fq *fq[], const struct qm_fd *fd,
 		      u32 *flags, int frames_to_send)
 {
@@ -2422,6 +2491,9 @@ int qman_enqueue_orp(struct qman_fq *fq, const struct qm_fd *fd, u32 flags,
 {
 	struct qman_portal *p  = get_affine_portal();
 	struct qm_eqcr_entry *eq;
+
+	if (unlikely(fq->force_ooo))
+		return qman_enqueue(fq, fd, flags);
 
 	eq = try_p_eq_start(p, fq, fd, flags);
 	if (!eq)

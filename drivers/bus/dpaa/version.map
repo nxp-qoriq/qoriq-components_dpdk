@@ -76,6 +76,7 @@ INTERNAL {
 	qman_enqueue;
 	qman_enqueue_multi;
 	qman_enqueue_multi_fq;
+	qman_enqueue_multi_orp;
 	qman_ern_poll_free;
 	qman_ern_register_cb;
 	qman_fq_fqid;
