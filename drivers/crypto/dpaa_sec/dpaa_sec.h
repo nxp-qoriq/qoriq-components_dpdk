@@ -144,6 +144,16 @@ typedef struct dpaa_sec_job* (*dpaa_sec_build_raw_dp_fd_t)(uint8_t *drv_ctx,
 			void *userdata,
 			struct qm_fd *fd);
 
+struct dpaa_ipv4_udp {
+	struct ip ip4_hdr;
+	struct rte_udp_hdr udp_hdr;
+};
+
+struct dpaa_ipv6_udp {
+	struct rte_ipv6_hdr ip6_hdr;
+	struct rte_udp_hdr udp_hdr;
+};
+
 typedef struct dpaa_sec_session_entry {
 	struct sec_cdb cdb;	/**< cmd block associated with qp */
 	struct dpaa_sec_qp *qp[MAX_DPAA_CORES];
@@ -194,6 +204,8 @@ typedef struct dpaa_sec_session_entry {
 			union {
 				struct ip ip4_hdr;
 				struct rte_ipv6_hdr ip6_hdr;
+				struct dpaa_ipv4_udp udp4;
+				struct dpaa_ipv6_udp udp6;
 			};
 			uint8_t auth_cipher_text;
 				/**< Authenticate/cipher ordering */
@@ -1031,6 +1043,7 @@ static const struct rte_security_capability dpaa_sec_security_cap[] = {
 				.dec_ttl = 1,
 				.ecn = 1,
 				.esn = 1,
+				.udp_encap = 1,
 			},
 			.replay_win_sz_max = 128
 		},
@@ -1049,6 +1062,7 @@ static const struct rte_security_capability dpaa_sec_security_cap[] = {
 				.dec_ttl = 1,
 				.ecn = 1,
 				.esn = 1,
+				.udp_encap = 1,
 			},
 			.replay_win_sz_max = 128
 		},
