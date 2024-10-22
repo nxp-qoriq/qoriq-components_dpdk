@@ -181,8 +181,9 @@ dpaa2_dev_rx_parse_slow(struct rte_mbuf *mbuf,
 	uint32_t pkt_type = RTE_PTYPE_UNKNOWN;
 	uint16_t *vlan_tci;
 
-	DPAA2_PMD_DP_DEBUG("Annotation word3 = 0x%lx, word4 = 0x%lx\n",
-		annotation->word3, annotation->word4);
+	DPAA2_PMD_DP_DEBUG("(slow parse)annotation(3)=0x%" PRIx64 "\t"
+			"(4)=0x%" PRIx64 "\t",
+			annotation->word3, annotation->word4);
 
 #if defined(RTE_LIBRTE_IEEE1588)
 	if (BIT_ISSET_AT_POS(annotation->word1, DPAA2_ETH_FAS_PTP)) {
@@ -280,8 +281,8 @@ dpaa2_dev_rx_parse(struct rte_mbuf *mbuf, void *hw_annot_addr)
 {
 	struct dpaa2_annot_hdr *annotation = hw_annot_addr;
 
-	DPAA2_PMD_DP_DEBUG("Annotation word4 = 0x%lx\n",
-		annotation->word4);
+	DPAA2_PMD_DP_DEBUG("(fast parse) Annotation = 0x%" PRIx64 "\t",
+			   annotation->word4);
 
 	if (unlikely(dpaa2_print_parser_result))
 		dpaa2_print_parse_result(annotation);
@@ -467,7 +468,7 @@ eth_fd_to_mbuf(const struct qbman_fd *fd,
 	dpaa2_parse_result_offset(mbuf, hw_annot_addr);
 
 	DPAA2_PMD_DP_DEBUG("to mbuf - mbuf =%p, mbuf->buf_addr =%p, off = %d,"
-		"fd_off=%d fd =%" PRIx64 ", meta = %d  bpid =%d, len=%d\n",
+		"fd_off=%d fd =%" PRIx64 ", meta = %d  bpid =%d, len=%d",
 		mbuf, mbuf->buf_addr, mbuf->data_off,
 		DPAA2_GET_FD_OFFSET(fd), DPAA2_GET_FD_ADDR(fd),
 		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
@@ -514,7 +515,7 @@ eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	} else {
 		temp = rte_pktmbuf_alloc(dpaa2_tx_sg_pool);
 		if (temp == NULL) {
-			DPAA2_PMD_DP_DEBUG("No memory to allocate S/G table\n");
+			DPAA2_PMD_DP_DEBUG("No memory to allocate S/G table");
 			return -ENOMEM;
 		}
 		DPAA2_SET_ONLY_FD_BPID(fd, mempool_to_bpid(dpaa2_tx_sg_pool));
@@ -629,7 +630,7 @@ eth_mbuf_to_fd(struct rte_mbuf *mbuf,
 	DPAA2_MBUF_TO_CONTIG_FD(mbuf, fd, bpid);
 
 	DPAA2_PMD_DP_DEBUG("mbuf =%p, mbuf->buf_addr =%p, off = %d,"
-		"fd_off=%d fd =%" PRIx64 ", meta = %d  bpid =%d, len=%d\n",
+		"fd_off=%d fd =%" PRIx64 ", meta = %d  bpid =%d, len=%d",
 		mbuf, mbuf->buf_addr, mbuf->data_off,
 		DPAA2_GET_FD_OFFSET(fd), DPAA2_GET_FD_ADDR(fd),
 		rte_dpaa2_bpid_info[DPAA2_GET_FD_BPID(fd)].meta_data_size,
@@ -673,7 +674,7 @@ eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
 
 	if (rte_dpaa2_mbuf_alloc_bulk(
 		rte_dpaa2_bpid_info[bpid].bp_list->mp, &mb, 1)) {
-		DPAA2_PMD_DP_DEBUG("Unable to allocated DPAA2 buffer\n");
+		DPAA2_PMD_DP_DEBUG("Unable to allocated DPAA2 buffer");
 		return -1;
 	}
 	m = (struct rte_mbuf *)mb;
@@ -695,7 +696,7 @@ eth_copy_mbuf_to_fd(struct rte_mbuf *mbuf,
 #endif
 	DPAA2_PMD_DP_DEBUG(
 		"mbuf: %p, BMAN buf addr: %p, fdaddr: %" PRIx64 ", bpid: %d,"
-		" meta: %d, off: %d, len: %d\n",
+		" meta: %d, off: %d, len: %d",
 		(void *)mbuf,
 		mbuf->buf_addr,
 		DPAA2_GET_FD_ADDR(fd),
@@ -728,7 +729,7 @@ dump_err_pkts(struct dpaa2_queue *dpaa2_q)
 	if (unlikely(!DPAA2_PER_LCORE_DPIO)) {
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
-			DPAA2_PMD_ERR("Failed to allocate IO portal, tid: %d\n",
+			DPAA2_PMD_ERR("Failed to allocate IO portal, tid: %d",
 				rte_gettid());
 			return;
 		}
@@ -744,7 +745,7 @@ dump_err_pkts(struct dpaa2_queue *dpaa2_q)
 
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
-			DPAA2_PMD_DP_DEBUG("VDQ command is not issued.QBMAN is busy\n");
+			DPAA2_PMD_DP_DEBUG("VDQ command is not issued.QBMAN is busy");
 			/* Portal was busy, try again */
 			continue;
 		}
@@ -881,7 +882,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc)) {
 				DPAA2_PMD_DP_DEBUG("VDQ command is not issued."
-						  " QBMAN is busy (1)\n");
+						  " QBMAN is busy (1)");
 				/* Portal was busy, try again */
 				continue;
 			}
@@ -976,7 +977,7 @@ dpaa2_dev_prefetch_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
 			DPAA2_PMD_DP_DEBUG("VDQ command is not issued."
-					  "QBMAN is busy (2)\n");
+					  "QBMAN is busy (2)");
 			continue;
 		}
 		break;
@@ -1076,7 +1077,7 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			DPAA2_PMD_ERR(
-				"Failed to allocate IO portal, tid: %d\n",
+				"Failed to allocate IO portal, tid: %d",
 				rte_gettid());
 			return 0;
 		}
@@ -1101,7 +1102,8 @@ dpaa2_dev_rx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc)) {
-				DPAA2_PMD_DP_DEBUG("QBMAN is busy\n");
+				DPAA2_PMD_DP_DEBUG(
+					"VDQ command is not issued.QBMAN is busy");
 				/* Portal was busy, try again */
 				continue;
 			}
@@ -1195,7 +1197,7 @@ uint16_t dpaa2_dev_tx_conf(void *queue)
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			DPAA2_PMD_ERR(
-				"Failed to allocate IO portal, tid: %d\n",
+				"Failed to allocate IO portal, tid: %d",
 				rte_gettid());
 			return 0;
 		}
@@ -1213,7 +1215,8 @@ uint16_t dpaa2_dev_tx_conf(void *queue)
 
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc)) {
-				DPAA2_PMD_DP_DEBUG("QBMAN is busy\n");
+				DPAA2_PMD_DP_DEBUG("VDQ command is not issued."
+						   "QBMAN is busy");
 				/* Portal was busy, try again */
 				continue;
 			}
@@ -1687,14 +1690,14 @@ dpaa2_dev_tx(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			DPAA2_PMD_ERR(
-				"Failed to allocate IO portal, tid: %d\n",
+				"Failed to allocate IO portal, tid: %d",
 				rte_gettid());
 			return 0;
 		}
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
 
-	DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d\n",
+	DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d",
 			eth_data, dpaa2_q->fqid);
 
 #if (!defined DPAA2_TX_CONF) || (!defined RTE_LIBRTE_IEEE1588)
@@ -2250,7 +2253,7 @@ dpaa2_dev_tx_multi_txq_ordered(void **queue,
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			DPAA2_PMD_ERR(
-				"Failed to allocate IO portal, tid: %d\n",
+				"Failed to allocate IO portal, tid: %d",
 				rte_gettid());
 			return 0;
 		}
@@ -2275,7 +2278,7 @@ dpaa2_dev_tx_multi_txq_ordered(void **queue,
 			}
 		}
 
-		DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d\n",
+		DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d",
 				   eth_data, dpaa2_q[loop]->fqid);
 
 		/* Check if the queue is congested */
@@ -2424,14 +2427,14 @@ dpaa2_dev_tx_ordered(void *queue, struct rte_mbuf **bufs, uint16_t nb_pkts)
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			DPAA2_PMD_ERR(
-				"Failed to allocate IO portal, tid: %d\n",
+				"Failed to allocate IO portal, tid: %d",
 				rte_gettid());
 			return 0;
 		}
 	}
 	swp = DPAA2_PER_LCORE_PORTAL;
 
-	DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d\n",
+	DPAA2_PMD_DP_DEBUG("===> eth_data =%p, fqid =%d",
 			   eth_data, dpaa2_q->fqid);
 
 	/* This would also handle normal and atomic queues as any type
@@ -2667,7 +2670,7 @@ dpaa2_dev_loopback_rx(void *queue,
 		while (1) {
 			if (qbman_swp_pull(swp, &pulldesc)) {
 				DPAA2_PMD_DP_DEBUG(
-					"VDQ command not issued.QBMAN busy\n");
+					"VDQ command not issued.QBMAN busy");
 				/* Portal was busy, try again */
 				continue;
 			}
@@ -2749,7 +2752,7 @@ dpaa2_dev_loopback_rx(void *queue,
 	while (1) {
 		if (qbman_swp_pull(swp, &pulldesc)) {
 			DPAA2_PMD_DP_DEBUG("VDQ command is not issued."
-					  "QBMAN is busy (2)\n");
+					  "QBMAN is busy (2)");
 			continue;
 		}
 		break;

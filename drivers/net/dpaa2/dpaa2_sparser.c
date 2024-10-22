@@ -165,7 +165,7 @@ int dpaa2_eth_load_wriop_soft_parser(struct dpaa2_dev_priv *priv,
 
 	addr = rte_malloc(NULL, sp_param.size, 64);
 	if (!addr) {
-		DPAA2_PMD_ERR("Memory unavailable for soft parser param\n");
+		DPAA2_PMD_ERR("Memory unavailable for soft parser param");
 		return -1;
 	}
 
@@ -221,7 +221,7 @@ int dpaa2_eth_enable_wriop_soft_parser(struct dpaa2_dev_priv *priv,
 	if (cfg.param_size) {
 		param_addr = rte_malloc(NULL, cfg.param_size, 64);
 		if (!param_addr) {
-			DPAA2_PMD_ERR("Memory unavailable for soft parser param\n");
+			DPAA2_PMD_ERR("Memory unavailable for soft parser param");
 			return -1;
 		}
 
