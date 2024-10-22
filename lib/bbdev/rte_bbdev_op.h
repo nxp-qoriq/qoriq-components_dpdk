@@ -932,6 +932,7 @@ struct rte_bbdev_op_ldpc_enc {
 	} mux[RTE_BBDEV_5G_MAX_SYMBOLS];
 
 };
+/* >8 End of structure rte_bbdev_op_ldpc_enc. */
 
 /** Operation structure for FFT processing.
  *

@@ -86,7 +86,7 @@ New Features
 * **Added NXP PFE PMD.**
 
   Added the new PFE driver for the NXP LS1012A platform. See the
-  :doc:`../nics/pfe` NIC driver guide for more details on this new driver.
+  :doc:../nics/pfe NIC driver guide for more details on this new driver.
 
 * **Updated Broadcom bnxt driver.**
 

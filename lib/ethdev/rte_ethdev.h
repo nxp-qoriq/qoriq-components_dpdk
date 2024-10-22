@@ -2426,10 +2426,10 @@ int rte_eth_rx_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
   *
   * Maxmimum supported mempools are 4.
   *
-  * Mempool list @param mb_pool must be ascending order of buffer size
+  * Mempool list *mb_pool* must be ascending order of buffer size
   * supported by mempools i.e. mempool with smallest buffer size should be at
-  * index 0 of @param mb_pool and mempool with largest buffer size should
-  * be at last index of @param mb_pool.
+  * index 0 of *mb_pool* and mempool with largest buffer size should
+  * be at last index of *mb_pool* .
   * This is required so that HW can allocate the best buffer from a pool
   * for the incoming packets.
  * @param port_id
