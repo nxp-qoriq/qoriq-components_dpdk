@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017-2018 NXP
+ * Copyright 2017-2024 NXP
  */
 
 #ifndef CAAM_JR_DESC_H
