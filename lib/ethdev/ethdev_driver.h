@@ -474,17 +474,6 @@ typedef int (*eth_queue_stop_t)(struct rte_eth_dev *dev,
 				    uint16_t queue_id);
 
 /** @internal Set up a receive queue of an Ethernet device. */
-typedef int (*eth_rx_queue_setup_mpool_t)(struct rte_eth_dev *dev,
-					  uint16_t rx_queue_id,
-					  uint16_t nb_rx_desc,
-					  unsigned int socket_id,
-					  const struct rte_eth_rxconf *rx_conf,
-					  struct rte_mempool **mb_pool,
-					  uint16_t nb_mp);
-
-/**< @internal Set up a receive queue of an Ethernet device with
-  * multiple mempools.
-  */
 typedef int (*eth_rx_queue_setup_t)(struct rte_eth_dev *dev,
 				    uint16_t rx_queue_id,
 				    uint16_t nb_rx_desc,
@@ -1262,9 +1251,6 @@ struct eth_dev_ops {
 	eth_queue_stop_t           rx_queue_stop; /**< Stop Rx for a queue */
 	eth_queue_start_t          tx_queue_start;/**< Start Tx for a queue */
 	eth_queue_stop_t           tx_queue_stop; /**< Stop Tx for a queue */
-
-	/** Set up device RX queue */
-	eth_rx_queue_setup_mpool_t rx_queue_setup_mpool;
 	eth_rx_queue_setup_t       rx_queue_setup;/**< Set up device Rx queue */
 	eth_queue_release_t        rx_queue_release; /**< Release Rx queue */
 
