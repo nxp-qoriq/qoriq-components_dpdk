@@ -1777,7 +1777,8 @@ DPAA1:
 				i.e. fmX-macY style. Use this to export the kernel
 				shared interface name to DPDK e.g. export DPAA_SHARED_IF_NAME_0="eth1"
 				(Here the 0 is the DPDK ethernet interface id for this port).
-
+5. FMCLESS_MAX_RX_QUEUES	Maximum number of fmc rx queue to be used.
+	
 DPAA2:
 ------
 
