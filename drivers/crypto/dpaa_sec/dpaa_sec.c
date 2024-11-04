@@ -20,6 +20,7 @@
 #include <dev_driver.h>
 #include <rte_io.h>
 #include <rte_ip.h>
+#include <rte_udp.h>
 #include <rte_kvargs.h>
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
@@ -46,6 +47,7 @@
 #include <dpaax_iova_table.h>
 
 #define DRIVER_DUMP_MODE "drv_dump_mode"
+#define DPAA_DEFAULT_NAT_T_PORT 4500
 
 /* DPAA_SEC_DP_DUMP levels */
 enum dpaa_sec_dump_levels {
@@ -2987,15 +2989,22 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 				RTE_SECURITY_IPSEC_TUNNEL_IPV4) {
 			session->ip4_hdr.ip_v = IPVERSION;
 			session->ip4_hdr.ip_hl = 5;
-			session->ip4_hdr.ip_len = rte_cpu_to_be_16(
-						sizeof(session->ip4_hdr));
+			if (ipsec_xform->options.udp_encap)
+				session->ip4_hdr.ip_len = rte_cpu_to_be_16(
+					sizeof(session->ip4_hdr) + sizeof(struct rte_udp_hdr));
+			else
+				session->ip4_hdr.ip_len = rte_cpu_to_be_16(
+					sizeof(session->ip4_hdr));
 			session->ip4_hdr.ip_tos = ipsec_xform->tunnel.ipv4.dscp;
 			session->ip4_hdr.ip_id = 0;
 			session->ip4_hdr.ip_off = 0;
 			session->ip4_hdr.ip_ttl = ipsec_xform->tunnel.ipv4.ttl;
-			session->ip4_hdr.ip_p = (ipsec_xform->proto ==
-					RTE_SECURITY_IPSEC_SA_PROTO_ESP) ?
-					IPPROTO_ESP : IPPROTO_AH;
+			if (ipsec_xform->options.udp_encap)
+				session->ip4_hdr.ip_p = IPPROTO_UDP;
+			else
+				session->ip4_hdr.ip_p = (ipsec_xform->proto ==
+						RTE_SECURITY_IPSEC_SA_PROTO_ESP) ?
+						IPPROTO_ESP : IPPROTO_AH;
 			session->ip4_hdr.ip_sum = 0;
 			session->ip4_hdr.ip_src =
 					ipsec_xform->tunnel.ipv4.src_ip;
@@ -3019,9 +3028,12 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 			session->ip6_hdr.payload_len = 0;
 			session->ip6_hdr.hop_limits =
 					ipsec_xform->tunnel.ipv6.hlimit;
-			session->ip6_hdr.proto = (ipsec_xform->proto ==
-					RTE_SECURITY_IPSEC_SA_PROTO_ESP) ?
-					IPPROTO_ESP : IPPROTO_AH;
+			if (ipsec_xform->options.udp_encap)
+				session->ip6_hdr.proto = IPPROTO_UDP;
+			else
+				session->ip6_hdr.proto = (ipsec_xform->proto ==
+						RTE_SECURITY_IPSEC_SA_PROTO_ESP) ?
+						IPPROTO_ESP : IPPROTO_AH;
 			memcpy(&session->ip6_hdr.src_addr,
 					&ipsec_xform->tunnel.ipv6.src_addr, 16);
 			memcpy(&session->ip6_hdr.dst_addr,
@@ -3039,10 +3051,42 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 			PDBHMO_ESP_SNR;
 		if (ipsec_xform->options.dec_ttl)
 			session->encap_pdb.options |= PDBHMO_ESP_ENCAP_DTTL;
-		if (ipsec_xform->options.esn)
-			session->encap_pdb.options |= PDBOPTS_ESP_ESN;
 		session->encap_pdb.spi = ipsec_xform->spi;
+		/* Initializing the sequence number to 1, Security
+		 * engine will choose this sequence number for first packet
+		 * Refer: RFC4303 section: 3.3.3.Sequence Number Generation
+		 */
+		session->encap_pdb.seq_num = 1;
+		if (ipsec_xform->options.esn) {
+			session->encap_pdb.options |= PDBOPTS_ESP_ESN;
+			session->encap_pdb.seq_num_ext_hi = conf->ipsec.esn.hi;
+			session->encap_pdb.seq_num = conf->ipsec.esn.low;
+		}
+		if (ipsec_xform->options.udp_encap) {
+			struct rte_udp_hdr *udp_hdr;
 
+			if (ipsec_xform->tunnel.type == RTE_SECURITY_IPSEC_TUNNEL_IPV4)
+				udp_hdr = (struct rte_udp_hdr *)(&session->udp4.udp_hdr);
+			else
+				udp_hdr = (struct rte_udp_hdr *)(&session->udp6.udp_hdr);
+
+			if (ipsec_xform->udp.sport)
+				udp_hdr->src_port = rte_cpu_to_be_16(ipsec_xform->udp.sport);
+			else
+				udp_hdr->src_port = rte_cpu_to_be_16(DPAA_DEFAULT_NAT_T_PORT);
+
+			if (ipsec_xform->udp.dport)
+				udp_hdr->dst_port = rte_cpu_to_be_16(ipsec_xform->udp.dport);
+			else
+				udp_hdr->dst_port = rte_cpu_to_be_16(DPAA_DEFAULT_NAT_T_PORT);
+			udp_hdr->dgram_len = 0;
+			udp_hdr->dgram_cksum = 0;
+
+			session->encap_pdb.ip_hdr_len += sizeof(struct rte_udp_hdr);
+			session->encap_pdb.options |= PDBOPTS_ESP_NAT | PDBOPTS_ESP_NUC;
+		}
+		if (ipsec_xform->options.ecn)
+			session->encap_pdb.options |= PDBOPTS_ESP_TECN;
 #ifdef RTE_LIBRTE_SECURITY_IPSEC_LOOKASIDE_TEST
 		if (cipher_xform) {
 			switch (cipher_xform->algo) {
@@ -3060,13 +3104,31 @@ dpaa_sec_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 #endif
 	} else if (ipsec_xform->direction ==
 			RTE_SECURITY_IPSEC_SA_DIR_INGRESS) {
-		if (ipsec_xform->tunnel.type == RTE_SECURITY_IPSEC_TUNNEL_IPV4)
-			session->decap_pdb.options = sizeof(struct ip) << 16;
-		else
-			session->decap_pdb.options =
-					sizeof(struct rte_ipv6_hdr) << 16;
-		if (ipsec_xform->options.esn)
+		if (ipsec_xform->tunnel.type == RTE_SECURITY_IPSEC_TUNNEL_IPV4) {
+			if (ipsec_xform->options.udp_encap)
+				session->decap_pdb.options =
+					(sizeof(struct ip) + sizeof(struct rte_udp_hdr)) << 16;
+			else
+				session->decap_pdb.options = sizeof(struct ip) << 16;
+			if (ipsec_xform->options.copy_df)
+				session->decap_pdb.options |= PDBHMO_ESP_DFV;
+		} else {
+			if (ipsec_xform->options.udp_encap)
+				session->decap_pdb.options =
+				(sizeof(struct rte_ipv6_hdr) + sizeof(struct rte_udp_hdr)) << 16;
+			else
+				session->decap_pdb.options = sizeof(struct rte_ipv6_hdr) << 16;
+		}
+		if (ipsec_xform->options.esn) {
 			session->decap_pdb.options |= PDBOPTS_ESP_ESN;
+			session->decap_pdb.seq_num_ext_hi = conf->ipsec.esn.hi;
+			session->decap_pdb.seq_num = conf->ipsec.esn.low;
+		}
+		if (ipsec_xform->options.copy_dscp)
+			session->decap_pdb.options |= PDBHMO_ESP_DIFFSERV;
+		if (ipsec_xform->options.ecn)
+			session->decap_pdb.options |= PDBOPTS_ESP_TECN;
+
 		if (ipsec_xform->replay_win_sz) {
 			uint32_t win_sz;
 			win_sz = rte_align32pow2(ipsec_xform->replay_win_sz);
