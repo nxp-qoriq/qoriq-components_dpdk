@@ -147,7 +147,7 @@ static struct rte_devargs *
 dpaa_devargs_lookup(struct rte_dpaa_device *dev)
 {
 	struct rte_devargs *devargs;
-	char dev_name[32];
+	char dev_name[RTE_DEV_NAME_MAX_LEN];
 
 	RTE_EAL_DEVARGS_FOREACH("dpaa_bus", devargs) {
 		devargs->bus->parse(devargs->name, &dev_name);

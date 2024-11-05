@@ -689,6 +689,7 @@ lsxvio_rc_init_queue(struct rte_eth_dev *dev,
 	int queue_type = virtio_get_queue_type(hw, vtpci_queue_idx);
 	int ret;
 	int numa_node = dev->device->numa_node;
+	long page_size;
 
 	LSXVIO_PMD_INFO("%s: set up queue: %u on NUMA node %d",
 			dev->data->name, vtpci_queue_idx, numa_node);
@@ -815,8 +816,9 @@ lsxvio_rc_init_queue(struct rte_eth_dev *dev,
 		cvq->mz = mz;
 		cvq->virtio_net_hdr_mz = hdr_mz;
 		cvq->virtio_net_hdr_mem = hdr_mz->iova;
-		memset(cvq->virtio_net_hdr_mz->addr, 0, PAGE_SIZE);
-
+		page_size = PAGE_SIZE;
+		if (page_size != -1)
+			memset(cvq->virtio_net_hdr_mz->addr, 0, page_size);
 		hw->cvq = cvq;
 	}
 
