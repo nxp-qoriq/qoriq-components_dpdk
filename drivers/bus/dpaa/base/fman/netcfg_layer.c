@@ -29,7 +29,7 @@ static int skfd = -1;
 
 #ifdef RTE_LIBRTE_DPAA_DEBUG_DRIVER
 void
-dump_netcfg(struct netcfg_info *cfg_ptr, File *f)
+dump_netcfg(struct netcfg_info *cfg_ptr, FILE *f)
 {
 	int i;
 
@@ -59,8 +59,7 @@ dump_netcfg(struct netcfg_info *cfg_ptr, File *f)
 
 		if (__if->mac_type != fman_offline_internal) {
 			fprintf(f, "\tfqid_tx_err: 0x%x\n", __if->fqid_tx_err);
-			fprintf(f, "\tfqid_tx_confirm: 0x%x\n",
-			       __if->fqid_tx_confirm);
+			fprintf(f, "\tfqid_tx_confirm: 0x%x\n", __if->fqid_tx_confirm);
 			fman_if_for_each_bpool(bpool, __if)
 				fprintf(f, "\tbuffer pool: (bpid=%d, count=%"PRId64
 				       " size=%"PRId64", addr=0x%"PRIx64")\n",

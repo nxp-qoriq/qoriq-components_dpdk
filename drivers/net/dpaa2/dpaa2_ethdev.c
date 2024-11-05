@@ -751,7 +751,7 @@ dpaa2_dev_rx_queue_setup(struct rte_eth_dev *dev,
 
 	total_nb_rx_desc += nb_rx_desc;
 	if (total_nb_rx_desc > MAX_NB_RX_DESC) {
-		DPAA2_PMD_WARN("\nTotal nb_rx_desc exceeds %d limit. Please use Normal buffers",
+		DPAA2_PMD_WARN("Total nb_rx_desc exceeds %d limit. Please use Normal buffers",
 			       MAX_NB_RX_DESC);
 		DPAA2_PMD_WARN("To use Normal buffers, run 'export DPNI_NORMAL_BUF=1' before running dynamic_dpl.sh script");
 	}
@@ -983,7 +983,7 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	}
 
 	tc_id = tx_queue_id % priv->num_tx_tc;
-	channel_id = (tx_queue_id / priv->num_tx_tc) % priv->num_channels;
+	channel_id = (uint8_t)(tx_queue_id / priv->num_tx_tc) % priv->num_channels;
 	flow_id = 0;
 
 	ret = dpni_set_queue(dpni, CMD_PRI_LOW, priv->token, DPNI_QUEUE_TX,
@@ -1024,8 +1024,8 @@ dpaa2_dev_tx_queue_setup(struct rte_eth_dev *dev,
 		iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(dpaa2_q->cscn,
 			sizeof(struct qbman_result));
 		if (iova == RTE_BAD_IOVA) {
-			DPAA2_PMD_ERR("No IOMMU map for cscn(%p)(size=%lx)",
-				dpaa2_q->cscn, sizeof(struct qbman_result));
+			DPAA2_PMD_ERR("No IOMMU map for cscn(%p)(size=%x)",
+				dpaa2_q->cscn, (uint32_t)sizeof(struct qbman_result));
 
 			return -ENOBUFS;
 		}
@@ -1125,7 +1125,7 @@ dpaa2_dev_rx_queue_count(void *rx_queue)
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			DPAA2_PMD_ERR(
-				"Failed to allocate IO portal, tid: %d\n",
+				"Failed to allocate IO portal, tid: %d",
 				rte_gettid());
 			return -EINVAL;
 		}
@@ -2077,7 +2077,7 @@ dpaa2_dev_link_update(struct rte_eth_dev *dev,
 	if (ret < 0)
 		DPAA2_PMD_DEBUG("No change in status");
 	else
-		DPAA2_PMD_INFO("Port %d Link is %s\n", dev->data->port_id,
+		DPAA2_PMD_INFO("Port %d Link is %s", dev->data->port_id,
 			       link.link_status ? "Up" : "Down");
 
 	return ret;
@@ -2203,8 +2203,8 @@ dpaa2_dev_set_link_down(struct rte_eth_dev *dev)
 		/* todo- we may have to manually cleanup queues.
 		 */
 	} else {
-		DPAA2_PMD_DEBUG("Port %d Link DOWN successful",
-			dev->data->port_id);
+		DPAA2_PMD_INFO("Port %d Link DOWN successful",
+			       dev->data->port_id);
 	}
 
 	dev->data->dev_link.link_status = 0;
@@ -2461,7 +2461,7 @@ int dpaa2_eth_eventq_attach(const struct rte_eth_dev *dev,
 				   dpaa2_ethq->tc_index, flow_id,
 				   OPR_OPT_CREATE, &ocfg, 0);
 		if (ret) {
-			DPAA2_PMD_ERR("Error setting opr: ret: %d\n", ret);
+			DPAA2_PMD_ERR("Error setting opr: ret: %d", ret);
 			return ret;
 		}
 
@@ -2559,7 +2559,7 @@ rte_pmd_dpaa2_thread_init(void)
 		ret = dpaa2_affine_qbman_swp();
 		if (ret) {
 			DPAA2_PMD_ERR(
-				"Failed to allocate IO portal, tid: %d\n",
+				"Failed to allocate IO portal, tid: %d",
 				rte_gettid());
 			return;
 		}
@@ -3014,7 +3014,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 	eth_dev->data->mac_addrs = rte_zmalloc("dpni",
 		RTE_ETHER_ADDR_LEN * attr.mac_filter_entries, 0);
 	if (eth_dev->data->mac_addrs == NULL) {
-		DPAA2_PMD_ERR("Failed to allocate %dB for MAC addresses",
+		DPAA2_PMD_ERR(
+		   "Failed to allocate %d bytes needed to store MAC addresses",
 		   RTE_ETHER_ADDR_LEN * attr.mac_filter_entries);
 		ret = -ENOMEM;
 		goto init_err;
@@ -3117,7 +3118,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		WRIOP_SS_INITIALIZER(priv);
 		ret = dpaa2_eth_load_wriop_soft_parser(priv, DPNI_SS_INGRESS);
 		if (ret < 0) {
-			DPAA2_PMD_ERR(" Error(%d) in loading softparser\n",
+			DPAA2_PMD_ERR(" Error(%d) in loading softparser",
 				      ret);
 			return ret;
 		}
@@ -3125,7 +3126,7 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 		ret = dpaa2_eth_enable_wriop_soft_parser(priv,
 							 DPNI_SS_INGRESS);
 		if (ret < 0) {
-			DPAA2_PMD_ERR(" Error(%d) in enabling softparser\n",
+			DPAA2_PMD_ERR(" Error(%d) in enabling softparser",
 				      ret);
 			return ret;
 		}
@@ -3133,8 +3134,8 @@ dpaa2_dev_init(struct rte_eth_dev *eth_dev)
 
 	ret = dpaa2_soft_parser_loaded();
 	if (ret > 0)
-		RTE_LOG(INFO, PMD, "soft parser is loaded\n");
-	RTE_LOG(INFO, PMD, "%s: netdev created, connected to %s\n",
+		DPAA2_PMD_INFO("soft parser is loaded");
+	DPAA2_PMD_INFO("%s: netdev created, connected to %s",
 		eth_dev->data->name, priv->ep_name);
 
 	return 0;
@@ -3224,12 +3225,12 @@ rte_pmd_dpaa2_get_one_step_ts(uint16_t port_id, bool mc_query)
 		return priv->ptp_correction_offset;
 
 	err = dpni_get_single_step_cfg(dpni, CMD_PRI_LOW, priv->token, &ptp_cfg);
-	if(err){
+	if (err) {
 		DPAA2_PMD_ERR("Failed to retrieve onestep configuration");
 		return err;
 	}
 
-	if (!ptp_cfg.ptp_onestep_reg_base){
+	if (!ptp_cfg.ptp_onestep_reg_base) {
 		DPAA2_PMD_ERR("1588 onestep reg not available");
 		return -1;
 	}
@@ -3254,7 +3255,7 @@ rte_pmd_dpaa2_set_one_step_ts(uint16_t port_id, uint16_t offset, uint8_t ch_upda
 	cfg.peer_delay = 0;
 
 	err = dpni_set_single_step_cfg(dpni, CMD_PRI_LOW, priv->token, &cfg);
-	if(err)
+	if (err)
 		return err;
 
 	priv->ptp_correction_offset = offset;
@@ -3278,13 +3279,13 @@ static int dpaa2_tx_sg_pool_init(void)
 			DPAA2_MAX_SGS * sizeof(struct qbman_sge),
 			rte_socket_id());
 		if (!dpaa2_tx_sg_pool) {
-			DPAA2_PMD_ERR("SG pool creation failed\n");
+			DPAA2_PMD_ERR("SG pool creation failed");
 			return -ENOMEM;
 		}
 	} else {
 		dpaa2_tx_sg_pool = rte_mempool_lookup(name);
 		if (!dpaa2_tx_sg_pool) {
-			DPAA2_PMD_ERR("SG pool lookup failed\n");
+			DPAA2_PMD_ERR("SG pool lookup failed");
 			return -ENOMEM;
 		}
 	}

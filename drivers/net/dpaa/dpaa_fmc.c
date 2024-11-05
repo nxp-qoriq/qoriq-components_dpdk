@@ -359,7 +359,7 @@ dpaa_port_fmc_scheme_parse(struct fman_if *fif,
 	if (dpaa_kg_storage_is_in_kernel(fif, kg_storage)) {
 		DPAA_PMD_WARN("Scheme[%d]'s VSP is in kernel",
 			scheme_idx);
-		/** The FQ may be allocated from previous CC or scheme,
+		/* The FQ may be allocated from previous CC or scheme,
 		 * find and remove it.
 		 */
 		for (i = 0; i < num_rxq; i++) {
@@ -385,7 +385,7 @@ dpaa_port_fmc_scheme_parse(struct fman_if *fif,
 	}
 
 	if (e_IOC_FM_PCD_DONE != scheme->next_engine) {
-		/** Do nothing.*/
+		/* Do nothing.*/
 		DPAA_PMD_DEBUG("Will parse scheme[%d]'s next engine(%d)",
 			scheme_idx, scheme->next_engine);
 		return 0;
@@ -398,7 +398,7 @@ dpaa_port_fmc_scheme_parse(struct fman_if *fif,
 		if (dpaa_fq_is_in_kernel(fqid, fif)) {
 			DPAA_PMD_WARN("FQ(0x%08x) is handled in kernel.",
 				fqid);
-			/** The FQ may be allocated from previous CC or scheme,
+			/* The FQ may be allocated from previous CC or scheme,
 			 * remove it.
 			 */
 			dpaa_fmc_remove_fq_from_allocated(fqids,
@@ -479,7 +479,7 @@ dpaa_port_fmc_ccnode_parse(struct fman_if *fif,
 			dpaa_vsp_id_is_in_kernel(vsp_id, fif)) {
 			DPAA_PMD_DEBUG("FQ(0x%08x)/VSP(%d) is in kernel.",
 				fqid, vsp_id);
-			/** The FQ may be allocated from previous CC or scheme,
+			/* The FQ may be allocated from previous CC or scheme,
 			 * remove it.
 			 */
 			dpaa_fmc_remove_fq_from_allocated(fqids,

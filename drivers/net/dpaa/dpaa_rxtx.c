@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2017,2019-2023 NXP
+ *   Copyright 2017,2019-2024 NXP
  *
  */
 
@@ -238,10 +238,9 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m, void *fd_virt_addr)
 {
 	struct annotations_t *annot = GET_ANNOTATIONS(fd_virt_addr);
 	uint64_t prs = *((uintptr_t *)(&annot->parse)) & DPAA_PARSE_MASK;
-#if defined(RTE_LIBRTE_IEEE1588)
 	struct rte_ether_hdr *eth_hdr =
 		rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
-#endif
+
 	DPAA_DP_LOG(DEBUG, " Parsing mbuf: %p with annotations: %p", m, annot);
 
 	m->ol_flags = RTE_MBUF_F_RX_RSS_HASH | RTE_MBUF_F_RX_IP_CKSUM_GOOD |
@@ -360,12 +359,11 @@ static inline void dpaa_eth_packet_info(struct rte_mbuf *m, void *fd_virt_addr)
 	if (prs & DPAA_PARSE_VLAN_MASK)
 		m->ol_flags |= RTE_MBUF_F_RX_VLAN;
 	/* Packet received without stripping the vlan */
-#if defined(RTE_LIBRTE_IEEE1588)
+
 	if (eth_hdr->ether_type == htons(RTE_ETHER_TYPE_1588)) {
 		m->ol_flags |= RTE_MBUF_F_RX_IEEE1588_PTP;
 		m->ol_flags |= RTE_MBUF_F_RX_IEEE1588_TMST;
 	}
-#endif
 }
 
 static inline void dpaa_checksum(struct rte_mbuf *mbuf)
@@ -497,8 +495,7 @@ dpaa_eth_sg_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 	first_seg->pkt_len = sg_temp->length;
 	rte_mbuf_refcnt_set(first_seg, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
-	rte_mempool_check_cookies(
-			rte_mempool_from_obj((void *)first_seg),
+	rte_mempool_check_cookies(rte_mempool_from_obj((void *)first_seg),
 			(void **)&first_seg, 1, 1);
 #endif
 
@@ -519,8 +516,7 @@ dpaa_eth_sg_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 		first_seg->nb_segs += 1;
 		rte_mbuf_refcnt_set(cur_seg, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
-		rte_mempool_check_cookies(
-				rte_mempool_from_obj((void *)cur_seg),
+		rte_mempool_check_cookies(rte_mempool_from_obj((void *)cur_seg),
 				(void **)&cur_seg, 1, 1);
 #endif
 		prev_seg->next = cur_seg;
@@ -535,8 +531,7 @@ dpaa_eth_sg_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 
 	dpaa_eth_packet_info(first_seg, vaddr);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
-	rte_mempool_check_cookies(
-			rte_mempool_from_obj((void *)temp),
+	rte_mempool_check_cookies(rte_mempool_from_obj((void *)temp),
 			(void **)&temp, 1, 1);
 #endif
 	rte_pktmbuf_free_seg(temp);
@@ -580,8 +575,7 @@ dpaa_eth_fd_to_mbuf(const struct qm_fd *fd, uint32_t ifid)
 	mbuf->next = NULL;
 	rte_mbuf_refcnt_set(mbuf, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
-	rte_mempool_check_cookies(
-			rte_mempool_from_obj((void *)mbuf),
+	rte_mempool_check_cookies(rte_mempool_from_obj((void *)mbuf),
 			(void **)&mbuf, 1, 1);
 #endif
 	dpaa_eth_packet_info(mbuf, mbuf->buf_addr);
@@ -658,9 +652,7 @@ dpaa_rx_cb_no_prefetch(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
 	uint16_t offset, i;
 	uint32_t length;
 	uint8_t format;
-#if defined(RTE_LIBRTE_IEEE1588)
 	struct annotations_t *annot;
-#endif
 
 	bp_info = DPAA_BPID_TO_POOL_INFO(dqrr[0]->fd.bpid);
 	ptr = rte_dpaa_mem_ptov(qm_fd_addr(&dqrr[0]->fd));
@@ -701,16 +693,16 @@ dpaa_rx_cb_no_prefetch(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
 		mbuf->next = NULL;
 		rte_mbuf_refcnt_set(mbuf, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
-		rte_mempool_check_cookies(
-			rte_mempool_from_obj((void *)mbuf),
+		rte_mempool_check_cookies(rte_mempool_from_obj((void *)mbuf),
 			(void **)&mbuf, 1, 1);
 #endif
 		dpaa_eth_packet_info(mbuf, mbuf->buf_addr);
 		dpaa_display_frame_info(fd, fq[0]->fqid, true);
-#if defined(RTE_LIBRTE_IEEE1588)
-		annot = GET_ANNOTATIONS(mbuf->buf_addr);
-		dpaa_intf->rx_timestamp = rte_cpu_to_be_64(annot->timestamp);
-#endif
+		if (dpaa_ieee_1588) {
+			annot = GET_ANNOTATIONS(mbuf->buf_addr);
+			dpaa_intf->rx_timestamp =
+				rte_cpu_to_be_64(annot->timestamp);
+		}
 	}
 }
 
@@ -724,9 +716,7 @@ dpaa_rx_cb(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
 	uint16_t offset, i;
 	uint32_t length;
 	uint8_t format;
-#if defined(RTE_LIBRTE_IEEE1588)
 	struct annotations_t *annot;
-#endif
 
 	for (i = 0; i < num_bufs; i++) {
 		fd = &dqrr[i]->fd;
@@ -753,16 +743,16 @@ dpaa_rx_cb(struct qman_fq **fq, struct qm_dqrr_entry **dqrr,
 		mbuf->next = NULL;
 		rte_mbuf_refcnt_set(mbuf, 1);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
-		rte_mempool_check_cookies(
-			rte_mempool_from_obj((void *)mbuf),
+		rte_mempool_check_cookies(rte_mempool_from_obj((void *)mbuf),
 			(void **)&mbuf, 1, 1);
 #endif
 		dpaa_eth_packet_info(mbuf, mbuf->buf_addr);
 		dpaa_display_frame_info(fd, fq[0]->fqid, true);
-#if defined(RTE_LIBRTE_IEEE1588)
-		annot = GET_ANNOTATIONS(mbuf->buf_addr);
-		dpaa_intf->rx_timestamp = rte_cpu_to_be_64(annot->timestamp);
-#endif
+		if (dpaa_ieee_1588) {
+			annot = GET_ANNOTATIONS(mbuf->buf_addr);
+			dpaa_intf->rx_timestamp =
+				rte_cpu_to_be_64(annot->timestamp);
+		}
 	}
 }
 
@@ -874,12 +864,12 @@ dpaa_eth_err_queue(struct qman_fq *fq)
 
 	dpaa_intf = fq->dpaa_intf;
 	if (fq != &dpaa_intf->rx_queues[0]) {
-		/** Associate error queues to the first RXQ.*/
+		/* Associate error queues to the first RXQ.*/
 		return;
 	}
 
 	if (dpaa_intf->cfg->fman_if->is_shared_mac) {
-		/** Error queues of shared MAC are handled in kernel. */
+		/* Error queues of shared MAC are handled in kernel. */
 		return;
 	}
 
@@ -927,10 +917,8 @@ uint16_t dpaa_eth_queue_rx(void *q,
 	uint32_t num_rx = 0, ifid = ((struct dpaa_if *)fq->dpaa_intf)->ifid;
 	int num_rx_bufs, ret;
 	uint32_t vdqcr_flags = 0;
-#if defined(RTE_LIBRTE_IEEE1588)
 	struct annotations_t *annot;
 	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
-#endif
 
 	if (unlikely(rte_dpaa_bpid_info == NULL &&
 				rte_eal_process_type() == RTE_PROC_SECONDARY))
@@ -973,10 +961,10 @@ uint16_t dpaa_eth_queue_rx(void *q,
 			continue;
 		bufs[num_rx++] = dpaa_eth_fd_to_mbuf(&dq->fd, ifid);
 		dpaa_display_frame_info(&dq->fd, fq->fqid, true);
-#if defined(RTE_LIBRTE_IEEE1588)
-		annot = GET_ANNOTATIONS(bufs[num_rx-1]->buf_addr);
-		dpaa_intf->rx_timestamp = rte_cpu_to_be_64(annot->timestamp);
-#endif
+		if (dpaa_ieee_1588) {
+			annot = GET_ANNOTATIONS(bufs[num_rx - 1]->buf_addr);
+			dpaa_intf->rx_timestamp = rte_cpu_to_be_64(annot->timestamp);
+		}
 		qman_dqrr_consume(fq, dq);
 	} while (fq->flags & QMAN_FQ_STATE_VDQCR);
 
@@ -1009,8 +997,7 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 	}
 
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
-	rte_mempool_check_cookies(
-			rte_mempool_from_obj((void *)temp),
+	rte_mempool_check_cookies(rte_mempool_from_obj((void *)temp),
 			(void **)&temp, 1, 0);
 #endif
 	fd->cmd = 0;
@@ -1059,8 +1046,7 @@ dpaa_eth_mbuf_to_sg_fd(struct rte_mbuf *mbuf,
 				sg_temp->bpid =
 					DPAA_MEMPOOL_TO_BPID(cur_seg->pool);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
-				rte_mempool_check_cookies(
-					rte_mempool_from_obj((void *)cur_seg),
+				rte_mempool_check_cookies(rte_mempool_from_obj((void *)cur_seg),
 					(void **)&cur_seg, 1, 0);
 #endif
 			}
@@ -1121,8 +1107,7 @@ tx_on_dpaa_pool_unsegmented(struct rte_mbuf *mbuf,
 			 */
 			DPAA_MBUF_TO_CONTIG_FD(mbuf, fd_arr, bp_info->bpid);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
-			rte_mempool_check_cookies(
-				rte_mempool_from_obj((void *)mbuf),
+			rte_mempool_check_cookies(rte_mempool_from_obj((void *)mbuf),
 				(void **)&mbuf, 1, 0);
 #endif
 		}
@@ -1316,11 +1301,9 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 	uint32_t seqn, index, flags[DPAA_TX_BURST_SIZE] = {0};
 	struct dpaa_sw_buf_free buf_to_free[DPAA_MAX_SGS * DPAA_MAX_DEQUEUE_NUM_FRAMES];
 	uint32_t free_count = 0;
-#if defined(RTE_LIBRTE_IEEE1588)
 	struct qman_fq *fq = q;
 	struct dpaa_if *dpaa_intf = fq->dpaa_intf;
 	struct qman_fq *fq_txconf = fq->tx_conf_queue;
-#endif
 
 	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init((void *)0);
@@ -1332,11 +1315,11 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 
 	DPAA_DP_LOG(DEBUG, "Transmitting %d buffers on queue: %p", nb_bufs, q);
 
-#if defined(RTE_LIBRTE_IEEE1588)
-	dpaa_intf->next_tx_conf_queue = fq_txconf;
-	dpaa_eth_tx_conf(fq_txconf);
-	dpaa_intf->tx_timestamp = 0;
-#endif
+	if (dpaa_ieee_1588) {
+		dpaa_intf->next_tx_conf_queue = fq_txconf;
+		dpaa_eth_tx_conf(fq_txconf);
+		dpaa_intf->tx_timestamp = 0;
+	}
 
 	while (nb_bufs) {
 		frames_to_send = (nb_bufs > DPAA_TX_BURST_SIZE) ?
@@ -1344,12 +1327,12 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 		for (loop = 0; loop < frames_to_send; loop++) {
 			mbuf = *(bufs++);
 			fd_arr[loop].cmd = 0;
-#if defined(RTE_LIBRTE_IEEE1588)
-			fd_arr[loop].cmd |= DPAA_FD_CMD_FCO |
-				qman_fq_fqid(fq_txconf);
-			fd_arr[loop].cmd |= DPAA_FD_CMD_RPD |
-				DPAA_FD_CMD_UPD;
-#endif
+			if (dpaa_ieee_1588) {
+				fd_arr[loop].cmd |= DPAA_FD_CMD_FCO |
+					qman_fq_fqid(fq_txconf);
+				fd_arr[loop].cmd |= DPAA_FD_CMD_RPD |
+					DPAA_FD_CMD_UPD;
+			}
 #ifdef RTE_LIBRTE_DPAA_ERRATA_LS1043_A010022
 			realloc_mbuf = dpaa_eth_ls1043a_mbuf_realloc(mbuf);
 #endif
@@ -1381,8 +1364,7 @@ dpaa_eth_queue_tx(void *q, struct rte_mbuf **bufs, uint16_t nb_bufs)
 						dpaa_unsegmented_checksum(mbuf,
 							&fd_arr[loop]);
 #ifdef RTE_LIBRTE_MEMPOOL_DEBUG
-					rte_mempool_check_cookies(
-						rte_mempool_from_obj((void *)mbuf),
+				rte_mempool_check_cookies(rte_mempool_from_obj((void *)mbuf),
 						(void **)&mbuf, 1, 0);
 #endif
 					continue;

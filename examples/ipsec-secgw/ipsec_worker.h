@@ -126,7 +126,9 @@ prepare_one_packet(struct rte_security_ctx *ctx, struct rte_mbuf *pkt,
 	const struct rte_ether_hdr *eth;
 	const struct rte_ipv4_hdr *iph4;
 	const struct rte_ipv6_hdr *iph6;
-	uint32_t tun_type, l3_type;
+	const struct rte_udp_hdr *udp;
+	uint16_t nat_port;
+	uint32_t tun_type, l3_type, l4_type;
 	uint64_t tx_offload;
 	uint16_t l3len;
 
@@ -137,12 +139,26 @@ prepare_one_packet(struct rte_security_ctx *ctx, struct rte_mbuf *pkt,
 
 	tun_type = ptype & RTE_PTYPE_TUNNEL_MASK;
 	l3_type = ptype & RTE_PTYPE_L3_MASK;
+	l4_type = ptype & RTE_PTYPE_L4_MASK;
 
 	eth = rte_pktmbuf_mtod(pkt, const struct rte_ether_hdr *);
 	if (RTE_ETH_IS_IPV4_HDR(l3_type)) {
 		iph4 = (const struct rte_ipv4_hdr *)rte_pktmbuf_adj(pkt,
 			RTE_ETHER_HDR_LEN);
 		adjust_ipv4_pktlen(pkt, iph4, 0);
+
+		l3len = sizeof(struct rte_ipv4_hdr);
+
+		if (l4_type == RTE_PTYPE_L4_UDP) {
+			udp = (const struct rte_udp_hdr *)((const uint8_t *)iph4 + l3len);
+			nat_port = rte_cpu_to_be_16(IPSEC_NAT_T_PORT);
+			if (udp->src_port == nat_port ||
+			    udp->dst_port == nat_port) {
+				pkt->packet_type |=
+					MBUF_PTYPE_TUNNEL_ESP_IN_UDP;
+				tun_type = RTE_PTYPE_TUNNEL_ESP;
+			}
+		}
 
 		if (tun_type == RTE_PTYPE_TUNNEL_ESP) {
 			t->ipsec.pkts[(t->ipsec.num)++] = pkt;
@@ -162,6 +178,17 @@ prepare_one_packet(struct rte_security_ctx *ctx, struct rte_mbuf *pkt,
 		adjust_ipv6_pktlen(pkt, iph6, 0);
 
 		l3len = sizeof(struct ip6_hdr);
+
+		if (l4_type == RTE_PTYPE_L4_UDP) {
+			udp = (const struct rte_udp_hdr *)((const uint8_t *)iph6 + l3len);
+			nat_port = rte_cpu_to_be_16(IPSEC_NAT_T_PORT);
+			if (udp->src_port == nat_port ||
+			    udp->dst_port == nat_port) {
+				pkt->packet_type |=
+					MBUF_PTYPE_TUNNEL_ESP_IN_UDP;
+				tun_type = RTE_PTYPE_TUNNEL_ESP;
+			}
+		}
 
 		if (tun_type == RTE_PTYPE_TUNNEL_ESP) {
 			t->ipsec.pkts[(t->ipsec.num)++] = pkt;
