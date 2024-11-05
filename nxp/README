@@ -89,7 +89,8 @@ Following information can be used to obtain these components:
 
     Clone openssl repository
 
-        $ git clone git://git.openssl.org/openssl.git
+        $ git clone https://github.com/openssl/openssl.git
+
         $ cd openssl
 
     Checkout the specific tag to match openssl library in your target rootfs
