@@ -1861,7 +1861,6 @@ dpaa2_dev_xstats_get(struct rte_eth_dev *dev,
 					  priv->cnt_idx_iova, priv->cnt_values_iova,
 					  DPAA2_MAC_NUM_STATS);
 	if (retcode) {
-		DPAA2_PMD_WARN("MAC (mac_*) counters are not supported!!");
 		rte_free(priv->cnt_values_dma_mem);
 		rte_free(priv->cnt_idx_dma_mem);
 		while (i >= (num - DPAA2_MAC_NUM_STATS) && i < num) {
