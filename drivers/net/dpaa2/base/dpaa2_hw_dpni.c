@@ -114,7 +114,7 @@ dpaa2_setup_flow_dist(struct rte_eth_dev *eth_dev,
 	tc_dist_queues = eth_dev->data->nb_rx_queues -
 		tc_index * priv->dist_queues;
 	if (tc_dist_queues <= 0) {
-		DPAA2_PMD_INFO("No distribution on TC%d", tc_index);
+		DPAA2_PMD_DEBUG("No distribution on TC%d", tc_index);
 		return 0;
 	}
 
