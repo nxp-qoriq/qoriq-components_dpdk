@@ -89,7 +89,8 @@ Following information can be used to obtain these components:
 
     Clone openssl repository
 
-        $ git clone git://git.openssl.org/openssl.git
+        $ git clone https://github.com/openssl/openssl.git
+
         $ cd openssl
 
     Checkout the specific tag to match openssl library in your target rootfs
@@ -1114,10 +1115,10 @@ Notes:
   streams with below configuration of the destination IP address in the frames
   being sent:
 
-      For traffic to port 1: 1.1.1.0/24
-      For traffic to port 2: 2.1.1.0/24
-      For traffic to port 3: 3.1.1.0/24
-      For traffic to port 4: 4.1.1.0/24
+      For traffic to port 1: 198.18.0.0/24
+      For traffic to port 2: 198.18.1.0/24
+      For traffic to port 3: 198.18.2.0/24
+      For traffic to port 4: 198.18.3.0/24
 
   Layer-3 Forwarding 'l3fwd' Application using traffic bifurcation
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

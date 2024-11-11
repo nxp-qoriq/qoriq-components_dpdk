@@ -79,6 +79,20 @@ struct openssl_qp {
 	 */
 } __rte_cache_aligned;
 
+struct evp_ctx_pair {
+	EVP_CIPHER_CTX *cipher;
+	union {
+		EVP_MD_CTX *auth;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+		EVP_MAC_CTX *hmac;
+		EVP_MAC_CTX *cmac;
+#else
+		HMAC_CTX *hmac;
+		CMAC_CTX *cmac;
+#endif
+	};
+};
+
 /** OPENSSL crypto private session structure */
 struct openssl_session {
 	enum openssl_chain_order chain_order;
@@ -165,6 +179,15 @@ struct openssl_session {
 		/**< digest length */
 	} auth;
 
+	uint16_t ctx_copies_len;
+	/* < number of entries in ctx_copies */
+	struct evp_ctx_pair qp_ctx[];
+	/**< Flexible array member of per-queue-pair structures, each containing
+	 * pointers to copies of the cipher and auth EVP contexts. Cipher
+	 * contexts are not safe to use from multiple cores simultaneously, so
+	 * maintaining these copies allows avoiding per-buffer copying into a
+	 * temporary context.
+	 */
 } __rte_cache_aligned;
 
 /** OPENSSL crypto private asymmetric session structure */
@@ -211,7 +234,8 @@ struct openssl_asym_session {
 /** Set and validate OPENSSL crypto session parameters */
 extern int
 openssl_set_session_parameters(struct openssl_session *sess,
-		const struct rte_crypto_sym_xform *xform);
+		const struct rte_crypto_sym_xform *xform,
+		uint16_t nb_queue_pairs);
 
 /** Reset OPENSSL crypto session parameters */
 extern void
