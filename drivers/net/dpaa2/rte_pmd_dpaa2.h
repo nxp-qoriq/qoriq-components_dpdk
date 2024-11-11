@@ -236,4 +236,7 @@ rte_dpaa2_conf_scheduler(uint16_t port_id, uint16_t rx_queue_id,
 			 int policer_unit, uint32_t options, int default_color,
 			 uint32_t cir, uint32_t cbs, uint32_t pir, uint32_t pbs);
 
+int
+rte_pmd_dpaa2_flow_table_query(uint16_t portid);
+
 #endif /* _RTE_PMD_DPAA2_H */
