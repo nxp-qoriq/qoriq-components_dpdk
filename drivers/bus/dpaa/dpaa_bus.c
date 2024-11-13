@@ -723,12 +723,22 @@ rte_dpaa_bus_probe(void)
 	struct rte_dpaa_driver *drv;
 	FILE *svr_file = NULL;
 	unsigned int svr_ver;
-	int probe_all = s_rte_dpaa_bus.bus.conf.scan_mode != RTE_BUS_SCAN_ALLOWLIST;
+	int probe_all = false;
 	static int process_once;
 
 	/* If DPAA bus is not present nothing needs to be done */
 	if (!s_rte_dpaa_bus.detected)
 		return 0;
+
+	if (s_rte_dpaa_bus.bus.conf.scan_mode != RTE_BUS_SCAN_ALLOWLIST)
+		probe_all = true;
+
+	svr_file = fopen(DPAA_SOC_ID_FILE, "r");
+	if (svr_file) {
+		if (fscanf(svr_file, "svr:%x", &svr_ver) > 0)
+			dpaa_svr_family = svr_ver & SVR_MASK;
+		fclose(svr_file);
+	}
 
 	/* Device list creation is only done once */
 	if (!process_once) {
@@ -757,13 +767,6 @@ rte_dpaa_bus_probe(void)
 	 * been detected.
 	 */
 	rte_mbuf_set_platform_mempool_ops(DPAA_MEMPOOL_OPS_NAME);
-
-	svr_file = fopen(DPAA_SOC_ID_FILE, "r");
-	if (svr_file) {
-		if (fscanf(svr_file, "svr:%x", &svr_ver) > 0)
-			dpaa_svr_family = svr_ver & SVR_MASK;
-		fclose(svr_file);
-	}
 
 	TAILQ_FOREACH(dev, &s_rte_dpaa_bus.device_list, next) {
 		if (dev->device_type == FSL_DPAA_ETH) {
