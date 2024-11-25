@@ -49,6 +49,7 @@ usage(char* progname)
 	printf("  --interactive: run in interactive mode.\n");
 	printf("  --cmdline-file: execute cli commands before startup.\n");
 #endif
+	printf("  --txonly_vlan_multiq_enable: Run tx-only mode with VLAN enabled on multi-Tx queues.\n");
 	printf("  --auto-start: start forwarding on init "
 	       "[always when non-interactive].\n");
 	printf("  --help: display this message and quit.\n");
@@ -604,6 +605,7 @@ launch_args_parse(int argc, char** argv)
 		{ "eth-peers-configfile",	1, 0, 0 },
 		{ "eth-peer",			1, 0, 0 },
 #endif
+		{ "txonly_vlan_multiq_enable",  0, 0, 0 },
 		{ "tx-first",			0, 0, 0 },
 		{ "stats-period",		1, 0, 0 },
 		{ "display-xstats",		1, 0, 0 },
@@ -1379,6 +1381,10 @@ launch_args_parse(int argc, char** argv)
 				}
 			if (!strcmp(lgopts[opt_idx].name, "hot-plug"))
 				hot_plug = 1;
+			if (!strcmp(lgopts[opt_idx].name, "txonly_vlan_multiq_enable")) {
+				TESTPMD_LOG(INFO, "Tx-only VLAN multiqueue mode enabled\n");
+				txonly_vlan_multiq_enable = 1;
+			}
 			if (!strcmp(lgopts[opt_idx].name, "mlockall"))
 				do_mlockall = 1;
 			if (!strcmp(lgopts[opt_idx].name, "no-mlockall"))

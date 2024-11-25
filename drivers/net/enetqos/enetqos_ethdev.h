@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2023 NXP
+ * Copyright 2023-2024 NXP
  */
 #ifndef __ENETQOS_ETHDEV_
 #define  __ENETQOS_ETHDEV_
@@ -7,9 +7,31 @@
 #include <rte_ethdev.h>
 
 #define ENETQOS_NAME_PMD	net_enetqos
-#define MTL_MAX_RX_QUEUES	8
-#define MTL_MAX_TX_QUEUES	8
-#define ENETQOS_MAX_Q		1 //Support for single queue for now
+
+#define EXTRACT_CCSR_ADDR(s)    ((s) + strlen(s) - 8)
+
+/* eth name size */
+#define ENETQOS_ETH_NAMESIZE    20
+/* mac addr reset */
+#define ENETQOS_MAC_RESET       0xFFFFFFFF
+#define ENETQOS_SHIFT           16
+
+/*
+ * The DMA Tx engine transfers data from the system memory to the MTL interface,
+ * whereas the DMA Rx engine transfers data from the MTL interface to the
+ * system memory. The DMA engine uses descriptors to efficiently move data from
+ * source to destination.
+ * The DMA is designed for packet-oriented data transfers such as packets in Ethernet.
+
+ * The MAC Transaction Layer (MTL) provides the FIFO memory Interface to buffer and
+ * regulate the packets between system memory and the MAC.
+ */
+
+#define MTL_MAX_RX_QUEUES	5
+#define MTL_MAX_TX_QUEUES	5
+#define ENETQOS_MAX_Q		5
+#define ENETQOS_MAX_RXQ		1 /* Only 1 Rx queue supported for now */
+#define MTL_TXQ_DEFAULT_WEIGHT	0x10
 
 /* RX/TX Queue Mode */
 #define MTL_QUEUE_AVB_MODE		0x0

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2023 NXP
+ * Copyright 2023-2024 NXP
  */
 
 #ifndef _ENETQOS_LOGS_H_
@@ -14,8 +14,6 @@ extern int enetqos_logtype_pmd;
 	rte_log(RTE_LOG_ ## level, enetqos_logtype_pmd, "\nqos_net: %s()" \
 		fmt "\n", __func__, ##args)
 
-#define PMD_INIT_FUNC_TRACE() ENET_PMD_LOG(DEBUG, " >>")
-
 #define ENETQOS_PMD_DEBUG(fmt, args...) \
 	ENETQOS_PMD_LOG(DEBUG, fmt, ## args)
 #define ENETQOS_PMD_ERR(fmt, args...) \
@@ -25,6 +23,8 @@ extern int enetqos_logtype_pmd;
 
 #define ENETQOS_PMD_WARN(fmt, args...) \
 	ENETQOS_PMD_LOG(WARNING, fmt, ## args)
+
+#define PMD_INIT_FUNC_TRACE() ENETQOS_PMD_DEBUG(">>")
 
 /* DP Logs, toggled out at compile time if level lower than current level */
 #define ENETQOS_DP_LOG(level, fmt, args...) \

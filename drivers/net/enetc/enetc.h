@@ -108,6 +108,7 @@ struct enetc_eth_hw {
 	uint32_t num_rss;
 	uint32_t max_rx_queues;
 	uint32_t max_tx_queues;
+	uint32_t *txq_prior;
 };
 
 /*

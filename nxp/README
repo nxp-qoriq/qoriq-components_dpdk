@@ -89,7 +89,8 @@ Following information can be used to obtain these components:
 
     Clone openssl repository
 
-        $ git clone git://git.openssl.org/openssl.git
+        $ git clone https://github.com/openssl/openssl.git
+
         $ cd openssl
 
     Checkout the specific tag to match openssl library in your target rootfs
@@ -855,6 +856,7 @@ Currently the following features have been supportd for VF using kernel PF using
     * MAC Exact Match filtering
     * VLAN Exact Match filtering
     * Enable/Disable VLAN promiscous mode
+    * Link status interrupts
 
 1. Follow the above steps to run dpdk-testpmd.
 2. Users can control the timeout and delay time counters with env. variables [optional]
@@ -897,6 +899,30 @@ Note:
 Currently, maximum MAC and VLAN address exact match filter table entries that
 can be added are 4 per ENETC.
 
+Link status interrupts:
+-----------------------
+DPDK is dependant on igb_uio module instead of uio_pci_genric for interrupts.
+
+Run below commands to bind the device to igb_uio:
+	1. insmod igb_uio.ko or modprobe igb_uio
+	2. echo igb_uio > /sys/bus/pci/devices/0002\:00\:12.0/driver_override
+	3. echo 0002:00:12.0 > /sys/bus/pci/drivers/fsl_enetc_vf/unbind
+	4. echo 0002:00:12.0 > /sys/bus/pci/drivers/igb_uio/bind
+
+Run dpdk-testpmd for checking status interrupts:
+	$ ./dpdk-testpmd -c 0xc --log-level=*:debug -n 1 -- -i --portmask 0x1
+
+Open a new terminal and try to change the link status using either below commands
+or attach and de-attach cable:
+
+	$ ifconfig eth1 down
+	$ ifconfig eth1 up
+
+Note: Here eth1 is the PF interface.
+
+User will observe link change notification on console.
+It may take few seconds to get the notification of link up.
+
 VF1 validation:
 ---------------
 DPDK support ENETC0(1G RGMII) VF1 and ENETC2(10G UXSGMII) VF1 interfaces.
@@ -924,6 +950,119 @@ PF and VF0 must be owned by kernel while testing.
 7. Run:
 	$ ./dpdk-l2fwd -c 0x3 -n 1 -- -p 0x1
 	$ ./dpdk-l3fwd -c 0x2 -n 1 -- -p 0x1 -P --config="(0,0,1)"
+
+
+Running DPDK as Non-Root User with sudo permission:
+--------------------------------------------------
+
+Step 1: Create and Configure Non-Root User
+
+	1. Create a new user and give sudo permissions:
+
+	$ adduser dpdk_user
+	$ visudo
+
+		Add the following line to give sudo permission:
+
+		dpdk_user ALL=(ALL) ALL
+
+		Save and exit.
+
+	Note: This is a one-time configuration step.
+
+Step 2: Setup Board for Non-Root User (as Root)
+
+	1. Please refer to the following sections in this README and follow the steps as the "root" user to set up the board for non-root user:
+
+		-> Generic steps on i.MX95 before running DPDK: Load kpage_ncache.ko and configure hugepages.
+		-> Multi-queue: Configure multiple queues.
+		-> Running VFs in DPDK: Bind VFs to uio_pci_generic for DPDK.
+
+	2. Switch to the non root user:
+
+		$ su dpdk_user
+
+Step 3: Run DPDK Application using Sudo
+
+	$ sudo dpdk-l2fwd -c 0x3 -- -p 0x3 -T 0
+
+TSN-QBV
+=======
+
+- IEEE 802.1Qbv allows for time-based scheduling of network traffic.
+- The Gate Control List (GCL) is a fundamental component of the IEEE 802.1Qbv protocol.
+- The GCL (Gate C Logic) entries decide the gate open/close timings.
+- The queues are allowed to transmit only when the gate is open.
+- The GCL operates in a cyclic manner, repeating its sequence of entries periodically.
+
+Follow the below steps to test TSN-QBV scenario for ENETC:
+----------------------------------------------------------
+
+1. Configuring multiple queues for VF0
+
+Using below steps we will be able to configure 5 queues for VF0.
+Maximum queues for VF0 can be 5 because minimum 2 is required for PF for using
+tc command to configure gate scheduling and 1 is reserved for VF1.
+
+$ devlink dev param set pci/0002:00:10.0 name si_num_rings cmode driverinit value 0105
+$ devlink dev reload pci/0002:00:10.0
+$ devlink dev param show pci/0002:00:10.0 name si_num_rings
+
+2. VF creating/binding
+
+$ echo 1 > /sys/bus/pci/devices/0002\:00\:10.0/sriov_numvfs
+$ dpdk-devbind.py -b uio_pci_generic 0002:00:12.0
+$ ip link set eth1 vf 0 trust on
+
+3. Configure QBV rule using tc command:
+
+Using the below command, the gate scheduling is configured.
+ - Each queue is configured to a particular TC.
+ - In below command, gate is configured open for a particular queue for
+   100 microsec and then all queue gates are closed for 50 microsec in between
+   every gate scheduling.
+ - Configuring all gates closed for some time can be beneficial when analyzing
+   the captured data packets.
+ - The priority for each queue is configured by user in DPDK using devargs argument.
+ - Although num_tc and map define only two PF queues, the GCL includes entries
+   for multiple queues, including VF queues (e.g., VF0).
+   This is intentional so that the GCL can be effective for DPDK applications.
+ - In the tc command, queue IDs are referenced using the mask values (e.g., S 1, S 2, etc.).
+   These map directly to TX queues in DPDK when the GCL is applied.
+   For eg. S 1 corresponds to the txq0 in DPDK, S 2 maps to txq1, and so on.
+
+For more details on tc qdisc and its usage, refer to the tc qdisc man page:
+Run man tc in your terminal for details.
+
+$ tc qdisc replace dev eth1 parent root handle 200 taprio num_tc 2 map 0 1  queues 1@0 1@1 base-time 10000 sched-entry S 1 100000 sched-entry S 0 50000 sched-entry S 2 100000  sched-entry S 0 50000 sched-entry S 4 100000 sched-entry S 0 50000  sched-entry S 8 100000 sched-entry S 0 50000  sched-entry S 10 100000  sched-entry S 0 50000  sched-entry S 20 100000 sched-entry S 0 50000  sched-entry S 40 100000 sched-entry S 0 50000 sched-entry S 80 100000 flags 0x2
+
+4. Check if the rule is properly implemented:
+$ tc -d -s qdisc show dev eth1 root
+
+5. Run the test-pmd command:
+
+- The priority for each queue is configured by user in DPDK using devargs
+  argument as used in the below command.
+- The priorities for each queue are seperated by '|' in devargs.
+
+$ ./dpdk-testpmd -c 0xf -n 1 -a 0002:00:12.0,enetc4_txq_prior="1|2|3|4|5" --
+   -i --nb-ports=1 --nb-cores=3 --forward-mode=txonly --txq=3
+   --txonly_vlan_multiq_enable --txpkts=1500
+
+In tc qdisc GCL: Queue IDs (S 1, S 2, etc.) are scheduled for specific time slices.
+In DPDK: These queue IDs map to transmit queues as follows:
+	S 1 -> txq0
+	S 2 -> txq1
+	S 4 -> txq2, and so on.
+
+6. Capture the packets on spirent and analyse the wireshark output.
+
+The output should be the way the rule is configured using tc command.
+
+As per the above tc command, the packets should be such that:
+VLAN priority 0 is seen for 100 microsec, then a break of 50 microsec should be observed
+then again for 100 microsec VLAN priority 1 is seen, then a break of 50 microsec
+and so on..
 
 Notes:
 ======
@@ -1114,10 +1253,10 @@ Notes:
   streams with below configuration of the destination IP address in the frames
   being sent:
 
-      For traffic to port 1: 1.1.1.0/24
-      For traffic to port 2: 2.1.1.0/24
-      For traffic to port 3: 3.1.1.0/24
-      For traffic to port 4: 4.1.1.0/24
+      For traffic to port 1: 198.18.0.0/24
+      For traffic to port 2: 198.18.1.0/24
+      For traffic to port 3: 198.18.2.0/24
+      For traffic to port 4: 198.18.3.0/24
 
   Layer-3 Forwarding 'l3fwd' Application using traffic bifurcation
   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1716,7 +1855,8 @@ DPAA1:
 				i.e. fmX-macY style. Use this to export the kernel
 				shared interface name to DPDK e.g. export DPAA_SHARED_IF_NAME_0="eth1"
 				(Here the 0 is the DPDK ethernet interface id for this port).
-
+5. FMCLESS_MAX_RX_QUEUES	Maximum number of fmc rx queue to be used.
+	
 DPAA2:
 ------
 

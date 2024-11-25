@@ -2278,15 +2278,26 @@ dpaa_dev_init(struct rte_eth_dev *eth_dev)
 				dpaa_intf->name);
 		}
 	} else {
-		/* FMCLESS mode, load balance to multiple cores.*/
-		num_rx_fqs = rte_lcore_count();
+		/* FMCLESS mode, default queue number is max queues
+		 * because multiple queues may be processed on same core.
+		 */
+		if (getenv("FMCLESS_MAX_RX_QUEUES")) {
+			num_rx_fqs = atoi(getenv("FMCLESS_MAX_RX_QUEUES"));
+			if (num_rx_fqs > DPAA_MAX_NUM_PCD_QUEUES) {
+				DPAA_PMD_WARN("fmcless max rxq number(%d) > %d",
+					num_rx_fqs, DPAA_MAX_NUM_PCD_QUEUES);
+				num_rx_fqs = DPAA_MAX_NUM_PCD_QUEUES;
+			}
+		} else {
+			num_rx_fqs = DPAA_MAX_NUM_PCD_QUEUES;
+		}
 	}
 
 	/* Each device can not have more than DPAA_MAX_NUM_PCD_QUEUES RX
 	 * queues.
 	 */
-	if (num_rx_fqs < 0 || num_rx_fqs > DPAA_MAX_NUM_PCD_QUEUES) {
-		DPAA_PMD_ERR("Invalid number of RX queues");
+	if (num_rx_fqs > DPAA_MAX_NUM_PCD_QUEUES) {
+		DPAA_PMD_ERR("Invalid number of RX queues(%d)", num_rx_fqs);
 		return -EINVAL;
 	}
 

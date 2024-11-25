@@ -53,6 +53,7 @@ enum enetc_bdr_type {TX, RX};
 /* RX BDR reg offsets */
 #define ENETC_RBMR		0x0 /* RX BDR mode register*/
 #define ENETC_RBMR_EN		BIT(31)
+#define ENETC_BMR_RESET		0x0 /* BDR reset*/
 
 #define ENETC_RBSR		0x4  /* Rx BDR status register*/
 #define ENETC_RBBSR		0x8  /* Rx BDR buffer size register*/

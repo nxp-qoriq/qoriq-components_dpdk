@@ -101,7 +101,7 @@ static struct rte_devargs *
 fslmc_devargs_lookup(struct rte_dpaa2_device *dev)
 {
 	struct rte_devargs *devargs;
-	char dev_name[32];
+	char dev_name[RTE_DEV_NAME_MAX_LEN];
 
 	RTE_EAL_DEVARGS_FOREACH("fslmc", devargs) {
 		devargs->bus->parse(devargs->name, &dev_name);

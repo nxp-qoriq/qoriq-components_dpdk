@@ -56,6 +56,7 @@
 
 #define ENETQ_MAC_PKT_FILTER		0x8 /* MAC Packet Filter Register */
 #define ENETQ_MAC_PKT_FILTER_PR	BIT(0) /* MAC Packet Filter Promiscuous Mode */
+#define ENETQ_MAC_PKT_FILTER_PM	BIT(4) /* MAC Packet Filter Multicast */
 
 /* Receive Queue Control register (ENETQ_MAC_RXQ_CTRL(x)) */
 #define ENETQ_MAC_RXQ_CTRL(id)		(0xa0 + id * 4) /* Receive Queue Control */
@@ -110,6 +111,25 @@
 #define ENETQ_MTL_OP_MODE_RFA_SHIFT	8
 #define ENETQ_MTL_OP_MODE_EHFC	BIT(7) /* Enable Hardware Flow Control */
 #define ENETQ_MTL_OP_MODE_RSF		BIT(5) /* Receive Queue Store and Forward */
+
+/* MTL algorithms identifiers */
+#define ENETQ_MTL_TX_ALGO_WRR		0x0
+#define ENETQ_MTL_TX_ALGO_WFQ		0x1
+#define ENETQ_MTL_TX_ALGO_DWRR		0x2
+#define ENETQ_MTL_TX_ALGO_SP		0x3
+
+#define ENETQ_MTL_OP_SCHALG_MASK	GENMASK(6, 5)
+#define ENETQ_MTL_OP_SCHALG_WRR		(0x0 << 5)
+#define ENETQ_MTL_OP_SCHALG_WFQ		(0x1 << 5)
+#define ENETQ_MTL_OP_SCHALG_DWRR	(0x2 << 5)
+#define ENETQ_MTL_OP_SCHALG_SP		(0x3 << 5)
+
+/* MTL Queue Weight Regs */
+#define ENETQ_MTL_TXQW_BASE_ADDR	0x00000d18
+#define ENETQ_MTL_TXQW_BASE_OFFSET	0x40
+#define ENETQ_MTL_TXQXW_BASE_ADDR(x)	(ENETQ_MTL_TXQW_BASE_ADDR + \
+						((x) * ENETQ_MTL_TXQW_BASE_OFFSET))
+#define ENETQ_MTL_TXQW_ISCQW_MASK	GENMASK(20, 0)
 
 /* INIT operating mode for MAC */
 #define ENETQ_MAC_CORE_INIT (ENETQ_MAC_CONFIG_JD | ENETQ_MAC_CONFIG_DM | \

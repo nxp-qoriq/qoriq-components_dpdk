@@ -2,11 +2,13 @@ INTERNAL {
 	global:
 
 	bman_acquire;
+	bman_acquire_fast;
 	bman_free_pool;
 	bman_get_params;
 	bman_new_pool;
 	bman_query_free_buffers;
 	bman_release;
+	bman_release_fast;
 	bman_thread_irq;
 	dpaa_get_ioctl_version_number;
 	dpaa_get_eth_port_cfg;
@@ -74,6 +76,7 @@ INTERNAL {
 	qman_enqueue;
 	qman_enqueue_multi;
 	qman_enqueue_multi_fq;
+	qman_enqueue_multi_orp;
 	qman_ern_poll_free;
 	qman_ern_register_cb;
 	qman_fq_fqid;

@@ -1463,7 +1463,7 @@ int qman_create_fq(u32 fqid, u32 flags, struct qman_fq *fq)
 	}
 	spin_lock_init(&fq->fqlock);
 	fq->fqid = fqid;
-	fq->fqid_le = cpu_to_be32(fqid);
+	fq->fqid_be = cpu_to_be32(fqid);
 	fq->flags = flags;
 	fq->state = qman_fq_state_oos;
 	fq->cgr_groupid = 0;
@@ -2139,8 +2139,10 @@ int qman_set_vdq(struct qman_fq *fq, u16 num, uint32_t vdqcr_flags)
 
 	if (!p->vdqcr_owned) {
 		FQLOCK(fq);
-		if (fq_isset(fq, QMAN_FQ_STATE_VDQCR))
+		if (fq_isset(fq, QMAN_FQ_STATE_VDQCR)) {
+			FQUNLOCK(fq);
 			goto escape;
+		}
 		fq_set(fq, QMAN_FQ_STATE_VDQCR);
 		FQUNLOCK(fq);
 		p->vdqcr_owned = fq;
@@ -2173,8 +2175,10 @@ int qman_volatile_dequeue(struct qman_fq *fq, u32 flags __maybe_unused,
 
 	if (!p->vdqcr_owned) {
 		FQLOCK(fq);
-		if (fq_isset(fq, QMAN_FQ_STATE_VDQCR))
+		if (fq_isset(fq, QMAN_FQ_STATE_VDQCR)) {
+			FQUNLOCK(fq);
 			goto escape;
+		}
 		fq_set(fq, QMAN_FQ_STATE_VDQCR);
 		FQUNLOCK(fq);
 		p->vdqcr_owned = fq;
@@ -2284,7 +2288,7 @@ int qman_enqueue_multi(struct qman_fq *fq,
 	struct qm_portal *portal = &p->p;
 
 	register struct qm_eqcr *eqcr = &portal->eqcr;
-	struct qm_eqcr_entry *eq = eqcr->cursor, *prev_eq;
+	struct qm_eqcr_entry *eq = eqcr->cursor;
 
 	u8 i = 0, diff, old_ci, sent = 0;
 
@@ -2300,7 +2304,7 @@ int qman_enqueue_multi(struct qman_fq *fq,
 
 	/* try to send as many frames as possible */
 	while (eqcr->available && frames_to_send--) {
-		eq->fqid = fq->fqid_le;
+		eq->fqid = fq->fqid_be;
 		eq->fd.opaque_addr = fd->opaque_addr;
 		eq->fd.addr = cpu_to_be40(fd->addr);
 		eq->fd.status = cpu_to_be32(fd->status);
@@ -2310,8 +2314,9 @@ int qman_enqueue_multi(struct qman_fq *fq,
 				((flags[i] >> 8) & QM_EQCR_DCA_IDXMASK);
 		}
 		i++;
-		eq = (void *)((unsigned long)(eq + 1) &
-			(~(unsigned long)(QM_EQCR_SIZE << 6)));
+		eq++;
+		if (unlikely(eq >= (eqcr->ring + QM_EQCR_SIZE)))
+			eq = eqcr->ring;
 		eqcr->available--;
 		sent++;
 		fd++;
@@ -2325,11 +2330,11 @@ int qman_enqueue_multi(struct qman_fq *fq,
 	for (i = 0; i < sent; i++) {
 		eq->__dont_write_directly__verb =
 			QM_EQCR_VERB_CMD_ENQUEUE | eqcr->vbit;
-		prev_eq = eq;
-		eq = (void *)((unsigned long)(eq + 1) &
-			(~(unsigned long)(QM_EQCR_SIZE << 6)));
-		if (unlikely((prev_eq + 1) != eq))
+		eq++;
+		if (unlikely(eq >= (eqcr->ring + QM_EQCR_SIZE))) {
 			eqcr->vbit ^= QM_EQCR_VERB_VBIT;
+			eq = eqcr->ring;
+		}
 	}
 
 	/* We need  to flush all the lines but without load/store operations
@@ -2347,6 +2352,75 @@ int qman_enqueue_multi(struct qman_fq *fq,
 }
 
 int
+qman_enqueue_multi_orp(struct qman_fq *fq,
+	const struct qm_fd *fd, struct qman_fq *orp,
+	uint32_t *flags, uint16_t *orp_seqnum,
+	int frames_to_send)
+{
+	struct qman_portal *p = get_affine_portal();
+	struct qm_portal *portal = &p->p;
+
+	register struct qm_eqcr *eqcr = &portal->eqcr;
+	struct qm_eqcr_entry *eq = eqcr->cursor;
+
+	uint8_t i = 0, diff, old_ci, sent = 0;
+	uint8_t eq_verbs;
+
+	if (unlikely(!orp || !orp_seqnum || fq->force_ooo))
+		return qman_enqueue_multi(fq, fd, flags, frames_to_send);
+
+	if (!eqcr->available) {
+		old_ci = eqcr->ci;
+		eqcr->ci = qm_cl_in(EQCR_CI) & (QM_EQCR_SIZE - 1);
+		diff = qm_cyc_diff(QM_EQCR_SIZE, old_ci, eqcr->ci);
+		eqcr->available += diff;
+		if (!diff)
+			return 0;
+	}
+
+	/* try to send as many frames as possible */
+	while (eqcr->available && frames_to_send--) {
+		eq->fqid = fq->fqid_be;
+		eq->fd.opaque_addr = fd->opaque_addr;
+		eq->fd.addr = cpu_to_be40(fd->addr);
+		eq->fd.status = cpu_to_be32(fd->status);
+		eq->fd.opaque = cpu_to_be32(fd->opaque);
+
+		eq->orp = orp->fqid_be;
+		if (flags && flags[i] & QMAN_ENQUEUE_FLAG_NLIS) {
+			orp_seqnum[i] |= QM_EQCR_SEQNUM_NLIS;
+		} else if (flags) {
+			orp_seqnum[i] &= ~QM_EQCR_SEQNUM_NLIS;
+			if (flags[i] & QMAN_ENQUEUE_FLAG_NESN)
+				orp_seqnum[i] |= QM_EQCR_SEQNUM_NESN;
+			else
+				orp_seqnum[i] &= ~QM_EQCR_SEQNUM_NESN;
+		}
+		eq->seqnum = cpu_to_be16(orp_seqnum[i]);
+		eq_verbs = QM_EQCR_VERB_ORP | eqcr->vbit;
+		if (likely(!flags || (~(flags[i] & (QMAN_ENQUEUE_FLAG_HOLE |
+			QMAN_ENQUEUE_FLAG_NESN)))))
+			eq_verbs |= QM_EQCR_VERB_CMD_ENQUEUE;
+
+		eq->__dont_write_directly__verb = eq_verbs;
+		dcbf(eq);
+		lwsync();
+		i++;
+		eq++;
+		if (unlikely(eq >= (eqcr->ring + QM_EQCR_SIZE))) {
+			eqcr->vbit ^= QM_EQCR_VERB_VBIT;
+			eq = eqcr->ring;
+		}
+		eqcr->available--;
+		sent++;
+		fd++;
+	}
+
+	eqcr->cursor = eq;
+	return sent;
+}
+
+int
 qman_enqueue_multi_fq(struct qman_fq *fq[], const struct qm_fd *fd,
 		      u32 *flags, int frames_to_send)
 {
@@ -2354,7 +2428,7 @@ qman_enqueue_multi_fq(struct qman_fq *fq[], const struct qm_fd *fd,
 	struct qm_portal *portal = &p->p;
 
 	register struct qm_eqcr *eqcr = &portal->eqcr;
-	struct qm_eqcr_entry *eq = eqcr->cursor, *prev_eq;
+	struct qm_eqcr_entry *eq = eqcr->cursor;
 
 	u8 i = 0, diff, old_ci, sent = 0;
 
@@ -2370,7 +2444,7 @@ qman_enqueue_multi_fq(struct qman_fq *fq[], const struct qm_fd *fd,
 
 	/* try to send as many frames as possible */
 	while (eqcr->available && frames_to_send--) {
-		eq->fqid = fq[sent]->fqid_le;
+		eq->fqid = fq[sent]->fqid_be;
 		eq->fd.opaque_addr = fd->opaque_addr;
 		eq->fd.addr = cpu_to_be40(fd->addr);
 		eq->fd.status = cpu_to_be32(fd->status);
@@ -2381,8 +2455,9 @@ qman_enqueue_multi_fq(struct qman_fq *fq[], const struct qm_fd *fd,
 		}
 		i++;
 
-		eq = (void *)((unsigned long)(eq + 1) &
-			(~(unsigned long)(QM_EQCR_SIZE << 6)));
+		eq++;
+		if (unlikely(eq >= (eqcr->ring + QM_EQCR_SIZE)))
+			eq = eqcr->ring;
 		eqcr->available--;
 		sent++;
 		fd++;
@@ -2396,11 +2471,11 @@ qman_enqueue_multi_fq(struct qman_fq *fq[], const struct qm_fd *fd,
 	for (i = 0; i < sent; i++) {
 		eq->__dont_write_directly__verb =
 			QM_EQCR_VERB_CMD_ENQUEUE | eqcr->vbit;
-		prev_eq = eq;
-		eq = (void *)((unsigned long)(eq + 1) &
-			(~(unsigned long)(QM_EQCR_SIZE << 6)));
-		if (unlikely((prev_eq + 1) != eq))
+		eq++;
+		if (unlikely(eq >= (eqcr->ring + QM_EQCR_SIZE))) {
 			eqcr->vbit ^= QM_EQCR_VERB_VBIT;
+			eq = eqcr->ring;
+		}
 	}
 
 	/* We need  to flush all the lines but without load/store operations
@@ -2409,8 +2484,9 @@ qman_enqueue_multi_fq(struct qman_fq *fq[], const struct qm_fd *fd,
 	eq = eqcr->cursor;
 	for (i = 0; i < sent; i++) {
 		dcbf(eq);
-		eq = (void *)((unsigned long)(eq + 1) &
-			(~(unsigned long)(QM_EQCR_SIZE << 6)));
+		eq++;
+		if (unlikely(eq >= (eqcr->ring + QM_EQCR_SIZE)))
+			eq = eqcr->ring;
 	}
 	/* Update cursor for the next call */
 	eqcr->cursor = eq;
@@ -2422,6 +2498,9 @@ int qman_enqueue_orp(struct qman_fq *fq, const struct qm_fd *fd, u32 flags,
 {
 	struct qman_portal *p  = get_affine_portal();
 	struct qm_eqcr_entry *eq;
+
+	if (unlikely(fq->force_ooo))
+		return qman_enqueue(fq, fd, flags);
 
 	eq = try_p_eq_start(p, fq, fd, flags);
 	if (!eq)

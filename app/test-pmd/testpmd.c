@@ -1598,6 +1598,20 @@ get_eth_overhead(struct rte_eth_dev_info *dev_info)
 }
 
 static void
+core_to_queue_mapping(portid_t pid)
+{
+	struct rte_port *port = &ports[pid];
+	int i;
+
+	if (nb_fwd_lcores != nb_txq)
+		rte_exit(EXIT_FAILURE, "Num of cores is not equal to the no of queues.");
+
+	for (i = 0; i < nb_fwd_lcores; i++) {
+		port->core_to_queue_map[i] = i % port->dev_info.max_tx_queues;
+	}
+}
+
+static void
 init_config_port_offloads(portid_t pid, uint32_t socket_id)
 {
 	struct rte_port *port = &ports[pid];
@@ -1715,7 +1729,11 @@ init_config(void)
 		}
 		/* Apply default TxRx configuration for all ports */
 		init_config_port_offloads(pid, socket_id);
+		if (txonly_vlan_multiq_enable) {
+			core_to_queue_mapping(pid);
+		}
 	}
+
 	/*
 	 * Create pools of mbuf.
 	 * If NUMA support is disabled, create a single pool of mbuf in
@@ -2265,10 +2283,12 @@ run_pkt_fwd_on_lcore(struct fwd_lcore *fc, packet_fwd_t pkt_fwd)
 #endif
 	fsm = &fwd_streams[fc->stream_idx];
 	nb_fs = fc->stream_nb;
+
 	do {
-		for (sm_id = 0; sm_id < nb_fs; sm_id++)
+		for (sm_id = 0; sm_id < nb_fs; sm_id++) {
 			if (!fsm[sm_id]->disabled)
 				(*pkt_fwd)(fsm[sm_id]);
+		}
 #ifdef RTE_LIB_BITRATESTATS
 		if (bitrate_enabled != 0 &&
 				bitrate_lcore_id == rte_lcore_id()) {
