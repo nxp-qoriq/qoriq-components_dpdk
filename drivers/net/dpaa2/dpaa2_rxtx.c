@@ -814,6 +814,7 @@ dump_err_pkts(struct dpaa2_queue *dpaa2_q)
 				mbuf->data_len);
 		}
 
+		rte_pktmbuf_free(mbuf);
 		dq_storage++;
 		num_rx++;
 	} while (pending);
