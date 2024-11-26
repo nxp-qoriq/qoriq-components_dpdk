@@ -944,12 +944,62 @@ vlan_port_flow_configure(uint16_t portid, uint8_t nb_rx_queue,
 	}
 }
 
+void
+xstats_display()
+{
+	struct rte_eth_xstat *xstats;
+	int cnt_xstats, idx_xstat;
+	struct rte_eth_xstat_name *xstats_names;
+
+	printf("print for xstats*******************\n");
+	/* Get count */
+	cnt_xstats = rte_eth_xstats_get_names(0, NULL, 0);
+	if (cnt_xstats  < 0) {
+		fprintf(stderr, "Error: Cannot get count of xstats\n");
+        	return;
+      	}
+
+	/* Get id-name lookup table */
+        xstats_names = malloc(sizeof(struct rte_eth_xstat_name) * cnt_xstats);
+        if (xstats_names == NULL) {
+               	fprintf(stderr, "Cannot allocate memory for xstats lookup\n");
+               	return;
+        }
+        if (cnt_xstats != rte_eth_xstats_get_names(
+               	        0, xstats_names, cnt_xstats)) {
+               	fprintf(stderr, "Error: Cannot get xstats lookup\n");
+               	free(xstats_names);
+               	return;
+        }
+
+       	 /* Get stats themselves */
+        xstats = malloc(sizeof(struct rte_eth_xstat) * cnt_xstats);
+        if (xstats == NULL) {
+               fprintf(stderr, "Cannot allocate memory for xstats\n");
+               	free(xstats_names);
+               	return;
+        }
+        if (cnt_xstats != rte_eth_xstats_get(0, xstats, cnt_xstats)) {
+               	fprintf(stderr, "Error: Unable to get xstats\n");
+               	free(xstats_names);
+               	free(xstats);
+               	return;
+        }
+
+	/* Display xstats */
+	for (idx_xstat = 0; idx_xstat < cnt_xstats; idx_xstat++)
+		printf("%s: %"PRIu64"\n", xstats_names[idx_xstat].name, xstats[idx_xstat].value);
+	free(xstats_names);
+	free(xstats);
+}
+
 static void
 signal_handler(int signum)
 {
 	if (signum == SIGINT || signum == SIGTERM) {
 		printf("\n\nSignal %d received, preparing to exit...\n",
 				signum);
+		xstats_display();
 		force_quit = true;
 	}
 }
