@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2020-2021,2023 NXP
+ * Copyright 2020-2024 NXP
  */
 
 #include <stdio.h>
