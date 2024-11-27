@@ -495,6 +495,17 @@ cmd_axiq_lb_enable_parsed(__attribute__((unused)) void *parsed_result,
 }
 
 void
+cmd_axiq_lb_enable_mask_parsed(__attribute__((unused)) void *parsed_result,
+			       __attribute__((unused)) struct cmdline *cl,
+			       __attribute__((unused)) void *data)
+{
+	struct cmd_axiq_lb_enable_mask_result *res = parsed_result;
+
+	printf("res->rx_lb_mask = %#x\n", res->rx_lb_mask);
+	cmd_do_axiq_lb_mask_enable(res->rx_lb_mask);
+}
+
+void
 cmd_axiq_lb_disable_parsed(__attribute__((unused)) void *parsed_result,
 			   __attribute__((unused)) struct cmdline *cl,
 			   __attribute__((unused)) void *data)

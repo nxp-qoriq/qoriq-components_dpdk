@@ -238,6 +238,27 @@ void cmd_do_debug(uint32_t debug_cmd, const char *desc)
 		app_print_err("Failed to send IPC message\n");
 }
 
+/* config symbol size */
+void cmd_do_axiq_lb_mask_enable(uint32_t rx_lb_mask)
+{
+	struct dfe_msg *msg;
+	int ret;
+
+	app_print_info("Send rx lb enable mask %#x command\n", rx_lb_mask);
+
+	msg = (struct dfe_msg *)get_tx_buf(BBDEV_IPC_H2M_QUEUE);
+	if (!msg)
+		return;
+
+	msg->type = DFE_CFG_AXIQ_LB_ENABLE;
+	msg->payload[0] = rx_lb_mask;
+
+	wait_response = 1;
+	ret = send_dfe_command(msg);
+	if (ret < 0)
+		app_print_err("Failed to send IPC message\n");
+}
+
 /* FDD start/stop with delay between paths */
 void cmd_do_fdd_start_stop_all_paths(uint32_t start, uint32_t delay)
 {

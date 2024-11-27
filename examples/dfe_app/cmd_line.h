@@ -67,6 +67,7 @@ extern void cmd_config_rx_sym_num_parsed(void *parsed_result, struct cmdline *cl
 extern void cmd_config_tx_addr_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_config_tx_sym_num_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_axiq_lb_enable_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_axiq_lb_enable_mask_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_axiq_lb_disable_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_debug_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_vspa_debug_parsed(void *parsed_result, struct cmdline *cl, void *data);
@@ -476,6 +477,36 @@ static cmdline_parse_inst_t cmd_axiq_lb_enable = {
 		NULL,
 	}
 };
+
+struct cmd_axiq_lb_enable_mask_result {
+	cmdline_fixed_string_t axiq_lb;
+	cmdline_fixed_string_t enable;
+	cmdline_fixed_string_t mask;
+	uint32_t rx_lb_mask;
+};
+
+static cmdline_parse_token_string_t cmd_axiq_lb_enable_mask_axiq_lb_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_axiq_lb_enable_mask_result, axiq_lb, "axiq_lb");
+static cmdline_parse_token_string_t cmd_axiq_lb_enable_mask_enable_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_axiq_lb_enable_mask_result, enable, "enable");
+static cmdline_parse_token_string_t cmd_axiq_lb_enable_mask_mask_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_axiq_lb_enable_mask_result, enable, "mask");
+static cmdline_parse_token_num_t cmd_axiq_lb_enable_mask_rx_lb_mask_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_axiq_lb_enable_mask_result, rx_lb_mask, RTE_UINT32);
+
+static cmdline_parse_inst_t cmd_axiq_lb_enable_mask = {
+	.f = cmd_axiq_lb_enable_mask_parsed,
+	.data = NULL,
+	.help_str = "",
+	.tokens = {
+		(void *)&cmd_axiq_lb_enable_mask_axiq_lb_tok,
+		(void *)&cmd_axiq_lb_enable_mask_enable_tok,
+		(void *)&cmd_axiq_lb_enable_mask_mask_tok,
+		(void *)&cmd_axiq_lb_enable_mask_rx_lb_mask_tok,
+		NULL,
+	}
+};
+
 
 struct cmd_axiq_lb_disable_result {
 	cmdline_fixed_string_t axiq_lb;
@@ -1094,6 +1125,7 @@ static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_config_tx_addr,
 	&cmd_config_tx_sym_num,
 	&cmd_axiq_lb_enable,
+	&cmd_axiq_lb_enable_mask,
 	&cmd_axiq_lb_disable,
 	&cmd_vspa_debug,
 	&cmd_vspa_benchmark,
