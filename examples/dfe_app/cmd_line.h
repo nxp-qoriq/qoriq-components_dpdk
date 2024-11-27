@@ -54,8 +54,8 @@
 /* add your callbacks here */
 extern void cmd_quit_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_help_parsed(void *parsed_result, struct cmdline *cl, void *data);
-extern void cmd_fdd_start_parsed(void *parsed_result, struct cmdline *cl, void *data);
-extern void cmd_fdd_stop_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_fdd_start_stop_parsed(void *parsed_result, struct cmdline *cl, void *data);
+extern void cmd_fdd_start_stop_all_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_start_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_stop_parsed(void *parsed_result, struct cmdline *cl, void *data);
 extern void cmd_tdd_tti_parsed(void *parsed_result, struct cmdline *cl, void *data);
@@ -143,44 +143,56 @@ static cmdline_parse_inst_t cmd_help = {
 	}
 };
 
-struct cmd_fdd_start_result {
+struct cmd_fdd_start_stop_result {
 	cmdline_fixed_string_t fdd;
-	cmdline_fixed_string_t start;
+	cmdline_fixed_string_t start_stop;
 };
 
-static cmdline_parse_token_string_t cmd_fdd_start_fdd_tok =
-	TOKEN_STRING_INITIALIZER(struct cmd_fdd_start_result, fdd, "fdd");
-static cmdline_parse_token_string_t cmd_fdd_start_start_tok =
-	TOKEN_STRING_INITIALIZER(struct cmd_fdd_start_result, start, "start");
+static cmdline_parse_token_string_t cmd_fdd_start_stop_fdd_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_fdd_start_stop_result, fdd, "fdd");
+static cmdline_parse_token_string_t cmd_fdd_start_stop_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_fdd_start_stop_result, start_stop, "start#stop");
 
-static cmdline_parse_inst_t cmd_fdd_start = {
-	.f = cmd_fdd_start_parsed,
+static cmdline_parse_inst_t cmd_fdd_start_stop = {
+	.f = cmd_fdd_start_stop_parsed,
 	.data = NULL,
 	.help_str = "",
 	.tokens = {
-		(void *)&cmd_fdd_start_fdd_tok,
-		(void *)&cmd_fdd_start_start_tok,
+		(void *)&cmd_fdd_start_stop_fdd_tok,
+		(void *)&cmd_fdd_start_stop_tok,
 		NULL,
 	}
 };
 
-struct cmd_fdd_stop_result {
+struct cmd_fdd_start_stop_all_result {
 	cmdline_fixed_string_t fdd;
-	cmdline_fixed_string_t stop;
+	cmdline_fixed_string_t start_stop_all;
+	cmdline_fixed_string_t all_paths;
+	cmdline_fixed_string_t delay;
+	uint32_t delta;
 };
 
-static cmdline_parse_token_string_t cmd_fdd_stop_fdd_tok =
-	TOKEN_STRING_INITIALIZER(struct cmd_fdd_stop_result, fdd, "fdd");
-static cmdline_parse_token_string_t cmd_fdd_stop_stop_tok =
-	TOKEN_STRING_INITIALIZER(struct cmd_fdd_stop_result, stop, "stop");
+static cmdline_parse_token_string_t cmd_fdd_start_stop_all_fdd_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_fdd_start_stop_all_result, fdd, "fdd");
+static cmdline_parse_token_string_t cmd_fdd_start_stop_all_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_fdd_start_stop_all_result, start_stop_all, "start#stop");
+static cmdline_parse_token_string_t cmd_fdd_start_stop_all_all_paths_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_fdd_start_stop_all_result, all_paths, "all");
+static cmdline_parse_token_string_t cmd_fdd_start_stop_delay_tok =
+	TOKEN_STRING_INITIALIZER(struct cmd_fdd_start_stop_all_result, delay, "delay");
+static cmdline_parse_token_num_t cmd_fdd_start_stop_delta_tok =
+	TOKEN_NUM_INITIALIZER(struct cmd_fdd_start_stop_all_result, delta, RTE_UINT32);
 
-static cmdline_parse_inst_t cmd_fdd_stop = {
-	.f = cmd_fdd_stop_parsed,
+static cmdline_parse_inst_t cmd_fdd_start_stop_all = {
+	.f = cmd_fdd_start_stop_all_parsed,
 	.data = NULL,
 	.help_str = "",
 	.tokens = {
-		(void *)&cmd_fdd_stop_fdd_tok,
-		(void *)&cmd_fdd_stop_stop_tok,
+		(void *)&cmd_fdd_start_stop_all_fdd_tok,
+		(void *)&cmd_fdd_start_stop_all_tok,
+		(void *)&cmd_fdd_start_stop_all_all_paths_tok,
+		(void *)&cmd_fdd_start_stop_delay_tok,
+		(void *)&cmd_fdd_start_stop_delta_tok,
 		NULL,
 	}
 };
@@ -1070,8 +1082,8 @@ static __rte_used cmdline_parse_ctx_t ctx[] = {
 	&cmd_quit,
 	&cmd_help,
 	&cmd_wait,
-	&cmd_fdd_start,
-	&cmd_fdd_stop,
+	&cmd_fdd_start_stop,
+	&cmd_fdd_start_stop_all,
 	&cmd_tdd_start,
 	&cmd_tdd_stop,
 	&cmd_config_scs,

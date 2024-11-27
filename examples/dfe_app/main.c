@@ -28,7 +28,7 @@
 #include "ipc.h"
 #include "tti.h"
 
-#define APP_VERSION       "0.5"
+#define APP_VERSION       "1.0.1"
 
 int cpu_id = 0;
 int cpu_mask = 0x3;
@@ -233,6 +233,27 @@ void cmd_do_debug(uint32_t debug_cmd, const char *desc)
 	wait_response = 1;
 	msg->type = DFE_DEBUG_CMD;
 	msg->payload[0] = debug_cmd;
+	ret = send_dfe_command(msg);
+	if (ret < 0)
+		app_print_err("Failed to send IPC message\n");
+}
+
+/* FDD start/stop with delay between paths */
+void cmd_do_fdd_start_stop_all_paths(uint32_t start, uint32_t delay)
+{
+	struct dfe_msg *msg;
+	int ret;
+
+	app_print_info("Send FDD start/stop ALL paths\n");
+
+	msg = (struct dfe_msg *)get_tx_buf(BBDEV_IPC_H2M_QUEUE);
+	if (!msg)
+		return;
+
+	msg->type = (start != 0) ? DFE_FDD_ALL_PATHS_START : DFE_FDD_ALL_PATHS_STOP;
+	msg->payload[0] = delay;
+
+	wait_response = 1;
 	ret = send_dfe_command(msg);
 	if (ret < 0)
 		app_print_err("Failed to send IPC message\n");
