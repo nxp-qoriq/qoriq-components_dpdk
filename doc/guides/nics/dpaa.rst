@@ -1,5 +1,5 @@
 ..  SPDX-License-Identifier: BSD-3-Clause
-    Copyright 2017,2020 NXP
+    Copyright 2017,2020,2024 NXP
 
 
 DPAA Poll Mode Driver
@@ -227,6 +227,47 @@ state during application initialization:
   application want to use eventdev with DPAA device.
   Currently these queues are not used for LS1023/LS1043 platform by default.
 
+Devargs
+~~~~~~~
+
+The devargs can be passed in EAL args. Examples are mentioned below.
+
+Note:
+-----
+For using any interface with devargs params, user will have to add it to allowlist
+using "-a".
+Meaning, once one interface's devargs are added (Added to allowlist) user will
+have to add all the interfaces they wish to use with corresponding devargs params.
+
+To enable fm1-macx port in DPDK when using devargs the port mask used to enable
+fm1-macx interface is not used but rather the port mask corresponds to the no of
+ports enabled in dpdk using allowlist.
+
+Ex. If the user is allowing only one interface (let say, fm1-mac9) with devargs,
+they will pass 0x1 port mask and not 0x10 used to enabled port 4 (fm1-mac9).
+And if two interfaces are to be used, user will pass devargs for both ports and
+pass port mask as 0x3.
+
+DPAA drivers uses the following devargs:
+
+- ``drv_ieee1588``
+
+ This is used to indicate if IEEE 1588 is enabled for the driver.
+ It can be passed in the EAL args as:
+	-a dpaa_bus:fm1-mac9,drv_ieee1588=1
+
+	eg. $ ./dpdk-l2fwd -c 0x3 -n 1  -a dpaa_bus:fm1-mac9,drv_ieee1588=1 --  -p 0x1 -q 1 -T 0
+
+- ``recv_err_pkts``
+
+This is used to enable main queue to receive error packets as well. This is
+disabled for VSP mode. That is because it might cause crash if kernel sends err
+packets to the main queue in VSP mode.
+
+It can be passed in the EAL args as:
+        -a dpaa_bus:fm1-mac9,recv_err_pkts=1
+
+        eg. $ ./dpdk-l2fwd -c 0x3 -n 1  -a dpaa_bus:fm1-mac9,recv_err_pkts=1 --  -p 0x1 -q 1 -T 0
 
 Driver compilation and testing
 ------------------------------
