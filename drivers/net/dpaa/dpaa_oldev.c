@@ -346,6 +346,7 @@ int dpaa_ol_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 {
 	struct dpaa_if *dpaa_intf = dev->data->dev_private;
 	struct qman_fq *rxq = &dpaa_intf->rx_queues[queue_idx];
+	struct dpaa_if_vsp *vsp;
 
 	PMD_INIT_FUNC_TRACE();
 
@@ -356,8 +357,10 @@ int dpaa_ol_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 		return -rte_errno;
 	}
 
+	vsp = &dpaa_intf->vsp[dpaa_intf->base_vsp];
 	/* only one mempool can be configured for ol device */
-	dpaa_intf->bp_info[0] = DPAA_MEMPOOL_TO_POOL_INFO(mp);
+	vsp->vsp_bp[0] = DPAA_MEMPOOL_TO_POOL_INFO(mp);
+	vsp->bp_num = 1;
 	dpaa_intf->valid = 1;
 
 	rxq->bp_array = rte_dpaa_bpid_info;
@@ -380,20 +383,21 @@ int dpaa_ol_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	int ret;
 	const char *bh_port_name;
 	struct rte_pktmbuf_pool_private *mbp_priv;
+	struct dpaa_if_vsp *vsp;
 
 	PMD_INIT_FUNC_TRACE();
 
 	dev->data->tx_queues[queue_idx] = txq;
 
-	if (dpaa_intf->bp_info[0] == NULL || rxq == NULL)
+	vsp = &dpaa_intf->vsp[dpaa_intf->base_vsp];
+	if (!vsp->vsp_bp[0] || !rxq)
 		return 0;
 
-	mbp_priv = (struct rte_pktmbuf_pool_private *)
-		   rte_mempool_get_priv(dpaa_intf->bp_info[0]->mp);
+	mbp_priv = rte_mempool_get_priv(vsp->vsp_bp[0]->mp);
 	fq_info.tx_fq_id = txq->fqid;
 	fq_info.rx_fq_id = rxq->fqid;
 	fq_info.buff_size = mbp_priv->mbuf_data_room_size;
-	fq_info.bp_id = dpaa_intf->bp_info[0]->bpid;
+	fq_info.bp_id = vsp->vsp_bp[0]->bpid;
 
 /* Private area reserved by driver.
  * Aligned with "struct annotations_t". Parse results will be written from

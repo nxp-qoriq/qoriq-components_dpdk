@@ -3,6 +3,7 @@ DPDK_23 {
 
 	rte_pmd_dpaa_set_tx_loopback;
 	rte_pmd_dpaa_port_set_rate_limit;
+	rte_dpaa_eth_rx_queue_mp_setup;
 
 	local: *;
 };
