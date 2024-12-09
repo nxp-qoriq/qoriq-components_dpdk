@@ -9,6 +9,7 @@ DPDK_23 {
 	rte_pmd_dpaa2_ep_name;
 	rte_pmd_dpaa2_clean_tx_conf;
 	rte_pmd_dpaa2_rx_get_offset;
+	rte_pmd_dpaa2_flow_table_query;
 
 	local: *;
 };

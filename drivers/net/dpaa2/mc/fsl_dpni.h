@@ -2010,6 +2010,29 @@ enum dpni_table_type {
 	DPNI_VLAN_TABLE = 4,
 };
 
+struct dpni_dump_table_header {
+	uint16_t table_type;
+	uint16_t table_num_entries;
+	uint16_t table_max_entries;
+	uint8_t default_action;
+	uint8_t match_type;
+	uint8_t reserved[24];
+} __rte_packed;
+
+struct dpni_dump_table_entry {
+	uint8_t key[DPNI_MAX_KEY_SIZE];
+	uint8_t mask[DPNI_MAX_KEY_SIZE];
+	uint8_t key_action;
+	uint16_t result[3];
+	uint16_t rule_index;
+	uint8_t reserved[19];
+} __rte_packed;
+
+struct dpni_dump_table_rsp {
+	struct dpni_dump_table_header hdr;
+	struct dpni_dump_table_entry entry[];
+} __rte_packed;
+
 int dpni_dump_table(struct fsl_mc_io *mc_io,
 			 uint32_t cmd_flags,
 			 uint16_t token,

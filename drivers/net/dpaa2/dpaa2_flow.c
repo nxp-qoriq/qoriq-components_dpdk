@@ -5074,8 +5074,7 @@ dpaa2_flow_create(struct rte_eth_dev *dev,
 	int ret;
 	uint64_t iova;
 
-	dpaa2_flow_control_log =
-		getenv("DPAA2_FLOW_CONTROL_LOG");
+	dpaa2_flow_control_log = getenv("DPAA2_FLOW_CONTROL_LOG");
 
 	if (getenv("DPAA2_FLOW_CONTROL_MISS_FLOW")) {
 		dpaa2_flow_miss_flow_id =
@@ -6083,13 +6082,258 @@ again:
 }
 
 static int
-dpaa2_flow_query(struct rte_eth_dev *dev __rte_unused,
-	struct rte_flow *_flow __rte_unused,
-	const struct rte_flow_action *actions __rte_unused,
-	void *data __rte_unused,
-	struct rte_flow_error *error __rte_unused)
+dpaa2_flow_query(struct rte_eth_dev *dev,
+	struct rte_flow *_flow, const struct rte_flow_action *actions,
+	void *data, struct rte_flow_error *error)
 {
-	return 0;
+	struct dpaa2_dev_flow *flow;
+	struct dpaa2_dev_priv *priv = dev->data->dev_private;
+	uint16_t num = 0, num_rsp, i, tc_id = 0;
+	int ret = 0, qos_found = false, fs_found = false, found = false;
+	size_t size, iova;
+	struct dpni_dump_table_rsp *rsp = NULL;
+
+	RTE_SET_USED(actions);
+	RTE_SET_USED(data);
+	RTE_SET_USED(error);
+
+	flow = LIST_FIRST(&priv->flows);
+	while (flow) {
+		num++;
+		if (flow == (struct dpaa2_dev_flow *)_flow)
+			found = true;
+		flow = LIST_NEXT(flow, next);
+	}
+	if (!num || found == false)
+		return -ENXIO;
+	num = num * 2;/** Max: FS entry + QoS entry.*/
+	flow = (void *)_flow;
+	size = sizeof(struct dpni_dump_table_header) +
+		num * sizeof(struct dpni_dump_table_entry);
+	rsp = rte_zmalloc(NULL, size, RTE_CACHE_LINE_SIZE);
+	if (!rsp)
+		return -ENOMEM;
+	iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(rsp, size);
+	if (iova == RTE_BAD_IOVA) {
+		DPAA2_PMD_ERR("%s: No IOMMU map for dump table result!",
+			__func__);
+		ret = -EIO;
+		goto quit;
+	}
+
+	if (priv->num_rx_tc <= 1) {
+		qos_found = true;
+		goto dump_fs;
+	}
+
+	ret = dpni_dump_table(priv->hw, CMD_PRI_LOW,
+		priv->token, DPNI_QOS_TABLE, 0/**Any*/,
+		iova, size, &num_rsp);
+	if (ret) {
+		DPAA2_PMD_ERR("dump %s's QoS table failed(%d)",
+			dev->data->name, ret);
+		goto quit;
+	}
+	for (i = 0; i < num_rsp; i++) {
+		if (!memcmp(rsp->entry[i].key, flow->qos_key_addr,
+			flow->qos_rule_size) &&
+			!memcmp(rsp->entry[i].mask,
+			flow->qos_mask_addr, flow->qos_rule_size)) {
+			qos_found = true;
+			break;
+		}
+	}
+
+dump_fs:
+	ret = dpni_dump_table(priv->hw, CMD_PRI_LOW,
+		priv->token, DPNI_FS_TABLE, tc_id,
+		iova, size, &num_rsp);
+	if (ret) {
+		DPAA2_PMD_ERR("dump %s's FS%d table failed(%d)",
+			dev->data->name, tc_id, ret);
+		goto quit;
+	}
+	for (i = 0; i < num_rsp; i++) {
+		if (!memcmp(rsp->entry[i].key, flow->fs_key_addr,
+			flow->fs_rule_size) &&
+			!memcmp(rsp->entry[i].mask,
+			flow->fs_mask_addr, flow->fs_rule_size)) {
+			fs_found = true;
+			break;
+		}
+	}
+
+quit:
+	if (!qos_found || !fs_found) {
+		DPAA2_PMD_ERR("%s-TC%d: flow not found in TCAM table!",
+			dev->data->name, flow->tc_id);
+		if (!ret)
+			ret = -ENXIO;
+	}
+	if (rsp)
+		rte_free(rsp);
+
+	return ret;
+}
+
+static int
+dpaa2_flow_table_dump_check(struct dpni_dump_table_rsp *rsp,
+	uint16_t num_rsp, char *dump_str, int type,
+	struct dpaa2_dev_flow *_flow, uint16_t size)
+{
+	uint16_t i, j, off = 0;
+	int found, ret = 0;
+	uint8_t *key, *mask;
+	struct dpaa2_dev_flow *flow;
+
+	for (i = 0; i < num_rsp; i++) {
+		off += sprintf(&dump_str[off],
+			"entry%d: idx(%d):action(%d)\nkey:\n",
+			i, rsp->entry[i].rule_index,
+			rsp->entry[i].key_action);
+		for (j = 0; j < size; j++) {
+			off += sprintf(&dump_str[off], "%02x ",
+				rsp->entry[i].key[j]);
+		}
+		off += sprintf(&dump_str[off], "\nmask:\n");
+		for (j = 0; j < size; j++) {
+			off += sprintf(&dump_str[off], "%02x ",
+				rsp->entry[i].mask[j]);
+		}
+		off += sprintf(&dump_str[off], "\n");
+		found = false;
+		flow = _flow;
+		while (flow) {
+			if (type == DPAA2_FLOW_QOS_TYPE) {
+				key = flow->qos_key_addr;
+				mask = flow->qos_mask_addr;
+			} else {
+				key = flow->fs_key_addr;
+				mask = flow->fs_mask_addr;
+			}
+			if (!memcmp(rsp->entry[i].key, key, size) &&
+				!memcmp(rsp->entry[i].mask, mask, size)) {
+				found = true;
+				break;
+			}
+			flow = LIST_NEXT(flow, next);
+		}
+		if (!found) {
+			off += sprintf(&dump_str[off],
+				"This entry not found in flow list\n");
+			ret = -ENXIO;
+		}
+	}
+
+	return ret;
+}
+
+int
+rte_pmd_dpaa2_flow_table_query(uint16_t portid)
+{
+	struct rte_eth_dev *dev;
+	struct dpaa2_dev_flow *flow;
+	struct dpaa2_dev_priv *priv;
+	uint16_t num = 0, num_rsp, tc_id = 0;
+	int ret = 0, fs_enable[MAX_TCS];
+	size_t size, iova;
+	struct dpni_dump_table_rsp *rsp = NULL;
+	char *dump_str = NULL;
+	uint16_t fs_rule_size[MAX_TCS], qos_rule_size;
+
+	if (!rte_pmd_dpaa2_dev_is_dpaa2(portid))
+		return -EINVAL;
+
+	dev = &rte_eth_devices[portid];
+	priv = dev->data->dev_private;
+
+	memset(fs_enable, 0, sizeof(fs_enable));
+	memset(fs_rule_size, 0, sizeof(fs_rule_size));
+	qos_rule_size = 0;
+	flow = LIST_FIRST(&priv->flows);
+	while (flow) {
+		fs_enable[flow->tc_id]++;
+		if (fs_rule_size[flow->tc_id] < flow->fs_rule_size)
+			fs_rule_size[flow->tc_id] = flow->fs_rule_size;
+		if (qos_rule_size < flow->qos_rule_size)
+			qos_rule_size = flow->qos_rule_size;
+		num++;
+		flow = LIST_NEXT(flow, next);
+	}
+	if (!num)
+		return -ENXIO;
+	size = sizeof(struct dpni_dump_table_header) +
+		num * sizeof(struct dpni_dump_table_entry);
+	rsp = rte_zmalloc(NULL, size, RTE_CACHE_LINE_SIZE);
+	if (!rsp)
+		return -ENOMEM;
+	dump_str = rte_zmalloc(NULL, num * 1024, 0);
+	if (!dump_str)
+		goto quit;
+	iova = DPAA2_VADDR_TO_IOVA_AND_CHECK(rsp, size);
+	if (iova == RTE_BAD_IOVA) {
+		DPAA2_PMD_ERR("%s: No IOMMU map for dump table result!",
+			__func__);
+		goto quit;
+	}
+
+	if (priv->num_rx_tc <= 1)
+		goto dump_fs;
+
+	ret = dpni_dump_table(priv->hw, CMD_PRI_LOW,
+		priv->token, DPNI_QOS_TABLE, 0/**Any*/,
+		iova, size, &num_rsp);
+	if (ret) {
+		DPAA2_PMD_ERR("dump %s's QoS table failed(%d)",
+			dev->data->name, ret);
+		goto quit;
+	}
+	DPAA2_PMD_INFO("dump %s's QoS table: type(%d):num(%d-%d):max(%d)",
+		dev->data->name,
+		rte_be_to_cpu_16(rsp->hdr.table_type), num_rsp,
+		rte_be_to_cpu_16(rsp->hdr.table_num_entries),
+		rte_be_to_cpu_16(rsp->hdr.table_max_entries));
+	ret = dpaa2_flow_table_dump_check(rsp, num_rsp,
+		dump_str, DPAA2_FLOW_QOS_TYPE,
+		LIST_FIRST(&priv->flows), qos_rule_size);
+	DPAA2_PMD_INFO("%s", dump_str);
+	if (ret)
+		goto quit;
+
+dump_fs:
+	if (!fs_enable[tc_id])
+		goto dump_next_fs;
+	ret = dpni_dump_table(priv->hw, CMD_PRI_LOW,
+		priv->token, DPNI_FS_TABLE, tc_id,
+		iova, size, &num_rsp);
+	if (ret) {
+		DPAA2_PMD_ERR("dump %s's FS%d table failed(%d)",
+			dev->data->name, tc_id, ret);
+		goto dump_next_fs;
+	}
+	DPAA2_PMD_INFO("dump %s's FS%d table: type(%d):num(%d-%d):max(%d)",
+		dev->data->name, tc_id,
+		rte_be_to_cpu_16(rsp->hdr.table_type), num_rsp,
+		rte_be_to_cpu_16(rsp->hdr.table_num_entries),
+		rte_be_to_cpu_16(rsp->hdr.table_max_entries));
+	ret = dpaa2_flow_table_dump_check(rsp, num_rsp,
+		dump_str, DPAA2_FLOW_FS_TYPE,
+		LIST_FIRST(&priv->flows), fs_rule_size[tc_id]);
+	DPAA2_PMD_INFO("%s", dump_str);
+	if (ret)
+		goto quit;
+dump_next_fs:
+	tc_id++;
+	if (tc_id < MAX_TCS)
+		goto dump_fs;
+
+quit:
+	if (rsp)
+		rte_free(rsp);
+	if (dump_str)
+		rte_free(dump_str);
+
+	return ret;
 }
 
 /**

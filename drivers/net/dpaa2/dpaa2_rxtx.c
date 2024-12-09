@@ -1983,7 +1983,7 @@ dpaa2_dev_tx_with_dynamic_cnf(void *queue,
 confirm_again:
 		num_cnf = dpaa2_dev_tx_conf_dynamic(tx_conf_q);
 		if (unlikely(!num_cnf)) {
-			DPAA2_PMD_WARN("Get 0 of %d to be confirmed.",
+			DPAA2_PMD_DP_DEBUG("Get 0 of %d to be confirmed.",
 				tx_conf_q->to_cnfd);
 		}
 		if (tx_conf_q->to_cnfd > dpaa2_tx_cnf_fd_overflow)

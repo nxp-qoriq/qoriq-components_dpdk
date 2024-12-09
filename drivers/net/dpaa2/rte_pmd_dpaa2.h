@@ -13,6 +13,7 @@
 
 #include <rte_compat.h>
 #include <rte_flow.h>
+#include <rte_ethdev.h>
 
 /**
  * Create a flow rule to demultiplex ethernet traffic to separate network
@@ -161,6 +162,61 @@ int
 rte_pmd_dpaa2_get_one_step_ts(uint16_t port_id, bool mc_query);
 #endif
 
+#define RTE_DPAA2_DEV_TC_INFO_RSV_IDX 0
+union rte_pmd_dpaa2_dev_tc_desc {
+	uint64_t tc_info;
+	struct {
+		uint8_t rx_tc_num;
+		uint8_t tx_tc_num;
+		uint16_t qos_entries;
+		uint16_t fs_entries;
+		uint16_t dist_queues;
+	};
+} __rte_packed;
+
+static inline void
+rte_pmd_dpaa2_dev_parse_tc_info(const struct rte_eth_dev_info *dev_info,
+	uint16_t *tc_num, uint16_t *qos_entries, uint16_t *fs_entries,
+	uint16_t *entries_per_tc)
+{
+	union rte_pmd_dpaa2_dev_tc_desc desc;
+
+	desc.tc_info = dev_info->reserved_64s[RTE_DPAA2_DEV_TC_INFO_RSV_IDX];
+	if (tc_num)
+		*tc_num = desc.rx_tc_num;
+	if (qos_entries)
+		*qos_entries = desc.qos_entries;
+	if (fs_entries)
+		*fs_entries = desc.fs_entries;
+	if (entries_per_tc)
+		*entries_per_tc = desc.dist_queues;
+}
+
+#define RTE_DPAA2_RXQ_TC_INFO_RSV_IDX 0
+union rte_pmd_dpaa2_rxq_tc_desc {
+	uint64_t tc_info;
+	struct {
+		uint8_t tc_id;
+		uint8_t rsv0;
+		uint16_t flow_id;
+		uint32_t rsv1;
+	};
+} __rte_packed;
+
+static inline void
+rte_pmd_dpaa2_rxq_parse_tc_info(const struct rte_eth_rxq_info *rxq_info,
+	uint8_t *tc_id, uint16_t *flow_id)
+{
+	union rte_pmd_dpaa2_rxq_tc_desc desc;
+
+	desc.tc_info =
+		rxq_info->conf.reserved_64s[RTE_DPAA2_RXQ_TC_INFO_RSV_IDX];
+	if (tc_id)
+		*tc_id = desc.tc_id;
+	if (flow_id)
+		*flow_id = desc.flow_id;
+}
+
 __rte_experimental
 void *
 rte_dpaa2_scheduler_init(void);
@@ -179,5 +235,8 @@ int
 rte_dpaa2_conf_scheduler(uint16_t port_id, uint16_t rx_queue_id,
 			 int policer_unit, uint32_t options, int default_color,
 			 uint32_t cir, uint32_t cbs, uint32_t pir, uint32_t pbs);
+
+int
+rte_pmd_dpaa2_flow_table_query(uint16_t portid);
 
 #endif /* _RTE_PMD_DPAA2_H */
