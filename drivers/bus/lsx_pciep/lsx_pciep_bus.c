@@ -340,17 +340,8 @@ lsx_pciep_scan(void)
 		pcie_idx++;
 	}
 
-	ret = lsx_pciep_share_info_init();
-	if (ret) {
-		if (ret == (-ENODEV))
-			return 0;
-
-		return ret;
-	}
-
 	return 0;
 }
-
 
 static int
 lsx_pciep_match(struct rte_lsx_pciep_driver *ep_drv,
@@ -415,6 +406,17 @@ lsx_pciep_probe(void)
 
 	if (TAILQ_EMPTY(&lsx_pciep_bus.device_list))
 		return 0;
+
+	/** Reserve shared memory when PCIe EP device is detected.*/
+	if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
+		ret = lsx_pciep_share_info_init();
+		if (ret) {
+			LSX_PCIEP_BUS_ERR("%s share info init err(%d)\n",
+				__func__, ret);
+
+			return ret;
+		}
+	}
 
 	TAILQ_FOREACH(dev, &lsx_pciep_bus.device_list, next) {
 		TAILQ_FOREACH(drv, &lsx_pciep_bus.driver_list, next) {

@@ -241,9 +241,8 @@ int lsx_pciep_share_info_init(void)
 		mz = rte_memzone_lookup(lsx_pciep_shared_data_nm);
 	}
 	if (!mz) {
-		LSX_PCIEP_BUS_ERR("Shared mz %s failed",
-			rte_eal_process_type() == RTE_PROC_PRIMARY ?
-			"reserve" : "lookup");
+		if (rte_eal_process_type() == RTE_PROC_PRIMARY)
+			LSX_PCIEP_BUS_ERR("Reserve shared memory failed!");
 		ret = -ENOMEM;
 		goto share_info_init_done;
 	}
