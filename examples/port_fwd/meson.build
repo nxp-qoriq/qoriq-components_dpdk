@@ -19,3 +19,4 @@ sources = files(
 includes += include_directories('../../lib/pdump')
 includes += include_directories('../../lib/bpf')
 includes += include_directories('../../drivers/net/dpaa2/')
+includes += include_directories('../../drivers/net/dpaa/')

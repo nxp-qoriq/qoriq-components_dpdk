@@ -47,6 +47,7 @@
 #include <rte_spinlock.h>
 #include <rte_malloc.h>
 #include <rte_pmd_dpaa2.h>
+#include <rte_pmd_dpaa.h>
 
 #include <cmdline_parse.h>
 #include <cmdline_parse_etheraddr.h>
@@ -127,9 +128,9 @@ static int fwd_dst_port[RTE_MAX_ETHPORTS];
 static int rx_seg_port[RTE_MAX_ETHPORTS];
 
 static struct rte_mempool *pktmbuf_pool;
-static struct rte_mempool *default_pktmbuf_pool;
+static struct rte_mempool *pktmbuf_pools[RTE_ETH_DPAA_RX_MAX_MPOOLS];
 
-static struct rte_mempool *pktmbuf_pool_for_2nd;
+static struct rte_mempool *default_pktmbuf_pool;
 
 #define RTE_MAX_QUEUES 128
 static uint16_t s_pq_map[RTE_MAX_ETHPORTS][RTE_MAX_QUEUES];
@@ -140,6 +141,9 @@ static uint64_t min_mbuf_addr = (~((uint64_t)0));
 static int s_dump_mbuf;
 static int s_inject;
 static uint16_t s_inject_pkt_size = 64;
+/** DPAA1 platform support only now.*/
+static int s_mpool_select_by_size;
+static int s_mpool_select_by_size_debug;
 
 static uint8_t s_inject_pkt_base[] = {
 	0x00, 0xE0, 0x0C, 0x00, 0x01, 0x00, 0x00, 0x10,
@@ -747,6 +751,15 @@ port_forwarding:
 				rx_burst);
 			if (nb_rx == 0)
 				continue;
+			if (unlikely(s_mpool_select_by_size &&
+				s_mpool_select_by_size_debug)) {
+				for (j = 0; j < nb_rx; j++) {
+					RTE_LOG(INFO, port_fwd,
+						"RX from port%d/rxq%d/pool(%s), size=%d\r\n",
+						portid, queueid, pkts_burst[j]->pool->name,
+						pkts_burst[j]->pkt_len);
+				}
+			}
 
 			rx_left = port_fwd_handle_seg_rx(pkts_burst,
 				tx_burst, qconf, portid, nb_rx,
@@ -1331,6 +1344,7 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 	char s_tx_2nd[64];
 	char s_generic[64];
 	char *penv;
+	int i, max_pool_size;
 
 	snprintf(s, sizeof(s), "port_fwd_mbuf_pool");
 	snprintf(s_tx, sizeof(s_tx), "port_fwd_mbuf_tx_pool");
@@ -1363,28 +1377,31 @@ init_mem(unsigned int nb_mbuf, uint16_t buf_size)
 				s_2nd, nb_mbuf);
 		}
 	} else {
-		pktmbuf_pool =
-			rte_pktmbuf_pool_create(s,
-				nb_mbuf,
-				MEMPOOL_CACHE_SIZE, 0,
-				buf_size, 0);
-		if (pktmbuf_pool) {
-			RTE_LOG(INFO, port_fwd,
-				"mbuf pool(%s)(count=%d) created\n",
-				s, nb_mbuf);
-		}
-
-		penv = getenv("PRIMARY_FOR_SECONDARY_POOL_BUF_NB");
-		if (penv && atoi(penv) > 0) {
-			pktmbuf_pool_for_2nd =
-				rte_pktmbuf_pool_create(s_2nd,
-					atoi(penv),
-					MEMPOOL_CACHE_SIZE, 0,
-					buf_size, 0);
-			if (pktmbuf_pool_for_2nd) {
+		if (s_mpool_select_by_size) {
+			for (i = 0; i < RTE_ETH_DPAA_RX_MAX_MPOOLS; i++) {
+				max_pool_size =
+					buf_size / RTE_ETH_DPAA_RX_MAX_MPOOLS * (i + 1);
+				snprintf(s, sizeof(s),
+					"port_fwd_mbuf_pool_%d", max_pool_size);
+				pktmbuf_pools[i] = rte_pktmbuf_pool_create(s,
+					nb_mbuf / RTE_ETH_DPAA_RX_MAX_MPOOLS,
+					MEMPOOL_CACHE_SIZE, 0, max_pool_size, 0);
+				if (pktmbuf_pools[i]) {
+					RTE_LOG(INFO, port_fwd,
+						"mbuf pool(%s) created\n", s);
+				} else {
+					rte_exit(EXIT_FAILURE,
+						"Cannot init mbuf pool(%s)\n", s);
+				}
+			}
+			pktmbuf_pool = pktmbuf_pools[RTE_ETH_DPAA_RX_MAX_MPOOLS - 1];
+		} else {
+			pktmbuf_pool = rte_pktmbuf_pool_create(s,
+				nb_mbuf, MEMPOOL_CACHE_SIZE, 0, buf_size, 0);
+			if (pktmbuf_pool) {
 				RTE_LOG(INFO, port_fwd,
 					"mbuf pool(%s)(count=%d) created\n",
-					s_2nd, atoi(penv));
+					s, nb_mbuf);
 			}
 		}
 	}
@@ -1693,6 +1710,16 @@ main(int argc, char **argv)
 		}
 	}
 
+	penv = getenv("PORT_FWD_DPAA1_POOL_SELECT_BY_SIZE");
+	if (penv)
+		s_mpool_select_by_size = atoi(penv);
+	if (s_mpool_select_by_size) {
+		s_mpool_select_by_size_debug = 1;
+		penv = getenv("PORT_FWD_DPAA1_POOL_SELECT_BY_SIZE_DBG");
+		if (penv)
+			s_mpool_select_by_size_debug = atoi(penv);
+	}
+
 	ret = init_lcore_rx_queues();
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "init_lcore_rx_queues failed\n");
@@ -1838,11 +1865,23 @@ main(int argc, char **argv)
 		rxq_conf.reserved_64s[0] = min_mbuf_addr;
 		rxq_conf.reserved_64s[1] = max_mbuf_addr;
 		for (q_nb = 0; q_nb < nb_rx_queue[portid]; q_nb++) {
-			ret = rte_eth_rx_queue_setup(portid,
-				rx_queues[portid][q_nb],
-				nb_rxd, socketid[portid][q_nb],
-				&rxq_conf,
-				pktmbuf_pool);
+			if (s_mpool_select_by_size) {
+				ret = rte_dpaa_eth_rx_queue_mp_setup(portid,
+					rx_queues[portid][q_nb],
+					nb_rxd, &rxq_conf,
+					pktmbuf_pools, RTE_ETH_DPAA_RX_MAX_MPOOLS);
+				if (ret) {
+					ret = rte_eth_rx_queue_setup(portid,
+						rx_queues[portid][q_nb],
+						nb_rxd, socketid[portid][q_nb],
+						&rxq_conf, pktmbuf_pool);
+				}
+			} else {
+				ret = rte_eth_rx_queue_setup(portid,
+					rx_queues[portid][q_nb],
+					nb_rxd, socketid[portid][q_nb],
+					&rxq_conf, pktmbuf_pool);
+			}
 			if (ret < 0) {
 				rte_exit(EXIT_FAILURE,
 					"port%d rxq%d setup failed(%d)\n",
