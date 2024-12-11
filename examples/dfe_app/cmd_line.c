@@ -50,19 +50,31 @@ cmd_help_parsed(__attribute__((unused)) void *parsed_result,
 		"\n");
 }
 void
-cmd_fdd_start_parsed(__attribute__((unused)) void *parsed_result,
+cmd_fdd_start_stop_parsed(__attribute__((unused)) void *parsed_result,
 		     __attribute__((unused)) struct cmdline *cl,
 		     __attribute__((unused)) void *data)
 {
-	cmd_do_simple(DFE_FDD_START, "FDD start");
+	struct cmd_fdd_start_stop_result *res = parsed_result;
+
+	if (!strncmp(res->start_stop, "start", 5)) {
+		cmd_do_simple(DFE_FDD_START, "FDD start");
+	} else {
+		cmd_do_simple(DFE_FDD_STOP, "FDD stop");
+	}
 }
 
 void
-cmd_fdd_stop_parsed(__attribute__((unused)) void *parsed_result,
+cmd_fdd_start_stop_all_parsed(__attribute__((unused)) void *parsed_result,
 		    __attribute__((unused)) struct cmdline *cl,
 		    __attribute__((unused)) void *data)
 {
-	cmd_do_simple(DFE_FDD_STOP, "FDD stop");
+	struct cmd_fdd_start_stop_all_result *res = parsed_result;
+
+	if (!strncmp(res->start_stop_all, "start", 5)) {
+		cmd_do_fdd_start_stop_all_paths(1 /* start */, res->delta);
+	} else {
+		cmd_do_fdd_start_stop_all_paths(0 /* stop */, res->delta);
+	}
 }
 
 void
@@ -480,6 +492,17 @@ cmd_axiq_lb_enable_parsed(__attribute__((unused)) void *parsed_result,
 			  __attribute__((unused)) void *data)
 {
 	cmd_do_simple(DFE_CFG_AXIQ_LB_ENABLE,"AXIQ LB enable [CH2(rx)-CH5(tx)]");
+}
+
+void
+cmd_axiq_lb_enable_mask_parsed(__attribute__((unused)) void *parsed_result,
+			       __attribute__((unused)) struct cmdline *cl,
+			       __attribute__((unused)) void *data)
+{
+	struct cmd_axiq_lb_enable_mask_result *res = parsed_result;
+
+	printf("res->rx_lb_mask = %#x\n", res->rx_lb_mask);
+	cmd_do_axiq_lb_mask_enable(res->rx_lb_mask);
 }
 
 void

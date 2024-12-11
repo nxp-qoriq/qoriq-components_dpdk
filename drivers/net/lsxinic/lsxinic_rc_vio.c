@@ -3594,12 +3594,6 @@ static struct rte_pci_driver rte_lsxvio_pci_pmd = {
 	.remove = lsxvio_rc_eth_pci_remove,
 };
 
-RTE_INIT(rte_lsxvio_pci_pmd_init)
-{
-	rte_eal_iopl_init();
-	rte_pci_register(&rte_lsxvio_pci_pmd);
-}
-
 static bool
 lsxvio_rc_rx_offload_enabled(struct virtio_hw *hw)
 {
