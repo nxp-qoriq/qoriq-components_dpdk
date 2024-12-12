@@ -18,6 +18,7 @@
 #include <fsl_bman.h>
 #include <dpaa_of.h>
 #include <netcfg.h>
+#include <dpaa_mempool.h>
 
 #define MAX_DPAA_CORES			4
 #define DPAA_MBUF_HW_ANNOTATION		64
@@ -114,8 +115,6 @@ enum {
 #define DPAA_10G_MAC_START_IDX 9
 #define DPAA_2_5G_MAC_START_IDX DPAA_10G_MAC_START_IDX
 
-#define DPAA_DEFAULT_RXQ_VSP_ID		1
-
 #define FMC_FILE "/tmp/fmc.bin"
 
 extern struct rte_mempool *dpaa_tx_sg_pool;
@@ -134,6 +133,13 @@ struct dpaa_sw_buf_free {
 	struct rte_mbuf *seg;
 };
 
+struct dpaa_if_vsp {
+	struct dpaa_bp_info *vsp_bp[FMAN_PORT_MAX_EXT_POOLS_NUM];
+	uint8_t bp_num;
+	uint32_t max_size;
+	void *vsp_handle;
+};
+
 /* Each network interface is represented by one of these */
 struct dpaa_if {
 	int valid;
@@ -148,8 +154,8 @@ struct dpaa_if {
 	uint16_t nb_rx_queues;
 	uint16_t nb_tx_queues;
 	uint32_t ifid;
-	struct dpaa_bp_info *bp_info[FMAN_PORT_MAX_EXT_POOLS_NUM];
-	uint16_t nb_bp;
+	struct dpaa_if_vsp vsp[DPAA_VSP_PROFILE_MAX_NUM];
+	uint8_t base_vsp;
 	struct rte_eth_fc_conf *fc_conf;
 	void *port_handle;
 	void *netenv_handle;
@@ -163,9 +169,6 @@ struct dpaa_if {
 	 * it corresponds to last packet transmitted
 	 */
 	struct qman_fq *next_tx_conf_queue;
-
-	void *vsp_handle[DPAA_VSP_PROFILE_MAX_NUM];
-	uint32_t vsp_bpid[DPAA_VSP_PROFILE_MAX_NUM];
 };
 
 struct dpaa_if_stats {
@@ -269,9 +272,6 @@ int
 dpaa_timesync_read_rx_timestamp(struct rte_eth_dev *dev,
 		struct timespec *timestamp,
 		uint32_t flags __rte_unused);
-
-uint8_t
-fm_default_vsp_id(struct fman_if *fif);
 
 #define DPAA_PMD_LOG(level, fmt, args...) \
 	rte_log(RTE_LOG_ ## level, dpaa_logtype_pmd, "%s(): " fmt "\n", \

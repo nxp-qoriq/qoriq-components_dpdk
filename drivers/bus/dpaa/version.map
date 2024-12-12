@@ -23,8 +23,6 @@ INTERNAL {
 	dpaa_seqn;
 	dpaa_svr_family;
 	dpaa_update_link_status;
-	fman_dealloc_bufs_mask_hi;
-	fman_dealloc_bufs_mask_lo;
 	fman_if_add_mac_addr;
 	fman_if_bmi_stats_enable;
 	fman_if_bmi_stats_disable;
@@ -57,7 +55,6 @@ INTERNAL {
 	fman_if_stats_get;
 	fman_if_stats_get_all;
 	fman_if_stats_reset;
-	fman_ip_rev;
 	fman_if_receive_rx_errors;
 	fsl_qman_fq_portal_create;
 	netcfg_acquire;
