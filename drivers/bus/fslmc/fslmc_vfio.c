@@ -51,17 +51,10 @@ static struct fslmc_vfio_container s_vfio_container;
 static const char *fslmc_group; /* dprc.x*/
 static void *(*rte_mcp_ptr_list);
 
-struct _fslmc_dmaseg {
-	uint64_t vaddr;
-	uint64_t iova;
-	uint64_t size;
-};
-
 struct fslmc_dmaseg {
 	uint64_t vaddr;
 	uint64_t iova;
 	uint64_t size;
-	int is_shared;
 
 	TAILQ_ENTRY(fslmc_dmaseg) next;
 };
@@ -76,15 +69,13 @@ struct fslmc_dmaseg_list fslmc_iosegs =
 static uint64_t fslmc_mem_va2iova = RTE_BAD_IOVA;
 static int fslmc_mem_map_num;
 
-#define FSLMC_MEM_MAX_SEG_NUM 4
 struct fslmc_mem_param {
 	struct vfio_mp_param mp_param;
-	struct _fslmc_dmaseg memsegs[FSLMC_MEM_MAX_SEG_NUM];
-	struct _fslmc_dmaseg iosegs[FSLMC_MEM_MAX_SEG_NUM];
+	struct fslmc_dmaseg_list memsegs;
+	struct fslmc_dmaseg_list iosegs;
 	uint64_t mem_va2iova;
-	uint8_t mem_map_num;
-	uint8_t io_map_num;
-} __rte_packed;
+	int mem_map_num;
+};
 
 enum {
 	FSLMC_VFIO_SOCKET_REQ_CONTAINER = 0x100,
@@ -602,13 +593,6 @@ fslmc_vfio_mp_primary(const struct rte_mp_msg *msg,
 	struct vfio_mp_param *r = (void *)reply.param;
 	const struct vfio_mp_param *m = (const void *)msg->param;
 	struct fslmc_mem_param *map;
-	struct fslmc_dmaseg *dmaseg = NULL;
-
-	if (sizeof(struct fslmc_mem_param) > RTE_MP_MAX_PARAM_LEN) {
-		rte_panic("struct fslmc_mem_param size(%ld) > %d\n",
-			sizeof(struct fslmc_mem_param),
-			RTE_MP_MAX_PARAM_LEN);
-	}
 
 	if (msg->len_param != sizeof(*m)) {
 		DPAA2_BUS_ERR("Invalid msg size(%d) for req(%d)",
@@ -653,23 +637,12 @@ fslmc_vfio_mp_primary(const struct rte_mp_msg *msg,
 		r = &map->mp_param;
 		r->req = FSLMC_VFIO_SOCKET_REQ_MEM;
 		r->result = SOCKET_OK;
-		TAILQ_FOREACH(dmaseg, &fslmc_memsegs, next) {
-			if (map->mem_map_num >= FSLMC_MEM_MAX_SEG_NUM)
-				return -ENOTSUP;
-			map->memsegs[map->mem_map_num].vaddr = dmaseg->vaddr;
-			map->memsegs[map->mem_map_num].iova = dmaseg->iova;
-			map->memsegs[map->mem_map_num].size = dmaseg->size;
-			map->mem_map_num++;
-		}
-		TAILQ_FOREACH(dmaseg, &fslmc_iosegs, next) {
-			if (map->io_map_num >= FSLMC_MEM_MAX_SEG_NUM)
-				return -ENOTSUP;
-			map->memsegs[map->io_map_num].vaddr = dmaseg->vaddr;
-			map->memsegs[map->io_map_num].iova = dmaseg->iova;
-			map->memsegs[map->io_map_num].size = dmaseg->size;
-			map->io_map_num++;
-		}
+		rte_memcpy(&map->memsegs, &fslmc_memsegs,
+			sizeof(struct fslmc_dmaseg_list));
+		rte_memcpy(&map->iosegs, &fslmc_iosegs,
+			sizeof(struct fslmc_dmaseg_list));
 		map->mem_va2iova = fslmc_mem_va2iova;
+		map->mem_map_num = fslmc_mem_map_num;
 		reply.len_param = sizeof(struct fslmc_mem_param);
 		break;
 	default:
@@ -690,10 +663,9 @@ fslmc_vfio_mp_sync_mem_req(void)
 	struct rte_mp_msg mp_req, *mp_rep;
 	struct rte_mp_reply mp_reply = {0};
 	struct timespec ts = {.tv_sec = 5, .tv_nsec = 0};
-	int ret = 0, i;
+	int ret = 0;
 	struct vfio_mp_param *mp_param;
 	struct fslmc_mem_param *mem_rsp;
-	struct fslmc_dmaseg *dmaseg;
 
 	mp_param = (void *)mp_req.param;
 	memset(&mp_req, 0, sizeof(struct rte_mp_msg));
@@ -705,32 +677,12 @@ fslmc_vfio_mp_sync_mem_req(void)
 		mp_rep = &mp_reply.msgs[0];
 		mem_rsp = (struct fslmc_mem_param *)mp_rep->param;
 		if (mem_rsp->mp_param.result == SOCKET_OK) {
-			for (i = 0; i < mem_rsp->mem_map_num; i++) {
-				dmaseg = malloc(sizeof(struct fslmc_dmaseg));
-				if (!dmaseg) {
-					DPAA2_BUS_ERR("DMA segment malloc failed!");
-						return -ENOMEM;
-				}
-				memset(dmaseg, 0, sizeof(struct fslmc_dmaseg));
-				dmaseg->vaddr = mem_rsp->memsegs[i].vaddr;
-				dmaseg->iova = mem_rsp->memsegs[i].iova;
-				dmaseg->size = mem_rsp->memsegs[i].size;
-				dmaseg->is_shared = true;
-				TAILQ_INSERT_TAIL(&fslmc_memsegs, dmaseg, next);
-			}
-			for (i = 0; i < mem_rsp->io_map_num; i++) {
-				dmaseg = malloc(sizeof(struct fslmc_dmaseg));
-				if (!dmaseg) {
-					DPAA2_BUS_ERR("DMA segment malloc failed!");
-					return -ENOMEM;
-				}
-				memset(dmaseg, 0, sizeof(struct fslmc_dmaseg));
-				dmaseg->vaddr = mem_rsp->iosegs[i].vaddr;
-				dmaseg->iova = mem_rsp->iosegs[i].iova;
-				dmaseg->size = mem_rsp->iosegs[i].size;
-				dmaseg->is_shared = true;
-				TAILQ_INSERT_TAIL(&fslmc_iosegs, dmaseg, next);
-			}
+			rte_memcpy(&fslmc_memsegs,
+				&mem_rsp->memsegs,
+				sizeof(struct fslmc_dmaseg_list));
+			rte_memcpy(&fslmc_memsegs,
+				&mem_rsp->memsegs,
+				sizeof(struct fslmc_dmaseg_list));
 			fslmc_mem_va2iova = mem_rsp->mem_va2iova;
 			fslmc_mem_map_num = mem_rsp->mem_map_num;
 		} else {
@@ -938,7 +890,6 @@ end_mapping:
 	dmaseg->vaddr = vaddr;
 	dmaseg->iova = iovaddr;
 	dmaseg->size = len;
-	dmaseg->is_shared = false;
 	if (is_io) {
 		TAILQ_INSERT_TAIL(&fslmc_iosegs, dmaseg, next);
 	} else {
@@ -993,11 +944,6 @@ fslmc_unmap_dma(uint64_t vaddr, uint64_t iovaddr, size_t len)
 		return 0;
 	}
 
-	if (dmaseg->is_shared) {
-		/** Shared by primary process which is responsible to unmap.*/
-		goto skip_unmap;
-	}
-
 	fd = fslmc_vfio_group_fd_by_name(group_name);
 	if (fd <= 0) {
 		DPAA2_BUS_ERR("%s: Get fd by name(%s) failed(%d)",
@@ -1028,7 +974,6 @@ fslmc_unmap_dma(uint64_t vaddr, uint64_t iovaddr, size_t len)
 		return ret;
 	}
 
-skip_unmap:
 	if (is_io) {
 		TAILQ_REMOVE(&fslmc_iosegs, dmaseg, next);
 	} else {
